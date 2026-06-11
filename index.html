@@ -2284,14 +2284,36 @@ async function descargarPdfFirmante(id){
   }catch(e){ console.error(e); toast("No se pudo generar: "+(e.message||''),"err"); }
 }
 
-/* #3 — Enviar el enlace al correo del firmante (abre el correo del usuario) */
-function enviarPorCorreo(id){
+/* #3 — Enviar el enlace al correo del firmante por Web3Forms */
+async function enviarPorCorreo(id){
   const f = (docDetalleFirmantes||[]).find(x=>x.id===id);
   if(!f || !f.correo){ toast("Este firmante no tiene correo registrado","err"); return; }
+
   const link = linkFirma(f.token);
-  const asunto = encodeURIComponent("Documento para firmar — Don Aseo Ltda.");
-  const cuerpo = encodeURIComponent("Hola "+(f.nombre||"")+",\n\nTienes un documento pendiente de firma: \""+(docDetalleActual.nombre||"")+"\".\n\nAbre este enlace para firmarlo desde tu celular o computador:\n"+link+"\n\nGracias,\nDon Aseo Ltda.");
-  window.location.href = "mailto:"+f.correo+"?subject="+asunto+"&body="+cuerpo;
+  toast("Enviando correo…","",3000);
+
+  try{
+    const res = await fetch("https://api.web3forms.com/submit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        access_key: "906ee2e3-5240-465d-a9c5-697b7c07da84",
+        email: f.correo,
+        from_name: "Don Aseo Ltda.",
+        subject: "Documento para firmar — Don Aseo Ltda.",
+        message: `Hola ${f.nombre||''},\n\nTienes un documento pendiente de firma: "${docDetalleActual.nombre||''}".\n\nAbre este enlace para firmarlo desde tu celular o computador:\n${link}\n\nGracias,\nDon Aseo Ltda.`
+      })
+    });
+    const data = await res.json();
+    if(data.success){
+      toast(`✓ Correo enviado a ${f.correo}`, "ok");
+    } else {
+      toast(`Error: ${data.message||'No se pudo enviar'}`, "err");
+    }
+  }catch(e){
+    console.error(e);
+    toast("Error de conexión: "+e.message, "err");
+  }
 }
 
 /* === Componer el PDF FIRMADO: estampa firma/fotos/textos en cada campo (pdf-lib) === */
