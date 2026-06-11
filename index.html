@@ -11,6 +11,8 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/build/index.min.js"></script>
+<script type="text/javascript">emailjs.init('b53NVoxZvStAu76mm_y2w');</script>
 <style>
 :root{
   --brand:#1d33c7;            /* azul corporativo */
@@ -2284,7 +2286,7 @@ async function descargarPdfFirmante(id){
   }catch(e){ console.error(e); toast("No se pudo generar: "+(e.message||''),"err"); }
 }
 
-/* #3 — Enviar el enlace al correo del firmante por Web3Forms */
+/* #3 — Enviar el enlace al correo del firmante por EmailJS */
 async function enviarPorCorreo(id){
   const f = (docDetalleFirmantes||[]).find(x=>x.id===id);
   if(!f || !f.correo){ toast("Este firmante no tiene correo registrado","err"); return; }
@@ -2293,26 +2295,21 @@ async function enviarPorCorreo(id){
   toast("Enviando correo…","",3000);
 
   try{
-    const res = await fetch("https://api.web3forms.com/submit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        access_key: "906ee2e3-5240-465d-a9c5-697b7c07da84",
-        email: f.correo,
-        from_name: "Don Aseo Ltda.",
-        subject: "Documento para firmar — Don Aseo Ltda.",
-        message: `Hola ${f.nombre||''},\n\nTienes un documento pendiente de firma: "${docDetalleActual.nombre||''}".\n\nAbre este enlace para firmarlo desde tu celular o computador:\n${link}\n\nGracias,\nDon Aseo Ltda.`
-      })
+    const res = await emailjs.send("service_g324pxb", "template_h11phwg", {
+      to_email: f.correo,
+      to_name: f.nombre||'',
+      documento_nombre: docDetalleActual.nombre||'',
+      firma_link: link,
+      empresa: "Don Aseo Ltda."
     });
-    const data = await res.json();
-    if(data.success){
+    if(res.status === 200){
       toast(`✓ Correo enviado a ${f.correo}`, "ok");
     } else {
-      toast(`Error: ${data.message||'No se pudo enviar'}`, "err");
+      toast("Error al enviar", "err");
     }
   }catch(e){
     console.error(e);
-    toast("Error de conexión: "+e.message, "err");
+    toast("Error: "+e.message, "err");
   }
 }
 
