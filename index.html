@@ -612,8 +612,10 @@ async function router(){
   STATE.userEmail = session.user?.email || "";
   if(location.hash.startsWith("#/docs")){
     const mPlant = location.hash.match(/^#\/docs\/plantilla\/(.+)$/);
+    const mEditDoc = location.hash.match(/^#\/docs\/documento\/(.+)\/editar$/);
     if(mPlant){ await renderConstructor(mPlant[1]==='nueva' ? null : decodeURIComponent(mPlant[1])); }
     else if(location.hash === "#/docs/documento/nuevo"){ await renderCrearDocumento(); }
+    else if(mEditDoc){ await renderEditarDocumento(decodeURIComponent(mEditDoc[1])); }
     else { await renderDocsAdmin(); }   // MÓDULO: Documentos y Firmas
   } else {
     await loadState();
@@ -2137,8 +2139,8 @@ let docDetalleFirmantes = [];
 let docDetalleActual = null;
 
 function eventoTimelineHTML(eventos){
-  const txt = {creado:'Documento creado', enviado:'Documento enviado', abierto:'Documento abierto', firmado:'Documento firmado', finalizado:'Documento finalizado'};
-  const ic  = {creado:I.doc, enviado:I.link, abierto:I.eye, firmado:I.pen, finalizado:I.check};
+  const txt = {creado:'Documento creado', enviado:'Documento enviado', abierto:'Documento abierto', firmado:'Documento firmado', finalizado:'Documento finalizado', editado:'Documento editado'};
+  const ic  = {creado:I.doc, enviado:I.link, abierto:I.eye, firmado:I.pen, finalizado:I.check, editado:I.pen};
   return `<div class="timeline">${eventos.map(e=>`
     <div class="tl-item">
       <div class="tl-dot tl-${e.tipo}">${ic[e.tipo]||I.doc}</div>
@@ -2250,6 +2252,7 @@ async function abrirDocumento(id){
       </div>
       <div class="modal-foot">
         <button class="btn btn-danger" onclick="eliminarDocumento('${doc.id}')">${I.trash} Eliminar</button>
+        ${doc.estado!=='finalizado'?`<button class="btn btn-ghost" onclick="location.hash='#/docs/documento/${doc.id}/editar'">${I.pen} Editar</button>`:''}
         <button class="btn btn-ghost" onclick="verDocumento()">${I.eye} Ver documento</button>
         <button class="btn btn-green" onclick="generarPDFDocumento()">${I.pdf} PDF completo</button>
         ${doc.estado==='borrador'?`<button class="btn btn-primary" onclick="enviarDocumento('${doc.id}')">${I.check} Marcar como enviado</button>`:''}
@@ -2316,6 +2319,113 @@ async function enviarPorCorreo(id){
   const asunto = encodeURIComponent("Documento para firmar — Don Aseo Ltda.");
   const cuerpo = encodeURIComponent("Hola "+(f.nombre||"")+",\n\nTienes un documento pendiente de firma: \""+((docDetalleActual&&docDetalleActual.nombre)||"")+"\".\n\nAbre este enlace para firmarlo desde tu celular o computador:\n"+link+"\n\nGracias,\nDon Aseo Ltda.");
   window.location.href = "mailto:"+f.correo+"?subject="+asunto+"&body="+cuerpo;
+}
+
+/* ============================================================
+   EDITAR DOCUMENTO (datos, fecha límite, firmantes, seguridad)
+   — Los firmantes que ya firmaron quedan bloqueados.
+   ============================================================ */
+let editDocFirmantes = [];
+
+async function renderEditarDocumento(id){
+  const { data:doc } = await sb.from("doc_documentos").select("id,nombre,estado,fecha_limite,firma_ordenada,config").eq("id",id).maybeSingle();
+  if(!doc){ toast("Documento no encontrado","err"); location.hash="#/docs"; return; }
+  if(doc.estado==='finalizado'){ toast("Un documento finalizado no se puede editar","err"); location.hash="#/docs"; return; }
+  const { data:fdata } = await sb.from("doc_firmantes").select("id,nombre,correo,identificacion,cargo,orden,estado").eq("documento_id",id).order("orden",{ascending:true});
+  editDocFirmantes = (fdata||[]).map(f=>({ id:f.id, nombre:f.nombre||'', correo:f.correo||'', identificacion:f.identificacion||'', cargo:f.cargo||'', estado:f.estado }));
+  if(!editDocFirmantes.length) editDocFirmantes=[{id:null,nombre:'',correo:'',identificacion:'',cargo:'',estado:'pendiente'}];
+  const cfg = doc.config||{};
+
+  document.getElementById("app").innerHTML = `
+    ${topbar('docs')}
+    <div class="wrap" style="max-width:900px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" id="btnVolver">${I.back} Volver</button>
+        <div style="flex:1"></div>
+        <button class="btn btn-primary" id="btnGuardarEdit">${I.check} Guardar cambios</button>
+      </div>
+      <div class="page-head"><div><h1>Editar documento</h1><p>Ajusta datos, fecha límite, firmantes y seguridad. Quien ya firmó queda bloqueado.</p></div></div>
+
+      <div class="card-sec">
+        <h3>Datos</h3>
+        <div class="field row2">
+          <div><label>Nombre del documento *</label><input id="edNombre" value="${esc(doc.nombre||'')}"></div>
+          <div><label>Fecha límite <span class="opt">(opcional)</span></label><input type="date" id="edLimite" value="${doc.fecha_limite||''}"></div>
+        </div>
+        <label class="chk"><input type="checkbox" id="edOrden" ${doc.firma_ordenada?'checked':''}> Requerir orden de firma</label>
+      </div>
+
+      <div class="card-sec">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px">
+          <h3 style="margin:0">Firmantes</h3>
+          <button class="btn btn-ghost btn-sm" id="edAddFirmante">${I.plus} Agregar</button>
+        </div>
+        <div id="edFirmantesList"></div>
+      </div>
+
+      <div class="card-sec">
+        <h3>Configuración de seguridad</h3>
+        <div class="seg-grid">${SEG_FLAGS.map(f=>`<label class="chk seg"><input type="checkbox" data-seg="${f.k}" ${cfg[f.k]?'checked':''}> ${f.t}</label>`).join("")}</div>
+      </div>
+    </div>`;
+
+  wireLogout();
+  document.getElementById("btnVolver").onclick = ()=>{ location.hash="#/docs"; setTimeout(()=>abrirDocumento(id), 120); };
+  document.getElementById("btnGuardarEdit").onclick = ()=> guardarEdicionDocumento(id);
+  document.getElementById("edAddFirmante").onclick = ()=>{ editDocFirmantes.push({id:null,nombre:'',correo:'',identificacion:'',cargo:'',estado:'pendiente'}); renderEditFirmantes(); };
+  renderEditFirmantes();
+}
+
+function renderEditFirmantes(){
+  const host=document.getElementById("edFirmantesList"); if(!host) return;
+  host.innerHTML = editDocFirmantes.map((f,i)=>{
+    const locked = f.estado==='firmado';
+    return `<div class="firmante-row" data-i="${i}">
+      <span class="firmante-num">${i+1}</span>
+      <input data-f="nombre" placeholder="Nombre completo" value="${esc(f.nombre)}" ${locked?'disabled':''}>
+      <input data-f="correo" placeholder="Correo" value="${esc(f.correo)}" ${locked?'disabled':''}>
+      <input data-f="identificacion" placeholder="Identificación" value="${esc(f.identificacion)}" ${locked?'disabled':''}>
+      <input data-f="cargo" placeholder="Cargo" value="${esc(f.cargo)}" ${locked?'disabled':''}>
+      ${locked
+        ? `<span class="badge activa" title="Ya firmó — no editable"><span class="dot"></span></span>`
+        : `<button class="icon-btn danger" data-del="${i}" title="Quitar">${I.trash}</button>`}
+    </div>`;
+  }).join("");
+  host.querySelectorAll("input[data-f]").forEach(inp=>{ if(inp.disabled) return;
+    inp.oninput=()=>{ const i=+inp.closest(".firmante-row").dataset.i; editDocFirmantes[i][inp.dataset.f]=inp.value; }; });
+  host.querySelectorAll("[data-del]").forEach(b=>{
+    b.onclick=()=>{ const pendientes=editDocFirmantes.filter(x=>x.estado!=='firmado').length;
+      if(pendientes<=1){ toast("Debe quedar al menos un firmante","err"); return; }
+      editDocFirmantes.splice(+b.dataset.del,1); renderEditFirmantes(); }; });
+}
+
+async function guardarEdicionDocumento(id){
+  const nombre = document.getElementById("edNombre").value.trim();
+  if(!nombre){ toast("Ponle un nombre al documento","err"); document.getElementById("edNombre").focus(); return; }
+  const fecha_limite = document.getElementById("edLimite").value || null;
+  const firma_ordenada = document.getElementById("edOrden").checked;
+  const config={}; document.querySelectorAll("[data-seg]").forEach(c=> config[c.dataset.seg]=c.checked);
+  const btn=document.getElementById("btnGuardarEdit"); btn.disabled=true; btn.innerHTML="Guardando…";
+
+  const { error:e1 } = await sb.from("doc_documentos").update({ nombre, fecha_limite, firma_ordenada, config }).eq("id",id);
+  if(e1){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar cambios`; toast("No se pudo guardar: "+e1.message,"err"); return; }
+
+  // Firmantes: borrar pendientes quitados, actualizar existentes, insertar nuevos
+  const conNombre = editDocFirmantes.filter(f=> f.estado==='firmado' || f.nombre.trim());
+  const idsActuales = conNombre.filter(f=>f.id).map(f=>f.id);
+  const { data:orig } = await sb.from("doc_firmantes").select("id,estado").eq("documento_id",id);
+  const borrar = (orig||[]).filter(o=> o.estado!=='firmado' && !idsActuales.includes(o.id)).map(o=>o.id);
+  if(borrar.length){ await sb.from("doc_firmantes").delete().in("id", borrar); }
+  for(let i=0;i<conNombre.length;i++){
+    const f=conNombre[i];
+    if(f.estado==='firmado'){ if(f.id) await sb.from("doc_firmantes").update({ orden:i }).eq("id",f.id); continue; }
+    const datos = { nombre:f.nombre.trim(), correo:f.correo.trim()||null, identificacion:f.identificacion.trim()||null, cargo:f.cargo.trim()||null, orden:i };
+    if(f.id){ await sb.from("doc_firmantes").update(datos).eq("id",f.id); }
+    else if(f.nombre.trim()){ await sb.from("doc_firmantes").insert({ documento_id:id, ...datos }); }
+  }
+  await sb.from("doc_eventos").insert({ documento_id:id, tipo:'editado', detalle:{} });
+  toast("Documento actualizado","ok");
+  location.hash="#/docs"; setTimeout(()=>abrirDocumento(id), 150);
 }
 
 /* === Componer el PDF FIRMADO: estampa firma/fotos/textos en cada campo (pdf-lib) === */
