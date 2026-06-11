@@ -11,12 +11,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
-<script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-<script type="text/javascript">
-document.addEventListener('DOMContentLoaded', function(){
-  if(typeof emailjs !== 'undefined') emailjs.init('zsre7s7YXaXNR2_9U');
-});
-</script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <style>
 :root{
   --brand:#1d33c7;            /* azul corporativo */
@@ -496,6 +491,12 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
 // Worker de PDF.js (para mostrar PDFs en el navegador)
 if(window.pdfjsLib) window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+// EmailJS — envío automático del enlace de firma al correo del firmante
+const EMAILJS_SERVICE  = "service_g324pxb";
+const EMAILJS_TEMPLATE = "template_h11phwg";
+const EMAILJS_KEY      = "zsre7s7YXaXNR2_9U";
+if(window.emailjs){ try{ emailjs.init({ publicKey: EMAILJS_KEY }); }catch(e){ try{ emailjs.init(EMAILJS_KEY); }catch(e2){} } }
 
 /* ---------- Estado en memoria (cache del panel admin) ---------- */
 let STATE = { listas: [], userEmail: "" };
@@ -2290,33 +2291,31 @@ async function descargarPdfFirmante(id){
   }catch(e){ console.error(e); toast("No se pudo generar: "+(e.message||''),"err"); }
 }
 
-/* #3 — Enviar el enlace al correo del firmante por EmailJS */
+/* #3 — Envía el enlace de firma al correo del firmante (automático vía EmailJS) */
 async function enviarPorCorreo(id){
-  if(typeof emailjs === 'undefined'){ toast("Error: EmailJS no está disponible","err"); return; }
-
   const f = (docDetalleFirmantes||[]).find(x=>x.id===id);
   if(!f || !f.correo){ toast("Este firmante no tiene correo registrado","err"); return; }
-
   const link = linkFirma(f.token);
-  toast("Enviando correo…","",3000);
-
-  try{
-    const res = await emailjs.send("service_g324pxb", "template_h11phwg", {
-      to_email: f.correo,
-      to_name: f.nombre||'',
-      documento_nombre: docDetalleActual.nombre||'',
-      firma_link: link,
-      empresa: "Don Aseo Ltda."
-    });
-    if(res.status === 200){
-      toast(`✓ Correo enviado a ${f.correo}`, "ok");
-    } else {
-      toast("Error al enviar", "err");
-    }
-  }catch(e){
-    console.error("EmailJS error:", e);
-    toast("Error: "+(e.text||e.message||JSON.stringify(e)), "err");
+  if(window.emailjs && EMAILJS_SERVICE){
+    toast("Enviando correo a "+f.correo+"…","",2500);
+    try{
+      await emailjs.send(EMAILJS_SERVICE, EMAILJS_TEMPLATE, {
+        to_email: f.correo,
+        to_name: f.nombre || "",
+        email: f.correo,
+        documento_nombre: (docDetalleActual && docDetalleActual.nombre) || "",
+        firma_link: link,
+        empresa: "Don Aseo Ltda."
+      });
+      try{ if(docDetalleActual) await sb.from("doc_eventos").insert({ documento_id:docDetalleActual.id, firmante_id:f.id, tipo:'enviado', detalle:{correo:f.correo} }); }catch(e){}
+      toast("Correo enviado a "+f.correo,"ok");
+      return;
+    }catch(e){ console.error("EmailJS:", e); toast("No se pudo enviar automáticamente, abro tu correo…","err"); }
   }
+  // respaldo: abrir la app de correo del usuario
+  const asunto = encodeURIComponent("Documento para firmar — Don Aseo Ltda.");
+  const cuerpo = encodeURIComponent("Hola "+(f.nombre||"")+",\n\nTienes un documento pendiente de firma: \""+((docDetalleActual&&docDetalleActual.nombre)||"")+"\".\n\nAbre este enlace para firmarlo desde tu celular o computador:\n"+link+"\n\nGracias,\nDon Aseo Ltda.");
+  window.location.href = "mailto:"+f.correo+"?subject="+asunto+"&body="+cuerpo;
 }
 
 /* === Componer el PDF FIRMADO: estampa firma/fotos/textos en cada campo (pdf-lib) === */
