@@ -414,6 +414,10 @@ table.dt tr:hover td{background:#fafbfe}
 .tl-finalizado{background:var(--green);color:#fff}
 .tl-title{font-size:13.5px;font-weight:600;color:var(--ink)}
 .tl-time{font-size:12px;color:var(--ink-3);margin-top:1px}
+.spinner{width:36px;height:36px;border:3px solid var(--line);border-top-color:var(--brand);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+.load-box{text-align:center;padding:54px 20px}
+.load-box .muted-sm{margin-top:14px}
 .ev-imgs{display:flex;gap:14px;flex-wrap:wrap;margin-top:16px}
 .ev-img{text-align:center}
 .ev-img img{height:130px;max-width:210px;border:1px solid var(--line);border-radius:10px;background:#fff;object-fit:contain;padding:4px}
@@ -542,6 +546,8 @@ async function cargarFirmasLista(id){
 
 /* ---------- Utilidades ---------- */
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function hoyLocal(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function pdfTexto(s){ return String(s==null?'':s).replace(/[^\x09\x0A\x0D\x20-\xFF]/g,''); }
 function fmtDate(iso){
   if(!iso) return "—";
   const p = iso.split("-");
@@ -804,7 +810,7 @@ function renderGrid(){
 
 /* ---------- Crear lista ---------- */
 async function openCreateModal(){
-  const today = new Date().toISOString().slice(0,10);
+  const today = hoyLocal();
   let plantillasDoc = [];
   try{ const { data } = await sb.from("doc_plantillas").select("id,nombre").order("creada_en",{ascending:false}); plantillasDoc = data||[]; }catch(e){}
   openModal(`
@@ -1544,7 +1550,7 @@ async function loadDocsState(){
 async function renderDocsAdmin(){
   await loadDocsState();
   const docs = DOCSTATE.documentos, firmas = DOCSTATE.firmantes, plantillas = DOCSTATE.plantillas;
-  const hoy = new Date().toISOString().slice(0,10);
+  const hoy = hoyLocal();
   const creados    = docs.length;
   const enviados   = docs.filter(d=>["enviado","finalizado"].includes(d.estado)).length;
   const completas  = firmas.filter(f=>f.estado==="firmado").length;
@@ -2136,7 +2142,8 @@ function eventoTimelineHTML(eventos){
     </div>`).join('')}</div>`;
 }
 
-function verEvidencia(id){
+async function verEvidencia(id){
+  await cargarPesadoDoc();
   const f = docDetalleFirmantes.find(x=>x.id===id);
   if(!f){ toast("Evidencia no encontrada","err"); return; }
   const ev = f.evidencia||{}, gps = ev.gps, campos = ev.campos||{};
@@ -2173,30 +2180,47 @@ function verEvidencia(id){
     </div>`);
 }
 
+let _docPesadoId = null;
+
 async function abrirDocumento(id){
-  const { data:doc, error } = await sb.from("doc_documentos").select("*").eq("id",id).maybeSingle();
-  if(error||!doc){ toast("Documento no encontrado","err"); return; }
-  // Reparación: documentos viejos creados con contenido vacío → recuperarlo de la plantilla
+  // Abre el modal AL INSTANTE con una ruedita de carga
+  openModal(`<div class="modal lg"><div class="modal-body"><div class="load-box"><div class="spinner"></div><div class="muted-sm">Cargando documento…</div></div></div></div>`);
+
+  // Carga LIGERA: sin el PDF ni las imágenes de firma (eso es lo pesado) → abre rápido
+  const { data:doc, error } = await sb.from("doc_documentos")
+    .select("id,nombre,estado,fecha_limite,firma_ordenada,config,contenido,creado_en,plantilla_id,lista_id")
+    .eq("id",id).maybeSingle();
+  if(error||!doc){ closeModal(); toast("Documento no encontrado","err"); return; }
   if((!Array.isArray(doc.contenido) || !doc.contenido.length) && doc.plantilla_id){
     const { data:plFull } = await sb.from("doc_plantillas").select("contenido").eq("id", doc.plantilla_id).maybeSingle();
     if(plFull && Array.isArray(plFull.contenido)) doc.contenido = plFull.contenido;
   }
-  const { data:fdata } = await sb.from("doc_firmantes").select("*").eq("documento_id",id).order("orden",{ascending:true});
+  const { data:fdata } = await sb.from("doc_firmantes")
+    .select("id,documento_id,nombre,correo,identificacion,cargo,orden,token,estado,evidencia,firmado_en")
+    .eq("documento_id",id).order("orden",{ascending:true});
   const fs = fdata||[];
-  docDetalleFirmantes = fs;
-  docDetalleActual = doc;
   const { data:edata } = await sb.from("doc_eventos").select("*").eq("documento_id",id).order("ocurrido_en",{ascending:true});
   const eventos = edata||[];
-  const rows = fs.map((f,i)=>`
-    <tr>
+  docDetalleActual = doc; docDetalleFirmantes = fs; _docPesadoId = null;
+
+  const rows = fs.map((f,i)=>{
+    let acc;
+    if(f.estado==='firmado'){
+      acc = `<button class="btn btn-ghost btn-sm" onclick="verEvidencia('${f.id}')">${I.eye} Evidencia</button>
+             <button class="btn btn-ghost btn-sm" onclick="descargarPdfFirmante('${f.id}')">${I.pdf} PDF</button>`;
+    } else {
+      acc = `<button class="btn btn-ghost btn-sm" onclick="copiarTexto('${linkFirma(f.token)}')">${I.link} Copiar</button>`;
+      if(f.correo) acc += `<button class="btn btn-ghost btn-sm" onclick="enviarPorCorreo('${f.id}')">✉️ Correo</button>`;
+    }
+    return `<tr>
       <td>${i+1}</td>
       <td><b>${esc(f.nombre||'—')}</b>${f.correo?`<div class="muted-sm">${esc(f.correo)}</div>`:''}</td>
       <td><span class="badge ${f.estado==='firmado'?'activa':'cerrada'}"><span class="dot"></span>${f.estado==='firmado'?'Firmado':'Pendiente'}</span></td>
-      <td>${f.estado==='firmado'
-          ? `<button class="btn btn-ghost btn-sm" onclick="verEvidencia('${f.id}')">${I.eye} Ver evidencia</button>`
-          : `<button class="btn btn-ghost btn-sm" onclick="copiarTexto('${linkFirma(f.token)}')">${I.link} Copiar enlace</button>`}</td>
-    </tr>`).join("");
-  openModal(`
+      <td><div style="display:flex;gap:5px;flex-wrap:wrap">${acc}</div></td>
+    </tr>`;
+  }).join("");
+
+  document.getElementById("modalHost").innerHTML = `
     <div class="modal lg">
       <div class="modal-head"><div>
         <div style="display:flex;gap:10px;align-items:center;margin-bottom:4px">
@@ -2210,21 +2234,64 @@ async function abrirDocumento(id){
           <div class="info-item"><div class="k">Estado</div><div class="v">${estadoLabel(doc.estado)}</div></div>
           <div class="info-item"><div class="k">Fecha límite</div><div class="v">${doc.fecha_limite?fmtDate(doc.fecha_limite):'—'}</div></div>
           <div class="info-item"><div class="k">Orden de firma</div><div class="v">${doc.firma_ordenada?'Secuencial':'Cualquier orden'}</div></div>
-          <div class="info-item"><div class="k">Bloques</div><div class="v">${Array.isArray(doc.contenido)?doc.contenido.length:0}</div></div>
+          <div class="info-item"><div class="k">Campos</div><div class="v">${Array.isArray(doc.contenido)?doc.contenido.length:0}</div></div>
           <div class="info-item full"><div class="k">Seguridad activada</div><div class="v">${esc(segResumen(doc.config))}</div></div>
         </div>
         <h3 style="font-family:var(--display);font-size:16px;margin-bottom:10px">Firmantes (${fs.length})</h3>
-        ${fs.length?`<div class="table-wrap"><table class="dt"><thead><tr><th>No</th><th>Firmante</th><th>Estado</th><th>Acción</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="muted-sm">Sin firmantes registrados.</div>'}
+        ${fs.length?`<div class="table-wrap"><table class="dt"><thead><tr><th>No</th><th>Firmante</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="muted-sm">Sin firmantes registrados.</div>'}
         ${eventos.length?`<h3 style="font-family:var(--display);font-size:16px;margin:24px 0 8px">Historial de eventos</h3>${eventoTimelineHTML(eventos)}`:''}
       </div>
       <div class="modal-foot">
         <button class="btn btn-danger" onclick="eliminarDocumento('${doc.id}')">${I.trash} Eliminar</button>
         <button class="btn btn-ghost" onclick="verDocumento()">${I.eye} Ver documento</button>
-        <button class="btn btn-green" onclick="generarPDFDocumento()">${I.pdf} Generar PDF</button>
+        <button class="btn btn-green" onclick="generarPDFDocumento()">${I.pdf} PDF completo</button>
         ${doc.estado==='borrador'?`<button class="btn btn-primary" onclick="enviarDocumento('${doc.id}')">${I.check} Marcar como enviado</button>`:''}
         ${doc.estado==='enviado'?`<button class="btn btn-danger" onclick="finalizarDocumento('${doc.id}')">${I.lock} Cerrar documento</button>`:''}
       </div>
-    </div>`);
+    </div>`;
+}
+
+/* Carga bajo demanda lo pesado (PDF + imágenes de firmas) solo cuando se necesita */
+async function cargarPesadoDoc(){
+  const doc = docDetalleActual; if(!doc) return;
+  if(_docPesadoId === doc.id) return;
+  const { data:dp } = await sb.from("doc_documentos").select("pdf").eq("id",doc.id).maybeSingle();
+  if(dp) doc.pdf = dp.pdf;
+  const { data:imgs } = await sb.from("doc_firmantes").select("id,firma,selfie,foto_id").eq("documento_id",doc.id);
+  if(imgs){ const m={}; imgs.forEach(r=>m[r.id]=r); (docDetalleFirmantes||[]).forEach(f=>{ const r=m[f.id]; if(r){ f.firma=r.firma; f.selfie=r.selfie; f.foto_id=r.foto_id; } }); }
+  _docPesadoId = doc.id;
+}
+
+function descargarBlobPdf(bytes, nombre){
+  const blob = new Blob([bytes], {type:'application/pdf'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url;
+  a.download = 'Documento_'+String(nombre||'doc').replace(/[^\w\sáéíóúñ-]/gi,'').trim().replace(/\s+/g,'_').slice(0,50)+'.pdf';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 4000);
+}
+
+/* #6 — PDF de UN firmante (su copia firmada) */
+async function descargarPdfFirmante(id){
+  const f = (docDetalleFirmantes||[]).find(x=>x.id===id);
+  if(!f){ toast("Firmante no encontrado","err"); return; }
+  toast("Generando PDF…","",1500);
+  try{
+    await cargarPesadoDoc();
+    const signed = await componerPdfFirmado(docDetalleActual, [f]);
+    descargarBlobPdf(signed, (docDetalleActual.nombre||'doc')+'_'+(f.nombre||'firmante'));
+    toast("PDF generado","ok");
+  }catch(e){ console.error(e); toast("No se pudo generar: "+(e.message||''),"err"); }
+}
+
+/* #3 — Enviar el enlace al correo del firmante (abre el correo del usuario) */
+function enviarPorCorreo(id){
+  const f = (docDetalleFirmantes||[]).find(x=>x.id===id);
+  if(!f || !f.correo){ toast("Este firmante no tiene correo registrado","err"); return; }
+  const link = linkFirma(f.token);
+  const asunto = encodeURIComponent("Documento para firmar — Don Aseo Ltda.");
+  const cuerpo = encodeURIComponent("Hola "+(f.nombre||"")+",\n\nTienes un documento pendiente de firma: \""+(docDetalleActual.nombre||"")+"\".\n\nAbre este enlace para firmarlo desde tu celular o computador:\n"+link+"\n\nGracias,\nDon Aseo Ltda.");
+  window.location.href = "mailto:"+f.correo+"?subject="+asunto+"&body="+cuerpo;
 }
 
 /* === Componer el PDF FIRMADO: estampa firma/fotos/textos en cada campo (pdf-lib) === */
@@ -2262,10 +2329,29 @@ async function componerPdfFirmado(doc, firmantes){
       else if(campo.tipo==='nombre' && firmados[0]) val = firmados[0].nombre||'';
       if(val){
         let fs = Math.max(6, Math.min(h*0.62, 11));
-        page.drawText(String(val), { x:x+2, y:y+(h-fs)/2+1, size:fs, font, color:rgb(0.1,0.1,0.16) });
+        try{ page.drawText(pdfTexto(val), { x:x+2, y:y+(h-fs)/2+1, size:fs, font, color:rgb(0.1,0.1,0.16) }); }catch(e){}
       }
     }
   }
+
+  // Constancia de firma electrónica al pie de la última página (IP, fecha y hora exactas)
+  if(firmados.length){
+    const last = pages[pages.length-1];
+    const { width:lpw } = last.getSize();
+    const lineH = 8.2, baseY = 20;
+    const blockH = baseY + firmados.length*lineH + 12;
+    last.drawRectangle({ x:0, y:0, width:lpw, height:blockH, color:rgb(1,1,1), opacity:0.9 });
+    last.drawLine({ start:{x:26,y:blockH-3}, end:{x:lpw-26,y:blockH-3}, thickness:0.5, color:rgb(0.7,0.7,0.78) });
+    try{ last.drawText('Constancia de firma electrónica - Don Aseo Ltda.', { x:26, y:blockH-10, size:6.8, font, color:rgb(0.45,0.45,0.55) }); }catch(e){}
+    firmados.forEach((f,i)=>{
+      const ev=f.evidencia||{};
+      const fhRaw = ev.fecha_hora || f.firmado_en;
+      const fh = fhRaw ? new Date(fhRaw).toLocaleString('es-CO') : '-';
+      const line = pdfTexto((f.nombre||'-')+'   |   C.C. '+(f.identificacion||'-')+'   |   Firmado: '+fh+'   |   IP: '+(ev.ip||'-'));
+      try{ last.drawText(line, { x:26, y:baseY + (firmados.length-1-i)*lineH, size:6.8, font, color:rgb(0.28,0.28,0.36) }); }catch(e){}
+    });
+  }
+
   return await pdfDoc.save();
 }
 
@@ -2285,16 +2371,17 @@ async function renderPdfEnCont(src, cont){
 async function verDocumento(){
   const doc = docDetalleActual;
   if(!doc){ toast("Abre el documento primero","err"); return; }
-  if(!doc.pdf){ toast("Este documento no tiene PDF asociado","err"); return; }
   openModal(`<div class="modal lg">
     <div class="modal-head"><div><h2>${esc(doc.nombre)}</h2><p>Documento con las firmas estampadas</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body"><div class="pdf-cont" id="verPdf"><div class="muted-sm" style="text-align:center;padding:24px">Cargando documento…</div></div></div>
+    <div class="modal-body"><div class="pdf-cont" id="verPdf"><div class="load-box"><div class="spinner"></div><div class="muted-sm">Cargando documento…</div></div></div></div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="abrirDocumento('${doc.id}')">${I.back} Volver</button>
       <button class="btn btn-green" onclick="generarPDFDocumento()">${I.pdf} Descargar PDF</button>
     </div></div>`);
   try{
+    await cargarPesadoDoc();
+    if(!doc.pdf){ const c=document.getElementById('verPdf'); if(c) c.innerHTML=`<div class="muted-sm" style="text-align:center;padding:20px">Este documento no tiene PDF asociado.</div>`; return; }
     const signed = await componerPdfFirmado(doc, docDetalleFirmantes||[]);
     await renderPdfEnCont(signed, document.getElementById('verPdf'));
   }catch(e){ console.error(e); const c=document.getElementById('verPdf'); if(c) c.innerHTML=`<div class="muted-sm" style="text-align:center;padding:20px">No se pudo mostrar el documento.</div>`; }
@@ -2319,17 +2406,13 @@ function finalizarDocumento(id){
 async function generarPDFDocumento(){
   const doc = docDetalleActual;
   if(!doc){ toast("Abre el documento primero","err"); return; }
-  if(!doc.pdf){ toast("Este documento no tiene PDF asociado","err"); return; }
   if(!window.PDFLib){ toast("No se pudo cargar el generador de PDF","err"); return; }
   toast("Generando PDF…","",1500);
   try{
+    await cargarPesadoDoc();
+    if(!doc.pdf){ toast("Este documento no tiene PDF asociado","err"); return; }
     const signed = await componerPdfFirmado(doc, docDetalleFirmantes||[]);
-    const blob = new Blob([signed], {type:'application/pdf'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href=url;
-    a.download = 'Documento_'+(doc.nombre||'doc').replace(/[^\w\sáéíóúñ-]/gi,'').trim().replace(/\s+/g,'_').slice(0,40)+'.pdf';
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    descargarBlobPdf(signed, doc.nombre);
     toast("PDF generado","ok");
   }catch(e){ console.error(e); toast("No se pudo generar el PDF: "+(e.message||''),"err"); }
 }
@@ -2490,7 +2573,7 @@ async function renderFirmaPublica(token){
   if(f.estado === 'firmado'){ cont.innerHTML = pantallaFirmaOk("Ya firmaste este documento","Tu firma quedó registrada correctamente. ¡Gracias!"); return; }
   if(d.estado === 'finalizado'){ cont.innerHTML = pantallaFirmaBloqueada(I.lockBig,"Documento finalizado","Este documento ya fue completado por todos los firmantes."); return; }
   if(d.estado !== 'enviado'){ cont.innerHTML = pantallaFirmaBloqueada(I.lockBig,"Aún no habilitado","Este documento todavía no está disponible para firma."); return; }
-  if(d.fecha_limite && d.fecha_limite < new Date().toISOString().slice(0,10)){ cont.innerHTML = pantallaFirmaBloqueada(I.lockBig,"Documento vencido","La fecha límite para firmar ya pasó. Contacta al responsable."); return; }
+  if(d.fecha_limite && d.fecha_limite < hoyLocal()){ cont.innerHTML = pantallaFirmaBloqueada(I.lockBig,"Documento vencido","La fecha límite para firmar ya pasó. Contacta al responsable."); return; }
   if(!data.su_turno){ cont.innerHTML = pantallaFirmaBloqueada(I.lockBig,"Aún no es tu turno","Este documento se firma en orden. Podrás firmar cuando los firmantes anteriores completen su parte."); return; }
 
   const c = firmaState.config;
