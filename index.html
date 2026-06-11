@@ -12,6 +12,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <style>
 :root{
   --brand:#1d33c7;            /* azul corporativo */
@@ -477,7 +478,8 @@ const I = {
   doc:'<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg>',
   copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>',
   back:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>',
-  trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>'
+  trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>',
+  qr:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="5" height="5" x="3" y="3" rx="1"/><rect width="5" height="5" x="16" y="3" rx="1"/><rect width="5" height="5" x="3" y="16" rx="1"/><path d="M21 16h-3a2 2 0 0 0-2 2v3M21 21v.01M12 7v3a2 2 0 0 1-2 2H7M3 12h.01M12 3h.01M12 16v.01M16 12h1M21 12v.01M12 21v-1"/></svg>'
 };
 
 /* ============================================================
@@ -963,6 +965,31 @@ function fallbackCopy(text, cb){
   ta.remove();
 }
 
+/* ---------- Código QR ---------- */
+function mostrarQR(id){
+  const url = linkFor(id);
+  const qr = qrcode(0, 'M');
+  qr.addData(url);
+  qr.make();
+  openModal(`
+    <div class="modal" style="max-width:420px">
+      <div class="modal-head">
+        <div><h2>Código QR de registro</h2><p>Los asistentes pueden escanear para firmar</p></div>
+        <button class="close-x" onclick="closeModal()">${I.close}</button>
+      </div>
+      <div class="modal-body" style="text-align:center;padding:24px">
+        <div id="qrCont" style="display:inline-block;background:#fff;padding:16px;border-radius:16px;border:2px solid var(--line)"></div>
+        <p style="margin-top:14px;font-size:12px;color:var(--ink-3);word-break:break-all">${esc(url)}</p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
+        <button class="btn btn-primary" onclick="copyLink('${id}')">${I.copy} Copiar enlace</button>
+      </div>
+    </div>
+  `);
+  document.getElementById('qrCont').innerHTML = qr.createSvgTag(6, 0);
+}
+
 /* ---------- Detalle de lista ---------- */
 async function openDetail(id){
   const l = getList(id);
@@ -1007,7 +1034,10 @@ async function openDetail(id){
 
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px">
           <h3 style="font-family:var(--display);font-size:17px">Asistentes (${(l.asistentes||[]).length})</h3>
-          <button class="btn btn-ghost btn-sm" onclick="copyLink('${l.id}')">${I.copy} Copiar enlace de registro</button>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-ghost btn-sm" onclick="mostrarQR('${l.id}')">${I.qr} QR</button>
+            <button class="btn btn-ghost btn-sm" onclick="copyLink('${l.id}')">${I.copy} Copiar enlace</button>
+          </div>
         </div>
 
         ${(l.asistentes||[]).length ? `
@@ -1343,11 +1373,57 @@ async function registrarAsistencia(id){
 /* ============================================================
    GENERACIÓN DE PDF · Formato oficial SST-FRT-005
    ============================================================ */
+function pedirFirmaResponsable(){
+  return new Promise(resolve => {
+    let resuelta = false;
+    const done = (v) => { if(resuelta) return; resuelta = true; resolve(v); };
+    openModal(`
+      <div class="modal" style="max-width:500px">
+        <div class="modal-head">
+          <div><h2>Firma del responsable</h2><p>Para incluirla en el PDF de asistencia</p></div>
+          <button class="close-x" id="closeFirmaResp">${I.close}</button>
+        </div>
+        <div class="modal-body">
+          <div class="field" style="margin-bottom:0">
+            <label>Firma digital del responsable</label>
+            <div class="sig-box" id="sigBox">
+              <canvas id="sigCanvas"></canvas>
+              <div class="sig-placeholder" id="sigPh">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div>
+            </div>
+            <div class="sig-actions">
+              <button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn btn-ghost" id="skipFirmaResp">Omitir</button>
+          <button class="btn btn-green" id="okFirmaResp">${I.check} Aceptar y generar PDF</button>
+        </div>
+      </div>
+    `);
+    initSignature();
+    document.getElementById('sigClear').onclick = () => sigPad.clear();
+    document.getElementById('closeFirmaResp').onclick = () => { closeModal(); done(null); };
+    document.getElementById('skipFirmaResp').onclick = () => { closeModal(); done(null); };
+    document.getElementById('okFirmaResp').onclick = () => {
+      if(sigPad.isEmpty()){ toast("Registra la firma primero","err"); return; }
+      const img = sigPad.dataURL();
+      closeModal(); done(img);
+    };
+    const obs = new MutationObserver(() => {
+      if(!document.getElementById('overlay').classList.contains('open')){ obs.disconnect(); done(null); }
+    });
+    obs.observe(document.getElementById('overlay'), { attributes: true, attributeFilter: ['class'] });
+  });
+}
+
 async function generarPDF(id){
   const l = getList(id);
   if(!l){ toast("Lista no encontrada","err"); return; }
   if(!window.jspdf || !window.jspdf.jsPDF){ toast("No se pudo cargar el generador de PDF (revisa tu conexión)","err"); return; }
   await cargarFirmasLista(id);
+
+  const firmaResp = await pedirFirmaResponsable();
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({unit:"mm", format:"a4"});
@@ -1506,6 +1582,7 @@ async function generarPDF(id){
     doc.setFontSize(8.4); doc.setTextColor(20,20,20); doc.setFont("helvetica","normal");
     doc.text(doc.splitTextToSize(l.responsableNombre||"", w-4), M+2, y+11);
     doc.text(doc.splitTextToSize(l.responsableCargo||"", w-4), M+w+2, y+11);
+    if(firmaResp){ try{ doc.addImage(firmaResp, "PNG", M+2*w+2, y+5, w-4, 12); }catch(e){} }
     y+=18+6;
 
     doc.setFontSize(6.6); doc.setTextColor(140,140,160);
