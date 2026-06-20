@@ -12,6 +12,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
 :root{
   --brand:#1d33c7;            /* azul corporativo */
@@ -476,6 +477,7 @@ const I = {
   pen:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19 7-7 3 3-7 7-3-3z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18z"/><path d="m2 2 7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>',
   doc:'<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg>',
   copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>',
+  qr:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v7h-7"/></svg>',
   back:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>',
   trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>'
 };
@@ -799,6 +801,7 @@ function renderGrid(){
           <div class="card-actions">
             <button class="icon-btn" title="Ver detalle" data-act="ver" data-id="${l.id}">${I.eye}</button>
             <button class="icon-btn" title="Copiar enlace" data-act="link" data-id="${l.id}">${I.link}</button>
+            <button class="icon-btn" title="Compartir QR" data-act="qr" data-id="${l.id}">${I.qr}</button>
             <button class="icon-btn" title="Generar PDF" data-act="pdf" data-id="${l.id}">${I.pdf}</button>
             <button class="icon-btn danger" title="Eliminar lista" data-act="del" data-id="${l.id}">${I.trash}</button>
           </div>
@@ -811,7 +814,8 @@ function renderGrid(){
       const id=b.dataset.id, act=b.dataset.act;
       if(act==="ver") openDetail(id);
       else if(act==="link") copyLink(id);
-      else if(act==="pdf") generarPDF(id);
+      else if(act==="qr") mostrarQR(linkFor(id), "Registro de asistencia");
+      else if(act==="pdf") firmarYGenerarPDF(id);
       else if(act==="del") eliminarLista(id);
     };
   });
@@ -988,7 +992,10 @@ async function openDetail(id){
 
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px">
           <h3 style="font-family:var(--display);font-size:17px">Asistentes (${(l.asistentes||[]).length})</h3>
-          <button class="btn btn-ghost btn-sm" onclick="copyLink('${l.id}')">${I.copy} Copiar enlace de registro</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" onclick="copyLink('${l.id}')">${I.copy} Copiar enlace</button>
+            <button class="btn btn-ghost btn-sm" onclick="mostrarQR(linkFor('${l.id}'),'Registro de asistencia')">${I.qr} Código QR</button>
+          </div>
         </div>
 
         ${(l.asistentes||[]).length ? `
@@ -1012,7 +1019,7 @@ async function openDetail(id){
         <button class="btn btn-danger" onclick="eliminarLista('${l.id}')">${I.trash} Eliminar</button>
         ${act?`<button class="btn btn-danger" onclick="cerrarLista('${l.id}')">${I.lock} Cerrar lista</button>`:""}
         <button class="btn btn-ghost" onclick="window.open('${linkFor(l.id)}','_blank')">${I.eye} Abrir formulario</button>
-        <button class="btn btn-green" onclick="generarPDF('${l.id}')">${I.pdf} Generar PDF</button>
+        <button class="btn btn-green" onclick="firmarYGenerarPDF('${l.id}')">${I.pdf} Generar PDF</button>
       </div>
     </div>
   `);
@@ -1312,7 +1319,49 @@ async function registrarAsistencia(id){
 /* ============================================================
    GENERACIÓN DE PDF · Formato oficial SST-FRT-005
    ============================================================ */
-async function generarPDF(id){
+/* Pide (o reutiliza) la firma del responsable antes de generar el PDF de asistencia */
+async function firmarYGenerarPDF(id){
+  const l = getList(id); if(!l){ toast("Lista no encontrada","err"); return; }
+  let guardada = null;
+  try{ const {data} = await sb.from("asis_listas").select("responsable_firma").eq("id",id).maybeSingle(); guardada = data && data.responsable_firma; }catch(e){}
+  openModal(`<div class="modal" style="max-width:520px">
+    <div class="modal-head"><div><h2>Firma del responsable</h2><p>${esc(l.responsableNombre||'—')}${l.responsableCargo?' · '+esc(l.responsableCargo):''}</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <p class="muted-sm" style="margin-bottom:10px">La firma del responsable queda estampada en el PDF.</p>
+      ${guardada?`<div id="firmaGuardada" style="text-align:center;margin-bottom:12px"><img src="${guardada}" style="height:80px;max-width:100%;border:1px solid var(--line);border-radius:8px;background:#fff;padding:4px"><div class="muted-sm" style="margin-top:6px">Firma guardada del responsable</div></div>`:''}
+      <div id="padWrap" style="${guardada?'display:none':''}">
+        <div class="sig-box" id="sigBox"><canvas id="sigCanvas"></canvas><div class="sig-placeholder" id="sigPh">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div></div>
+        <div class="sig-actions"><button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar</button></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="btnSinFirma">Generar sin firma</button>
+      ${guardada?`<button class="btn btn-ghost" id="btnReFirmar">Firmar de nuevo</button>`:''}
+      <button class="btn btn-green" id="btnFirmarGen">${I.check} Generar PDF</button>
+    </div></div>`);
+  let usarPad = !guardada;
+  if(usarPad){ initSignature(); document.getElementById('sigClear').onclick=()=>sigPad.clear(); }
+  const reBtn = document.getElementById('btnReFirmar');
+  if(reBtn) reBtn.onclick = ()=>{
+    const fg=document.getElementById('firmaGuardada'); if(fg) fg.style.display='none';
+    document.getElementById('padWrap').style.display='block'; usarPad=true; reBtn.style.display='none';
+    initSignature(); document.getElementById('sigClear').onclick=()=>sigPad.clear();
+  };
+  document.getElementById('btnSinFirma').onclick = ()=>{ closeModal(); generarPDF(id, null); };
+  document.getElementById('btnFirmarGen').onclick = async ()=>{
+    let firma = guardada;
+    if(usarPad){
+      if(!sigPad || sigPad.isEmpty()){ toast("Firma primero, o usa 'Generar sin firma'","err"); return; }
+      firma = sigPad.dataURL();
+      try{ await sb.from("asis_listas").update({ responsable_firma:firma }).eq("id",id); }catch(e){}
+    }
+    closeModal();
+    generarPDF(id, firma);
+  };
+}
+
+async function generarPDF(id, firmaResp){
   const l = getList(id);
   if(!l){ toast("Lista no encontrada","err"); return; }
   if(!window.jspdf || !window.jspdf.jsPDF){ toast("No se pudo cargar el generador de PDF (revisa tu conexión)","err"); return; }
@@ -1475,6 +1524,7 @@ async function generarPDF(id){
     doc.setFontSize(8.4); doc.setTextColor(20,20,20); doc.setFont("helvetica","normal");
     doc.text(doc.splitTextToSize(l.responsableNombre||"", w-4)[0]||"", M+2, fy+11);
     doc.text(doc.splitTextToSize(l.responsableCargo||"", w-4)[0]||"", M+w+2, fy+11);
+    if(firmaResp){ try{ doc.addImage(firmaResp,'PNG', M+2*w+2, fy+5, w-4, 9); }catch(e){} }
 
     doc.setFontSize(6.6); doc.setTextColor(140,140,160);
     doc.text("Generado el "+fmtDateTime(new Date())+" · Sistema Digital "+CODIGO+" · Don Aseo Ltda.", PW/2, 293, {align:"center"});
@@ -1958,6 +2008,31 @@ function copiarTexto(t){
   else fallbackCopy(t,done);
 }
 
+/* Compartir por QR (cliente, no envía el enlace a terceros) */
+function mostrarQR(url, titulo){
+  openModal(`<div class="modal" style="max-width:380px">
+    <div class="modal-head"><div><h2>${esc(titulo||'Compartir')}</h2><p>Escanea el código para abrir el enlace</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body" style="text-align:center">
+      <div id="qrBox" style="display:inline-block;padding:12px;background:#fff;border-radius:14px;border:1px solid var(--line)"></div>
+      <div class="muted-sm" style="margin-top:12px;word-break:break-all">${esc(url)}</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="qrCopiar">${I.copy} Copiar enlace</button>
+      <button class="btn btn-green" id="qrDescargar">${I.pdf} Descargar QR</button>
+    </div></div>`);
+  const box = document.getElementById('qrBox');
+  try{ box.innerHTML=''; new QRCode(box, { text:url, width:224, height:224, correctLevel: QRCode.CorrectLevel.M }); }
+  catch(e){ box.innerHTML='<div class="muted-sm" style="padding:30px">No se pudo generar el QR.</div>'; }
+  document.getElementById('qrCopiar').onclick = ()=> copiarTexto(url);
+  document.getElementById('qrDescargar').onclick = ()=>{
+    const cv = box.querySelector('canvas'), img = box.querySelector('img');
+    const dataUrl = cv ? cv.toDataURL('image/png') : (img ? img.src : null);
+    if(!dataUrl){ toast("QR no disponible","err"); return; }
+    const a=document.createElement('a'); a.href=dataUrl; a.download='QR_DonAseo.png'; document.body.appendChild(a); a.click(); a.remove();
+  };
+}
+
 /* ---------- Integración con Asistencia (Fase 6) ---------- */
 let prefillDoc = null;        // {firmantes, nombre, plantillaId, listaId}
 let currentDocListaId = null; // vínculo a la lista de asistencia durante la edición
@@ -2186,6 +2261,7 @@ async function abrirDocumento(id){
              <button class="btn btn-ghost btn-sm" onclick="descargarPdfFirmante('${f.id}')">${I.pdf} PDF</button>`;
     } else {
       acc = `<button class="btn btn-ghost btn-sm" onclick="copiarTexto('${linkFirma(f.token)}')">${I.link} Copiar</button>`;
+      acc += `<button class="btn btn-ghost btn-sm" onclick="mostrarQR('${linkFirma(f.token)}','Firma del documento')">${I.qr} QR</button>`;
       if(f.correo) acc += `<button class="btn btn-ghost btn-sm" onclick="enviarPorCorreo('${f.id}')">✉️ Correo</button>`;
     }
     return `<tr>
