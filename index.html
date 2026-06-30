@@ -568,6 +568,7 @@ function fmtDateTime(d){
   return dt.toLocaleDateString("es-CO") + " · " + dt.toLocaleTimeString("es-CO",{hour:'2-digit',minute:'2-digit'});
 }
 function linkFor(id){ return location.href.split("#")[0] + "#/lista/" + id; }
+function linkResponsable(id){ return location.href.split("#")[0] + "#/responsable/" + id; }
 
 /* ---------- Toast ---------- */
 function toast(msg, type){
@@ -599,7 +600,7 @@ document.getElementById("overlay").addEventListener("mousedown", e=>{
    ROUTER
    ============================================================ */
 function esRutaPublica(){
-  return location.hash.startsWith("#/lista/") || location.hash.startsWith("#/firmar/");
+  return location.hash.startsWith("#/lista/") || location.hash.startsWith("#/firmar/") || location.hash.startsWith("#/responsable/");
 }
 
 async function router(){
@@ -608,6 +609,8 @@ async function router(){
   if(mLista){ await renderPublic(decodeURIComponent(mLista[1])); return; }
   const mFirmar = location.hash.match(/^#\/firmar\/(.+)$/);
   if(mFirmar){ await renderFirmaPublica(decodeURIComponent(mFirmar[1])); return; }
+  const mResp = location.hash.match(/^#\/responsable\/(.+)$/);
+  if(mResp){ await renderFirmaResponsable(decodeURIComponent(mResp[1])); return; }
   // ----- Rutas de ADMINISTRACIÓN (requieren sesión) -----
   const { data:{ session } } = await sb.auth.getSession();
   if(!session){ renderLogin(); return; }
@@ -941,6 +944,12 @@ function copyLink(id){
     navigator.clipboard.writeText(url).then(done).catch(()=>fallbackCopy(url,done));
   } else fallbackCopy(url,done);
 }
+function copyText(text, msg){
+  const done = ()=> toast(msg||"Copiado al portapapeles","ok");
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(done).catch(()=>fallbackCopy(text,done));
+  } else fallbackCopy(text,done);
+}
 function fallbackCopy(text, cb){
   const ta=document.createElement("textarea"); ta.value=text; ta.style.position="fixed"; ta.style.opacity="0";
   document.body.appendChild(ta); ta.select();
@@ -963,6 +972,7 @@ async function openDetail(id){
       <td>${esc(a.area||"—")}</td>
       <td>${esc(a.fecha)} ${esc(a.hora)}</td>
       <td>${a.firma?`<img class="sig-thumb" src="${a.firma}" alt="firma">`:'<span class="muted-sm">—</span>'}</td>
+      <td style="text-align:center"><button class="btn btn-ghost btn-sm" title="Eliminar registro" onclick="eliminarAsistente('${a.id}','${l.id}','${esc(a.nombre).replace(/'/g,"\\'")}')">${I.trash}</button></td>
     </tr>`).join("");
 
   openModal(`
@@ -995,13 +1005,15 @@ async function openDetail(id){
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn btn-ghost btn-sm" onclick="copyLink('${l.id}')">${I.copy} Copiar enlace</button>
             <button class="btn btn-ghost btn-sm" onclick="mostrarQR(linkFor('${l.id}'),'Registro de asistencia')">${I.qr} Código QR</button>
+            <button class="btn btn-ghost btn-sm" onclick="copyText(linkResponsable('${l.id}'),'Enlace de firma del responsable copiado')">${I.pen} Enlace responsable</button>
+            <button class="btn btn-ghost btn-sm" onclick="mostrarQR(linkResponsable('${l.id}'),'Firma del responsable')">${I.qr} QR responsable</button>
           </div>
         </div>
 
         ${(l.asistentes||[]).length ? `
         <div class="table-wrap">
           <table class="dt">
-            <thead><tr><th>No</th><th>Nombre</th><th>Documento</th><th>Cargo</th><th>Área</th><th>Fecha / Hora</th><th>Firma</th></tr></thead>
+            <thead><tr><th>No</th><th>Nombre</th><th>Documento</th><th>Cargo</th><th>Área</th><th>Fecha / Hora</th><th>Firma</th><th></th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
         </div>` : `
@@ -1023,6 +1035,39 @@ async function openDetail(id){
       </div>
     </div>
   `);
+}
+
+/* ---------- Eliminar un asistente (libera su cédula para volver a registrarse) ---------- */
+function eliminarAsistente(aid, listaId, nombre){
+  openModal(`
+    <div class="modal" style="max-width:440px">
+      <div class="modal-head">
+        <div><h2>Eliminar registro</h2><p>El asistente podrá volver a registrar su asistencia.</p></div>
+        <button class="close-x" onclick="closeModal()">${I.close}</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:14.5px;color:var(--ink-2)">Vas a eliminar el registro de <b>${esc(nombre||"este asistente")}</b>. Su firma se borrará y su documento quedará <b>libre</b> para registrarse de nuevo. Esta acción no se puede deshacer.</p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-danger" id="confDelAsist">${I.trash} Sí, eliminar</button>
+      </div>
+    </div>
+  `);
+  document.getElementById("confDelAsist").onclick = async ()=>{
+    const btn = document.getElementById("confDelAsist");
+    btn.disabled = true; btn.innerHTML = "Eliminando…";
+    const { error } = await sb.from("asis_asistentes").delete().eq("id", aid);
+    if(error){
+      btn.disabled = false; btn.innerHTML = `${I.trash} Sí, eliminar`;
+      toast("No se pudo eliminar: "+error.message,"err");
+      return;
+    }
+    await loadState();
+    closeModal();
+    openDetail(listaId);
+    toast("Registro eliminado","ok");
+  };
 }
 
 /* ---------- Cerrar lista ---------- */
@@ -1279,13 +1324,24 @@ async function registrarAsistencia(id){
   if(!ok){ toast("Completa los campos y la firma","err"); return; }
 
   const nombre = g("p_nombre").value.trim();
+  const documento = g("p_doc").value.trim();
   const btn = g("pRegistrar");
   btn.disabled = true; btn.innerHTML = "Registrando…";
+
+  // Bloqueo por cédula: si ya está registrado en esta lista, no permitir de nuevo
+  try{
+    const ya = await sb.rpc("asis_ya_registrado",{ p_lista:id, p_doc:documento });
+    if(ya && ya.data===true){
+      btn.disabled = false; btn.innerHTML = `${I.check} Registrar asistencia`;
+      mostrarYaRegistrado(documento);
+      return;
+    }
+  }catch(e){ /* si la RPC no existe aún, el RLS igual bloquea el duplicado */ }
 
   const { error } = await sb.from("asis_asistentes").insert({
     lista_id: id,
     nombre,
-    documento: g("p_doc").value.trim(),
+    documento,
     cargo: g("p_cargo").value.trim(),
     area: g("p_area").value.trim() || null,
     firma: sigPad.dataURL()
@@ -1293,8 +1349,10 @@ async function registrarAsistencia(id){
 
   if(error){
     btn.disabled = false; btn.innerHTML = `${I.check} Registrar asistencia`;
+    const dup = /asis_ya_registrado|duplicad|unique|ya_registrado/i.test(error.message||"");
     const cerrada = /row-level security|violates|policy/i.test(error.message||"");
-    toast(cerrada ? "Esta lista fue cerrada y ya no acepta registros." : ("No se pudo registrar: "+error.message), "err");
+    if(dup){ mostrarYaRegistrado(documento); return; }
+    toast(cerrada ? "Este documento ya fue registrado, o la lista fue cerrada." : ("No se pudo registrar: "+error.message), "err");
     return;
   }
 
@@ -1314,6 +1372,104 @@ async function registrarAsistencia(id){
     </div>`;
   document.getElementById("otra").onclick = ()=> renderPublic(id);
   toast("Asistencia registrada","ok");
+}
+
+/* Pantalla: este documento ya registró asistencia en esta lista */
+function mostrarYaRegistrado(documento){
+  const body = document.getElementById("pubBody");
+  if(!body) return;
+  const lid = publicList ? publicList.id : "";
+  body.innerHTML = `
+    <div class="locked-screen">
+      <div class="ic">${I.lockBig}</div>
+      <h2>Ya estás registrado</h2>
+      <p>El documento <b>${esc(documento||"")}</b> ya tiene una asistencia registrada en esta lista. No es necesario firmar de nuevo.</p>
+      <p class="muted-sm" style="margin-top:8px">Si necesitas corregir tu registro, pídele al responsable que elimine tu registro para poder hacerlo nuevamente.</p>
+      <div style="margin-top:22px"><button class="btn btn-green" onclick="renderPublic('${lid}')">${I.plus} Registrar otra persona</button></div>
+    </div>`;
+  toast("Este documento ya estaba registrado","err");
+}
+
+/* ============================================================
+   VISTA PÚBLICA · FIRMA DEL RESPONSABLE (persona externa, sin login)
+   ============================================================ */
+async function renderFirmaResponsable(id){
+  document.body.style.overflow="";
+  const host = document.getElementById("app");
+  const { data:row } = await sb.from("asis_listas").select("id,actividad,fecha,lugar,responsable_nombre,responsable_cargo,responsable_firma").eq("id", id).maybeSingle();
+  if(!row){
+    host.innerHTML = `<div class="pub-wrap"><div class="pub-card"><div class="locked-screen">
+      <div class="ic">${I.lockBig}</div><h2>Enlace no válido</h2>
+      <p>Este enlace de firma no corresponde a ninguna lista.</p></div></div></div>`;
+    return;
+  }
+  const l = rowToList(row);
+  const yaFirmo = !!row.responsable_firma;
+
+  host.innerHTML = `
+    <div class="pub-wrap">
+      <div class="pub-card">
+        ${pubHeader(l)}
+        <div class="pub-body" id="respBody">
+          <div class="pub-logo">
+            <img src="${LOGO}" alt="Don Aseo Ltda.">
+            <div><div class="pt1">Don Aseo Ltda.</div><div class="pt2">NIT 812.000.152-7 · ${CODIGO}</div></div>
+          </div>
+          <div style="background:#f4f6fc;border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:16px">
+            <div class="muted-sm">Firma como responsable de la actividad</div>
+            <div style="font-weight:700;font-size:16px;margin-top:2px">${esc(l.responsableNombre||"Responsable")}</div>
+            ${l.responsableCargo?`<div class="muted-sm">${esc(l.responsableCargo)}</div>`:''}
+          </div>
+          ${yaFirmo?`<div style="text-align:center;margin-bottom:14px">
+            <img src="${row.responsable_firma}" style="height:90px;max-width:100%;border:1px solid var(--line);border-radius:8px;background:#fff;padding:6px">
+            <div class="muted-sm" style="margin-top:6px">Ya hay una firma registrada. Puedes reemplazarla firmando de nuevo.</div>
+          </div>`:''}
+          <div class="field" style="margin-bottom:8px">
+            <label>Firma del responsable *</label>
+            <div class="sig-box" id="sigBox">
+              <canvas id="sigCanvas"></canvas>
+              <div class="sig-placeholder" id="sigPh">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div>
+            </div>
+            <div class="err" id="sigErr">Por favor registra la firma.</div>
+            <div class="sig-actions">
+              <button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar firma</button>
+            </div>
+          </div>
+          <button class="btn btn-green" id="rGuardar" style="width:100%;padding:14px;margin-top:8px">${I.check} Guardar firma</button>
+        </div>
+      </div>
+    </div>`;
+
+  initSignature();
+  document.getElementById("sigClear").onclick = ()=>{ sigPad.clear(); };
+  document.getElementById("rGuardar").onclick = ()=> guardarFirmaResponsable(id);
+}
+
+async function guardarFirmaResponsable(id){
+  const sigErr = document.getElementById("sigErr");
+  if(sigPad.isEmpty()){ sigErr.style.display="block"; toast("Registra la firma primero","err"); return; }
+  sigErr.style.display="none";
+  const btn = document.getElementById("rGuardar");
+  btn.disabled = true; btn.innerHTML = "Guardando…";
+  let ok=false, msg="";
+  try{
+    const { data, error } = await sb.rpc("asis_firmar_responsable",{ p_lista:id, p_firma:sigPad.dataURL() });
+    if(error){ msg=error.message; }
+    else if(data && data.ok===false){ msg = data.motivo||"no_guardado"; }
+    else { ok=true; }
+  }catch(e){ msg = e.message||"error"; }
+  if(!ok){
+    btn.disabled = false; btn.innerHTML = `${I.check} Guardar firma`;
+    toast("No se pudo guardar la firma: "+msg,"err");
+    return;
+  }
+  document.getElementById("respBody").innerHTML = `
+    <div class="success-screen">
+      <div class="ic">${I.checkBig}</div>
+      <h2>¡Firma registrada!</h2>
+      <p>Gracias. La firma del responsable quedó guardada y se incluirá en el PDF de la lista de asistencia.</p>
+    </div>`;
+  toast("Firma del responsable guardada","ok");
 }
 
 /* ============================================================
