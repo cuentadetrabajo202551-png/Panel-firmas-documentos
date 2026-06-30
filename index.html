@@ -1480,6 +1480,8 @@ async function firmarYGenerarPDF(id){
   const l = getList(id); if(!l){ toast("Lista no encontrada","err"); return; }
   let guardada = null;
   try{ const {data} = await sb.from("asis_listas").select("responsable_firma").eq("id",id).maybeSingle(); guardada = data && data.responsable_firma; }catch(e){}
+  // Si el responsable ya firmó (por enlace/QR o antes), generar el PDF directo sin ventana.
+  if(guardada){ generarPDF(id, guardada); return; }
   openModal(`<div class="modal" style="max-width:520px">
     <div class="modal-head"><div><h2>Firma del responsable</h2><p>${esc(l.responsableNombre||'—')}${l.responsableCargo?' · '+esc(l.responsableCargo):''}</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
