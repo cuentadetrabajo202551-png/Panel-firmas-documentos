@@ -420,6 +420,16 @@ table.dt tr:hover td{background:#fafbfe}
 @keyframes spin{to{transform:rotate(360deg)}}
 .load-box{text-align:center;padding:54px 20px}
 .load-box .muted-sm{margin-top:14px}
+
+/* ---------- Bloqueo de pantalla global (a prueba de clic) ---------- */
+#loadScreen{position:fixed;inset:0;z-index:300;display:none;align-items:center;justify-content:center;
+  background:rgba(14,23,51,.34);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}
+#loadScreen.on{display:flex;animation:fadeIn .12s ease}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+#loadScreen .ls-card{background:var(--card,#fff);border:1px solid var(--line);border-radius:16px;
+  padding:26px 34px;box-shadow:0 18px 50px rgba(14,23,51,.28);display:flex;flex-direction:column;
+  align-items:center;gap:14px;min-width:180px}
+#loadScreen .ls-msg{font-size:14px;color:var(--ink-2);font-weight:600;text-align:center}
 .ev-imgs{display:flex;gap:14px;flex-wrap:wrap;margin-top:16px}
 .ev-img{text-align:center}
 .ev-img img{height:130px;max-width:210px;border:1px solid var(--line);border-radius:10px;background:#fff;object-fit:contain;padding:4px}
@@ -427,6 +437,11 @@ table.dt tr:hover td{background:#fafbfe}
 
 /* ---------- Integración asistencia (Fase 6) ---------- */
 .doc-cta{margin-top:16px;padding:13px 16px;border:1px solid var(--brand-soft2);border-radius:12px;background:var(--brand-soft);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:13px;color:var(--brand-deep)}
+.resp-firma{margin-top:16px;padding:12px 16px;border:1px solid var(--line);border-radius:12px;background:var(--card,#fff);display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.resp-firma .rf-info{flex:1;min-width:140px}
+.resp-firma .rf-k{font-size:12px;color:var(--ink-3);font-weight:600;text-transform:uppercase;letter-spacing:.3px}
+.resp-firma .rf-v{font-size:14px;color:var(--ink);font-weight:600;margin-top:2px}
+.resp-firma .rf-img{height:56px;max-width:160px;object-fit:contain;border:1px solid var(--line);border-radius:8px;background:#fff;padding:3px}
 .chip-sol{display:inline-block;background:var(--brand);color:#fff;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:999px;letter-spacing:.03em;vertical-align:middle}
 </style>
 </head>
@@ -437,6 +452,9 @@ table.dt tr:hover td{background:#fafbfe}
 
 <!-- Overlay / modales se inyectan dinámicamente -->
 <div class="overlay" id="overlay"><div id="modalHost"></div></div>
+
+<!-- Bloqueo de pantalla con reloj de arena (a prueba de clic) -->
+<div id="loadScreen"><div class="ls-card"><div class="spinner"></div><div class="ls-msg" id="loadMsg">Cargando…</div></div></div>
 
 <script>
 /* ============================================================
@@ -510,6 +528,7 @@ function rowToList(r){
     actividad:r.actividad, tipo:r.tipo, fecha:r.fecha, duracion:r.duracion,
     centroTrabajo:r.centro_trabajo, lugar:r.lugar, temas:r.temas,
     responsableNombre:r.responsable_nombre, responsableCargo:r.responsable_cargo,
+    responsableFirma:r.responsable_firma,
     observaciones:r.observaciones, estado:r.estado,
     creadaEn:r.creada_en, cerradaEn:r.cerrada_en,
     solicitarDoc:r.solicitar_doc, docPlantillaId:r.doc_plantilla_id, asistentes:[]
@@ -581,6 +600,29 @@ function toast(msg, type){
   setTimeout(()=>{ t.style.transition=".3s"; t.style.opacity="0"; t.style.transform="translateY(10px)"; setTimeout(()=>t.remove(),300); }, 2600);
 }
 
+/* ---------- Bloqueo de pantalla con reloj de arena (a prueba de clic) ---------- */
+let _loadCount = 0;
+function bloquear(msg){
+  _loadCount++;
+  const ls = document.getElementById("loadScreen");
+  const lm = document.getElementById("loadMsg");
+  if(lm) lm.textContent = msg || "Cargando…";
+  if(ls) ls.classList.add("on");
+}
+function desbloquear(){
+  _loadCount = Math.max(0, _loadCount - 1);
+  if(_loadCount === 0){
+    const ls = document.getElementById("loadScreen");
+    if(ls) ls.classList.remove("on");
+  }
+}
+/* Envuelve una promesa mostrando el bloqueo mientras se resuelve */
+async function conBloqueo(msg, fn){
+  bloquear(msg);
+  try{ return await fn(); }
+  finally{ desbloquear(); }
+}
+
 /* ---------- Modal helpers ---------- */
 function openModal(html){
   document.getElementById("modalHost").innerHTML = html;
@@ -623,7 +665,8 @@ async function router(){
     else if(mEditDoc){ await renderEditarDocumento(decodeURIComponent(mEditDoc[1])); }
     else { await renderDocsAdmin(); }   // MÓDULO: Documentos y Firmas
   } else {
-    await loadState();
+    bloquear("Cargando…");
+    try{ await loadState(); } finally{ desbloquear(); }
     renderAdmin();                    // MÓDULO: Asistencia (existente, intacto)
   }
 }
@@ -961,7 +1004,12 @@ function fallbackCopy(text, cb){
 async function openDetail(id){
   const l = getList(id);
   if(!l) return;
-  await cargarFirmasLista(id);
+  bloquear("Abriendo lista…");
+  try{
+    await cargarFirmasLista(id);
+    try{ const {data} = await sb.from("asis_listas").select("responsable_firma").eq("id",id).maybeSingle(); l.responsableFirma = data ? data.responsable_firma : l.responsableFirma; }catch(e){}
+  }
+  finally{ desbloquear(); }
   const act = l.estado==="activa";
   const rows = (l.asistentes||[]).map((a,i)=>`
     <tr>
@@ -1022,6 +1070,16 @@ async function openDetail(id){
           <h3>Sin asistentes aún</h3>
           <p>Comparte el enlace de registro para que las personas firmen su asistencia.</p>
         </div>`}
+        ${l.responsableFirma ? `
+        <div class="resp-firma">
+          <div class="rf-info">
+            <div class="rf-k">Firma del responsable</div>
+            <div class="rf-v">${esc(l.responsableNombre||"Responsable")}${l.responsableCargo?` · ${esc(l.responsableCargo)}`:""}</div>
+          </div>
+          <img class="rf-img" src="${l.responsableFirma}" alt="firma del responsable">
+          <button class="btn btn-ghost btn-sm" title="Eliminar firma del responsable" onclick="eliminarFirmaResponsable('${l.id}')">${I.trash} Eliminar firma</button>
+        </div>` : ""}
+
         ${(l.asistentes||[]).length ? `<div class="doc-cta">
           <div>${l.solicitarDoc?'<span class="chip-sol">Solicitado</span> ':''}<b>¿Necesitas firmas?</b> Genera un documento (acta, compromiso, consentimiento…) con estos ${(l.asistentes||[]).length} asistentes como firmantes.</div>
           <button class="btn btn-primary btn-sm" onclick="generarDocDesdeAsistencia('${l.id}')">${I.doc} Generar documento</button>
@@ -1067,6 +1125,39 @@ function eliminarAsistente(aid, listaId, nombre){
     closeModal();
     openDetail(listaId);
     toast("Registro eliminado","ok");
+  };
+}
+
+/* ---------- Eliminar la firma del responsable (queda libre para volver a firmar) ---------- */
+function eliminarFirmaResponsable(listaId){
+  openModal(`
+    <div class="modal" style="max-width:440px">
+      <div class="modal-head">
+        <div><h2>Eliminar firma del responsable</h2><p>El responsable podrá volver a firmar.</p></div>
+        <button class="close-x" onclick="closeModal()">${I.close}</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:14.5px;color:var(--ink-2)">Se borrará la firma guardada del responsable. Podrás pedirle que firme de nuevo con el enlace/QR, o firmar al generar el PDF. Esta acción no se puede deshacer.</p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-danger" id="confDelFirmaResp">${I.trash} Sí, eliminar</button>
+      </div>
+    </div>
+  `);
+  document.getElementById("confDelFirmaResp").onclick = async ()=>{
+    const btn = document.getElementById("confDelFirmaResp");
+    btn.disabled = true; btn.innerHTML = "Eliminando…";
+    const { error } = await sb.from("asis_listas").update({ responsable_firma:null }).eq("id", listaId);
+    if(error){
+      btn.disabled = false; btn.innerHTML = `${I.trash} Sí, eliminar`;
+      toast("No se pudo eliminar: "+error.message,"err");
+      return;
+    }
+    const l = getList(listaId); if(l) l.responsableFirma = null;
+    closeModal();
+    openDetail(listaId);
+    toast("Firma del responsable eliminada","ok");
   };
 }
 
@@ -1523,6 +1614,8 @@ async function generarPDF(id, firmaResp){
   const l = getList(id);
   if(!l){ toast("Lista no encontrada","err"); return; }
   if(!window.jspdf || !window.jspdf.jsPDF){ toast("No se pudo cargar el generador de PDF (revisa tu conexión)","err"); return; }
+  bloquear("Generando PDF…");
+  try{
   await cargarFirmasLista(id);
 
   const { jsPDF } = window.jspdf;
@@ -1709,6 +1802,7 @@ async function generarPDF(id, firmaResp){
   const safe = (l.actividad||"asistencia").replace(/[^\w\sáéíóúñ-]/gi,"").trim().replace(/\s+/g,"_").slice(0,40);
   doc.save("Asistencia_"+safe+"_"+(l.fecha||"")+".pdf");
   toast("PDF generado","ok");
+  }finally{ desbloquear(); }
 }
 
 /* ============================================================
@@ -1732,7 +1826,8 @@ async function loadDocsState(){
 }
 
 async function renderDocsAdmin(){
-  await loadDocsState();
+  bloquear("Cargando documentos…");
+  try{ await loadDocsState(); } finally{ desbloquear(); }
   const docs = DOCSTATE.documentos, firmas = DOCSTATE.firmantes, plantillas = DOCSTATE.plantillas;
   const hoy = hoyLocal();
   const creados    = docs.length;
@@ -2206,7 +2301,8 @@ function generarDocDesdeAsistencia(listaId){
 }
 
 async function renderCrearDocumento(){
-  await loadDocsState();
+  bloquear("Cargando…");
+  try{ await loadDocsState(); } finally{ desbloquear(); }
   const plantillas = DOCSTATE.plantillas;
   if(!plantillas.length){
     document.getElementById("app").innerHTML = `${topbar('docs')}
@@ -2486,13 +2582,14 @@ function descargarBlobPdf(bytes, nombre){
 async function descargarPdfFirmante(id){
   const f = (docDetalleFirmantes||[]).find(x=>x.id===id);
   if(!f){ toast("Firmante no encontrado","err"); return; }
-  toast("Generando PDF…","",1500);
+  bloquear("Generando PDF…");
   try{
     await cargarPesadoDoc();
     const signed = await componerPdfFirmado(docDetalleActual, [f]);
     descargarBlobPdf(signed, (docDetalleActual.nombre||'doc')+'_'+(f.nombre||'firmante'));
     toast("PDF generado","ok");
   }catch(e){ console.error(e); toast("No se pudo generar: "+(e.message||''),"err"); }
+  finally{ desbloquear(); }
 }
 
 /* #3 — Envía el enlace de firma al correo del firmante (automático vía EmailJS) */
@@ -2742,7 +2839,7 @@ async function generarPDFDocumento(){
   const doc = docDetalleActual;
   if(!doc){ toast("Abre el documento primero","err"); return; }
   if(!window.PDFLib){ toast("No se pudo cargar el generador de PDF","err"); return; }
-  toast("Generando PDF…","",1500);
+  bloquear("Generando PDF…");
   try{
     await cargarPesadoDoc();
     if(!doc.pdf){ toast("Este documento no tiene PDF asociado","err"); return; }
@@ -2750,6 +2847,7 @@ async function generarPDFDocumento(){
     descargarBlobPdf(signed, doc.nombre);
     toast("PDF generado","ok");
   }catch(e){ console.error(e); toast("No se pudo generar el PDF: "+(e.message||''),"err"); }
+  finally{ desbloquear(); }
 }
 
 async function enviarDocumento(id){
