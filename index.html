@@ -1887,6 +1887,9 @@ async function renderDocsAdmin(){
     b.onclick = ()=>{
       const id=b.dataset.id, act=b.dataset.doc;
       if(act==="ver") abrirDocumento(id);
+      else if(act==="link") copiarTexto(linkFirmaDoc(id));
+      else if(act==="qr") mostrarQR(linkFirmaDoc(id), "Firma del documento");
+      else if(act==="pdf") generarPDFDocDirecto(id);
       else if(act==="del") eliminarDocumento(id);
     };
   });
@@ -1943,7 +1946,9 @@ const FIELD_TYPES = {
   foto_id: { label:'Foto cédula', icon:'🪪', w:26, h:16, color:'#0d7a6b' },
   fecha:   { label:'Fecha',       icon:'📅', w:22, h:6,  color:'#c98a00' },
   texto:   { label:'Texto',       icon:'✎',  w:28, h:6,  color:'#7b85a3' },
-  nombre:  { label:'Nombre',      icon:'👤', w:34, h:6,  color:'#46506e' }
+  nombre:  { label:'Nombre',      icon:'👤', w:34, h:6,  color:'#46506e' },
+  nombre_part: { label:'Nombre participante', icon:'🧑', w:42, h:6, color:'#2a3557', auto:true },
+  cedula_part: { label:'Cédula participante', icon:'🆔', w:30, h:6, color:'#2a3557', auto:true }
 };
 
 async function renderConstructor(plantillaId){
@@ -1951,7 +1956,9 @@ async function renderConstructor(plantillaId){
   let nombre = "", categoria = "";
   pdfEditor = { pdfData:null, campos:[], numPages:0 };
   if(plantillaId){
+    bloquear("Cargando plantilla…");
     const { data, error } = await sb.from("doc_plantillas").select("*").eq("id", plantillaId).maybeSingle();
+    desbloquear();
     if(error || !data){ toast("No se pudo cargar la plantilla","err"); location.hash="#/docs"; return; }
     nombre = data.nombre||""; categoria = data.categoria||"";
     pdfEditor.pdfData = data.pdf || null;
@@ -2532,7 +2539,8 @@ function eventoTimelineHTML(eventos){
 }
 
 async function verEvidencia(id){
-  await cargarPesadoDoc();
+  bloquear("Cargando evidencia…");
+  try{ await cargarPesadoDoc(); } finally{ desbloquear(); }
   const f = docDetalleFirmantes.find(x=>x.id===id);
   if(!f){ toast("Evidencia no encontrada","err"); return; }
   const ev = f.evidencia||{}, gps = ev.gps, campos = ev.campos||{};
@@ -2588,6 +2596,9 @@ async function abrirDocumento(id){
     .select("id,documento_id,nombre,correo,identificacion,cargo,orden,token,estado,evidencia,firmado_en")
     .eq("documento_id",id).order("orden",{ascending:true});
   const fs = fdata||[];
+  // Carga ligera de las firmas (imagen) para mostrarlas como miniatura en la tabla
+  const { data:firmasData } = await sb.from("doc_firmantes").select("id,firma").eq("documento_id",id);
+  if(firmasData){ const mf={}; firmasData.forEach(r=>{ mf[r.id]=r.firma; }); fs.forEach(f=>{ if(mf[f.id]) f.firma=mf[f.id]; }); }
   const { data:edata } = await sb.from("doc_eventos").select("*").eq("documento_id",id).order("ocurrido_en",{ascending:true});
   const eventos = edata||[];
   docDetalleActual = doc; docDetalleFirmantes = fs; _docPesadoId = null;
@@ -2607,8 +2618,9 @@ async function abrirDocumento(id){
     acc += `<button class="btn btn-ghost btn-sm" title="Eliminar firmante" onclick="eliminarFirmanteDoc('${f.id}','${doc.id}','${nombreEsc}')">${I.trash}</button>`;
     return `<tr>
       <td>${i+1}</td>
-      <td><b>${esc(f.nombre||'—')}</b>${f.correo?`<div class="muted-sm">${esc(f.correo)}</div>`:''}</td>
+      <td><b>${esc(f.nombre||'—')}</b>${f.correo?`<div class="muted-sm">${esc(f.correo)}</div>`:''}${f.identificacion?`<div class="muted-sm">C.C. ${esc(f.identificacion)}</div>`:''}</td>
       <td><span class="badge ${f.estado==='firmado'?'activa':'cerrada'}"><span class="dot"></span>${f.estado==='firmado'?'Firmado':'Pendiente'}</span></td>
+      <td>${f.firma?`<img class="sig-thumb" src="${f.firma}" alt="firma">`:'<span class="muted-sm">—</span>'}</td>
       <td><div style="display:flex;gap:5px;flex-wrap:wrap">${acc}</div></td>
     </tr>`;
   }).join("");
@@ -2641,7 +2653,7 @@ async function abrirDocumento(id){
           <button class="btn btn-ghost btn-sm" onclick="mostrarQR('${linkFirmaDoc(doc.id)}','Firma del documento')">${I.qr} QR</button>
         </div>`:''}
         <h3 style="font-family:var(--display);font-size:16px;margin-bottom:10px">Firmantes ${doc.abierto?'que han firmado ':''}(${fs.length})</h3>
-        ${fs.length?`<div class="table-wrap"><table class="dt"><thead><tr><th>No</th><th>Firmante</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="muted-sm">Sin firmantes registrados.</div>'}
+        ${fs.length?`<div class="table-wrap"><table class="dt"><thead><tr><th>No</th><th>Firmante</th><th>Estado</th><th>Firma</th><th>Acciones</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="muted-sm">Sin firmantes registrados.</div>'}
         ${eventos.length?`<h3 style="font-family:var(--display);font-size:16px;margin:24px 0 8px">Historial de eventos</h3>${eventoTimelineHTML(eventos)}`:''}
       </div>
       <div class="modal-foot">
@@ -2723,10 +2735,12 @@ async function enviarPorCorreo(id){
 let editDocFirmantes = [];
 
 async function renderEditarDocumento(id){
+  bloquear("Cargando…");
   const { data:doc } = await sb.from("doc_documentos").select("id,nombre,estado,fecha_limite,firma_ordenada,config").eq("id",id).maybeSingle();
-  if(!doc){ toast("Documento no encontrado","err"); location.hash="#/docs"; return; }
-  if(doc.estado==='finalizado'){ toast("Un documento finalizado no se puede editar","err"); location.hash="#/docs"; return; }
+  if(!doc){ desbloquear(); toast("Documento no encontrado","err"); location.hash="#/docs"; return; }
+  if(doc.estado==='finalizado'){ desbloquear(); toast("Un documento finalizado no se puede editar","err"); location.hash="#/docs"; return; }
   const { data:fdata } = await sb.from("doc_firmantes").select("id,nombre,correo,identificacion,cargo,orden,estado").eq("documento_id",id).order("orden",{ascending:true});
+  desbloquear();
   editDocFirmantes = (fdata||[]).map(f=>({ id:f.id, nombre:f.nombre||'', correo:f.correo||'', identificacion:f.identificacion||'', cargo:f.cargo||'', estado:f.estado }));
   if(!editDocFirmantes.length) editDocFirmantes=[{id:null,nombre:'',correo:'',identificacion:'',cargo:'',estado:'pendiente'}];
   const cfg = doc.config||{};
@@ -2832,7 +2846,7 @@ async function componerPdfFirmado(doc, firmantes){
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const pages = pdfDoc.getPages();
   const firmados = (firmantes||[]).filter(f=>f.estado==='firmado');
-  const idxTipo = { firma:0, selfie:0, foto_id:0 };
+  const idxTipo = { firma:0, selfie:0, foto_id:0, nombre_part:0, cedula_part:0 };
   for(const campo of (doc.contenido||[])){
     const page = pages[campo.page]; if(!page) continue;
     const { width:pw, height:ph } = page.getSize();
@@ -2849,6 +2863,16 @@ async function componerPdfFirmado(doc, firmantes){
           const ar=img.width/img.height; let dw=w, dh=w/ar; if(dh>h){ dh=h; dw=h*ar; }
           page.drawImage(img, { x:x+(w-dw)/2, y:y+(h-dh)/2, width:dw, height:dh });
         }catch(e){ console.warn('img campo', e); }
+      }
+    } else if(campo.tipo==='nombre_part' || campo.tipo==='cedula_part'){
+      // Auto-relleno con los datos del participante (aunque aún no haya firmado)
+      const todos = firmantes||[];
+      const signer = todos[idxTipo[campo.tipo]] || todos[0];
+      idxTipo[campo.tipo]++;
+      let val = signer ? (campo.tipo==='nombre_part' ? (signer.nombre||'') : (signer.identificacion||'')) : '';
+      if(val){
+        let fs = Math.max(6, Math.min(h*0.62, 11));
+        try{ page.drawText(pdfTexto(val), { x:x+2, y:y+(h-fs)/2+1, size:fs, font, color:rgb(0.1,0.1,0.16) }); }catch(e){}
       }
     } else {
       let val='';
@@ -2947,10 +2971,35 @@ async function generarPDFDocumento(){
   finally{ desbloquear(); }
 }
 
+/* Genera el PDF firmado directamente desde la tarjeta del panel (sin abrir el documento) */
+async function generarPDFDocDirecto(id){
+  if(!window.PDFLib){ toast("No se pudo cargar el generador de PDF","err"); return; }
+  bloquear("Generando PDF…");
+  try{
+    const { data:doc } = await sb.from("doc_documentos")
+      .select("id,nombre,estado,config,contenido,pdf,plantilla_id").eq("id",id).maybeSingle();
+    if(!doc){ toast("Documento no encontrado","err"); return; }
+    if((!Array.isArray(doc.contenido)||!doc.contenido.length) && doc.plantilla_id){
+      const { data:pl } = await sb.from("doc_plantillas").select("contenido").eq("id",doc.plantilla_id).maybeSingle();
+      if(pl && Array.isArray(pl.contenido)) doc.contenido = pl.contenido;
+    }
+    if(!doc.pdf){ toast("Este documento no tiene PDF asociado","err"); return; }
+    const { data:fs } = await sb.from("doc_firmantes")
+      .select("id,nombre,identificacion,cargo,orden,estado,firma,selfie,foto_id,evidencia,firmado_en")
+      .eq("documento_id",id).order("orden",{ascending:true});
+    const signed = await componerPdfFirmado(doc, fs||[]);
+    descargarBlobPdf(signed, doc.nombre);
+    toast("PDF generado","ok");
+  }catch(e){ console.error(e); toast("No se pudo generar el PDF: "+(e.message||''),"err"); }
+  finally{ desbloquear(); }
+}
+
 async function enviarDocumento(id){
+  bloquear("Enviando…");
   const { error } = await sb.from("doc_documentos").update({estado:'enviado'}).eq("id",id);
-  if(error){ toast("No se pudo enviar: "+error.message,"err"); return; }
+  if(error){ desbloquear(); toast("No se pudo enviar: "+error.message,"err"); return; }
   await sb.from("doc_eventos").insert({documento_id:id, tipo:'enviado', detalle:{}});
+  desbloquear();
   toast("Documento marcado como enviado","ok");
   closeModal(); renderDocsAdmin();
 }
@@ -3028,7 +3077,10 @@ function documentoCard(d){
     <div class="lcard-foot">
       <div class="attn"><span class="num">${pct}%</span><span class="lab">completado</span></div>
       <div class="card-actions">
-        <button class="icon-btn" title="Ver / enlaces" data-doc="ver" data-id="${d.id}">${I.eye}</button>
+        <button class="icon-btn" title="Ver detalle / firmantes" data-doc="ver" data-id="${d.id}">${I.eye}</button>
+        ${d.estado==='enviado'?`<button class="icon-btn" title="Copiar enlace de firma" data-doc="link" data-id="${d.id}">${I.link}</button>
+        <button class="icon-btn" title="Compartir QR de firma" data-doc="qr" data-id="${d.id}">${I.qr}</button>`:''}
+        <button class="icon-btn" title="Generar PDF" data-doc="pdf" data-id="${d.id}">${I.pdf}</button>
         <button class="icon-btn danger" title="Eliminar" data-doc="del" data-id="${d.id}">${I.trash}</button>
       </div>
     </div>
@@ -3210,6 +3262,10 @@ function pintarCampoFirma(el, c){
   } else if(c.tipo==='fecha'){
     if(firmaState.campos[c.id]==null) firmaState.campos[c.id]=new Date().toLocaleDateString('es-CO');
     el.innerHTML = `<span class="cf-val">${esc(firmaState.campos[c.id])}</span>`;
+    el.onclick = null;
+  } else if(c.tipo==='nombre_part' || c.tipo==='cedula_part'){
+    const val = c.tipo==='nombre_part' ? (firmaState.firmante.nombre||'') : (firmaState.firmante.identificacion||'');
+    el.innerHTML = val ? `<span class="cf-val">${esc(val)}</span>` : `<span class="cf-hint">${ft.icon} ${esc(ft.label)} (automático)</span>`;
     el.onclick = null;
   } else {
     const ph = c.tipo==='nombre' ? 'Tu nombre' : 'Escribe aquí';
@@ -3459,9 +3515,18 @@ async function confirmarFirmaDoc(){
   if(of) of.onclick = ()=> renderFirmaDoc(firmaState.docId);
 }
 
+/* Rutas de formulario/edición donde re-renderizar borraría lo que el usuario escribe */
+function esRutaEdicion(){
+  const h = location.hash;
+  return h === "#/docs/documento/nuevo"
+    || /^#\/docs\/documento\/.+\/editar$/.test(h)
+    || h.startsWith("#/docs/plantilla/");
+}
+
 /* ---------- Auto-refresh del panel al volver a la pestaña ---------- */
 document.addEventListener("visibilitychange", ()=>{
-  if(document.hidden || esRutaPublica()) return;
+  // No recargar si está oculta, en una vista pública, o en un formulario (perdería lo escrito)
+  if(document.hidden || esRutaPublica() || esRutaEdicion()) return;
   router();   // re-renderiza el módulo activo (asistencia o documentos)
 });
 
