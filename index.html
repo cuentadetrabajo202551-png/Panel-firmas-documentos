@@ -14,6 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 :root{
   --brand:#1d33c7;            /* azul corporativo */
@@ -361,7 +362,8 @@ table.dt tr:hover td{background:#fafbfe}
 .pdf-page{position:relative;box-shadow:var(--shadow);background:#fff;flex-shrink:0}
 .pdf-page canvas{display:block;border-radius:2px}
 .campo-ov{position:absolute;border:2px solid var(--brand);background:rgba(29,51,199,.10);border-radius:5px;cursor:move;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;user-select:none;touch-action:none;min-width:30px;min-height:18px}
-.campo-ov .co-lbl{pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 4px}
+.campo-ov .co-lbl{position:absolute;top:-9px;left:6px;background:var(--card,#fff);border:1px solid currentColor;border-radius:5px;font-size:9px;line-height:1.5;padding:0 4px;pointer-events:none;white-space:nowrap;max-width:92%;overflow:hidden;text-overflow:ellipsis}
+.campo-ov .co-preview{pointer-events:none;white-space:nowrap;overflow:hidden;line-height:1;color:#0e1733;font-family:Helvetica,Arial,sans-serif;padding:0 4px;font-weight:600}
 .campo-ov .co-del{position:absolute;top:-9px;right:-9px;width:18px;height:18px;border-radius:50%;background:var(--danger);color:#fff;font-size:11px;display:grid;place-items:center;cursor:pointer;box-shadow:var(--shadow-sm)}
 .campo-ov .co-rz{position:absolute;right:-5px;bottom:-5px;width:12px;height:12px;border-radius:3px;background:#fff;border:2px solid currentColor;cursor:nwse-resize}
 /* campos interactivos en la página de firma del trabajador */
@@ -2070,6 +2072,14 @@ function renderCampos(){
     el.style.borderColor=ft.color; el.style.color=ft.color;
     el.innerHTML=`<span class="co-lbl">${ft.icon} ${ft.label}</span><span class="co-del" title="Quitar">✕</span><span class="co-rz"></span>`;
     wrap.appendChild(el);
+    // Vista previa del tamaño de letra para campos de texto (así se ve cómo quedará en el PDF)
+    const muestras = { nombre:'Nombre Apellido', texto:'Texto de ejemplo', fecha:new Date().toLocaleDateString('es-CO'), nombre_part:'Nombre del Participante', cedula_part:'1.234.567.890' };
+    if(muestras[c.tipo]!=null){
+      const prev=document.createElement('span'); prev.className='co-preview'; prev.textContent=muestras[c.tipo];
+      el.appendChild(prev);
+      const hpx = el.clientHeight || ((c.h/100)*(wrap.clientHeight||600));
+      prev.style.fontSize = Math.max(8, Math.min(hpx*0.62, 60)) + 'px';
+    }
     el.querySelector('.co-del').onclick=(ev)=>{ ev.stopPropagation(); pdfEditor.campos=pdfEditor.campos.filter(x=>x.id!==c.id); renderCampos(); };
     hacerArrastrable(el, c, wrap);
   });
@@ -2081,7 +2091,8 @@ function hacerArrastrable(el, c, wrap){
     const p = e.touches?e.touches[0]:e; const r=wrap.getBoundingClientRect();
     const dxP=(p.clientX-sx)/r.width*100, dyP=(p.clientY-sy)/r.height*100;
     if(mode==='move'){ c.x=Math.max(0,Math.min(100-c.w, ox+dxP)); c.y=Math.max(0,Math.min(100-c.h, oy+dyP)); el.style.left=c.x+'%'; el.style.top=c.y+'%'; }
-    else { c.w=Math.max(6,Math.min(100-c.x, ow+dxP)); c.h=Math.max(3,Math.min(100-c.y, oh+dyP)); el.style.width=c.w+'%'; el.style.height=c.h+'%'; }
+    else { c.w=Math.max(6,Math.min(100-c.x, ow+dxP)); c.h=Math.max(3,Math.min(100-c.y, oh+dyP)); el.style.width=c.w+'%'; el.style.height=c.h+'%';
+      const prev=el.querySelector('.co-preview'); if(prev){ prev.style.fontSize = Math.max(8, Math.min((el.clientHeight||0)*0.62, 60)) + 'px'; } }
     e.preventDefault();
   };
   const onUp=()=>{ mode=null; document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',onUp); document.removeEventListener('touchmove',onMove); document.removeEventListener('touchend',onUp); };
@@ -2661,6 +2672,7 @@ async function abrirDocumento(id){
         ${doc.estado!=='finalizado'?`<button class="btn btn-ghost" onclick="location.hash='#/docs/documento/${doc.id}/editar'">${I.pen} Editar</button>`:''}
         <button class="btn btn-ghost" onclick="verDocumento()">${I.eye} Ver documento</button>
         <button class="btn btn-green" onclick="generarPDFDocumento()">${I.pdf} PDF completo</button>
+        ${fs.filter(f=>f.estado==='firmado').length?`<button class="btn btn-green" onclick="descargarZipFirmados()">${I.doc} Descargar todos (ZIP)</button>`:''}
         ${doc.estado==='borrador'?`<button class="btn btn-primary" onclick="enviarDocumento('${doc.id}')">${I.check} Marcar como enviado</button>`:''}
         ${doc.estado==='enviado'?`<button class="btn btn-danger" onclick="finalizarDocumento('${doc.id}')">${I.lock} Cerrar documento</button>`:''}
       </div>
@@ -2685,6 +2697,19 @@ function descargarBlobPdf(bytes, nombre){
   a.download = 'Documento_'+String(nombre||'doc').replace(/[^\w\sáéíóúñ-]/gi,'').trim().replace(/\s+/g,'_').slice(0,50)+'.pdf';
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url), 4000);
+}
+
+/* Descarga la copia firmada por la persona que acaba de firmar (vista pública, sin login) */
+async function descargarMiFirmado(){
+  const doc = firmaState && firmaState.doc, f = firmaState && firmaState._miFirmado;
+  if(!doc || !f){ toast("No hay documento para descargar","err"); return; }
+  if(!window.PDFLib){ toast("No se pudo cargar el generador de PDF","err"); return; }
+  bloquear("Preparando tu documento…");
+  try{
+    const signed = await componerPdfFirmado(doc, [f]);
+    descargarBlobPdf(signed, (doc.nombre||'documento')+'_'+(f.nombre||''));
+  }catch(e){ console.error(e); toast("No se pudo generar el PDF","err"); }
+  finally{ desbloquear(); }
 }
 
 /* #6 — PDF de UN firmante (su copia firmada) */
@@ -2871,7 +2896,7 @@ async function componerPdfFirmado(doc, firmantes){
       idxTipo[campo.tipo]++;
       let val = signer ? (campo.tipo==='nombre_part' ? (signer.nombre||'') : (signer.identificacion||'')) : '';
       if(val){
-        let fs = Math.max(6, Math.min(h*0.62, 11));
+        let fs = Math.max(7, Math.min(h*0.62, 60));
         try{ page.drawText(pdfTexto(val), { x:x+2, y:y+(h-fs)/2+1, size:fs, font, color:rgb(0.1,0.1,0.16) }); }catch(e){}
       }
     } else {
@@ -2881,7 +2906,7 @@ async function componerPdfFirmado(doc, firmantes){
       else if(campo.tipo==='fecha') val = new Date().toLocaleDateString('es-CO');
       else if(campo.tipo==='nombre' && firmados[0]) val = firmados[0].nombre||'';
       if(val){
-        let fs = Math.max(6, Math.min(h*0.62, 11));
+        let fs = Math.max(7, Math.min(h*0.62, 60));
         try{ page.drawText(pdfTexto(val), { x:x+2, y:y+(h-fs)/2+1, size:fs, font, color:rgb(0.1,0.1,0.16) }); }catch(e){}
       }
     }
@@ -2968,6 +2993,42 @@ async function generarPDFDocumento(){
     descargarBlobPdf(signed, doc.nombre);
     toast("PDF generado","ok");
   }catch(e){ console.error(e); toast("No se pudo generar el PDF: "+(e.message||''),"err"); }
+  finally{ desbloquear(); }
+}
+
+/* Descarga un ZIP con la copia firmada de CADA trabajador (una por firmante que ya firmó) */
+async function descargarZipFirmados(){
+  const doc = docDetalleActual;
+  if(!doc){ toast("Abre el documento primero","err"); return; }
+  if(!window.PDFLib){ toast("No se pudo cargar el generador de PDF","err"); return; }
+  if(!window.JSZip){ toast("No se pudo cargar el compresor ZIP (revisa tu conexión)","err"); return; }
+  bloquear("Preparando ZIP…");
+  try{
+    await cargarPesadoDoc();
+    if(!doc.pdf){ toast("Este documento no tiene PDF asociado","err"); return; }
+    const firmados = (docDetalleFirmantes||[]).filter(f=>f.estado==='firmado');
+    if(!firmados.length){ toast("Aún no hay firmas para descargar","err"); return; }
+    const zip = new JSZip();
+    const usados = {};
+    for(let i=0;i<firmados.length;i++){
+      const f = firmados[i];
+      bloquear(`Generando PDF ${i+1} de ${firmados.length}…`);
+      try{
+        const signed = await componerPdfFirmado(doc, [f]);
+        let base = String((f.nombre||'firmante')+'_'+(f.identificacion||'')).replace(/[^\w\sáéíóúñ-]/gi,'').trim().replace(/\s+/g,'_').slice(0,60) || ('firmante_'+(i+1));
+        if(usados[base]!=null){ usados[base]++; base = base+'_'+usados[base]; } else usados[base]=0;
+        zip.file(base+'.pdf', signed);
+      }catch(e){ console.warn('zip firmante', f.id, e); }
+    }
+    bloquear("Comprimiendo ZIP…");
+    const blob = await zip.generateAsync({ type:'blob', compression:'DEFLATE' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url;
+    a.download = 'Firmados_'+String(doc.nombre||'documento').replace(/[^\w\sáéíóúñ-]/gi,'').trim().replace(/\s+/g,'_').slice(0,50)+'.zip';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 6000);
+    toast(`ZIP con ${firmados.length} documento(s) generado`,"ok");
+  }catch(e){ console.error(e); toast("No se pudo generar el ZIP: "+(e.message||''),"err"); }
   finally{ desbloquear(); }
 }
 
@@ -3180,6 +3241,40 @@ function extraFieldsHTML(c, f){
   return extra;
 }
 
+/* Formulario de firma DEBAJO del PDF (sin campos sobrepuestos): datos + texto + pad de firma + capturas */
+function formularioFirmaHTML(c, f, pedirId){
+  f = f || {};
+  let datos = `<div class="field"><label>Nombre completo *</label><input id="ff_nombre" value="${esc(f.nombre||'')}" placeholder="Nombre completo"></div>`;
+  if(pedirId || c.identificacion) datos += `<div class="field"><label>Número de identificación (cédula) *</label><input id="ff_id" inputmode="numeric" value="${esc(f.identificacion||'')}" placeholder="C.C. / documento"></div>`;
+  if(c.correo) datos += `<div class="field"><label>Correo electrónico *</label><input id="ff_correo" type="email" value="${esc(f.correo||'')}" placeholder="correo@ejemplo.com"></div>`;
+  if(c.cargo)  datos += `<div class="field"><label>Cargo *</label><input id="ff_cargo" value="${esc(f.cargo||'')}" placeholder="Tu cargo"></div>`;
+  let html = `<div class="firma-sec"><h3>Tus datos</h3>${datos}</div>`;
+  const textos = (firmaState.doc.contenido||[]).filter(x=>x.tipo==='texto');
+  if(textos.length){
+    let ti='';
+    textos.forEach((t,i)=>{ ti += `<div class="field"><label>Texto${textos.length>1?(' '+(i+1)):''}</label><input data-txt="${t.id}" value="${esc(firmaState.campos[t.id]||'')}" placeholder="Escribe aquí…"></div>`; });
+    html += `<div class="firma-sec"><h3>Datos del documento</h3>${ti}</div>`;
+  }
+  if(c.firma   || tieneCampo('firma'))   html += firmaPadHTML();
+  if(c.selfie  || tieneCampo('selfie'))  html += capturaHTML('selfie','Selfie', I.user);
+  if(c.foto_id || tieneCampo('foto_id')) html += capturaHTML('fotoId','Documento de identidad', I.doc);
+  if(c.gps) html += gpsHTML();
+  return html;
+}
+
+function wireFormularioFirma(){
+  document.querySelectorAll('#firmaExtra [data-cap]').forEach(btn=>{ btn.onclick=()=>tomarFotoCampo(btn.dataset.cap); });
+  const gbtn=document.getElementById('btnGps');
+  if(gbtn) gbtn.onclick = async ()=>{
+    gbtn.disabled=true; gbtn.innerHTML='Obteniendo ubicación…';
+    const gps = await obtenerGPS();
+    if(gps){ firmaState.gps=gps; document.getElementById('gpsBox').innerHTML=`<div class="cap-ok">${I.check} Ubicación capturada (±${Math.round(gps.precision)} m)</div>`; }
+    else { gbtn.disabled=false; gbtn.innerHTML=`${I.pin} Reintentar ubicación`; toast("No se pudo obtener la ubicación. Revisa los permisos.","err"); }
+  };
+  if(document.getElementById('sigCanvas')){ initSignature(); const sc=document.getElementById('sigClear'); if(sc) sc.onclick=()=>sigPad.clear(); }
+  document.querySelectorAll('#firmaExtra [data-txt]').forEach(inp=>{ inp.oninput=()=>{ firmaState.campos[inp.dataset.txt]=inp.value; }; });
+}
+
 async function renderFirmaPublica(token){
   document.body.style.overflow="";
   const cont = document.getElementById("app");
@@ -3207,16 +3302,16 @@ async function renderFirmaPublica(token){
         <div class="sub"><span>Don Aseo Ltda.</span><span>${I.user} ${esc(f.nombre||'Firmante')}</span></div>
       </div>
       <div class="pub-body" id="firmaBody">
-        <p class="muted-sm" style="margin-bottom:14px">Toca los campos marcados sobre el documento para completarlos y firmar.</p>
+        <p class="muted-sm" style="margin-bottom:14px">Revisa el documento y completa tus datos y tu firma más abajo.</p>
         <div class="pdf-cont" id="firmaPdf"><div class="muted-sm" style="text-align:center;padding:24px">Cargando documento…</div></div>
-        <div id="firmaExtra" style="margin-top:18px">${extraFieldsHTML(c, f)}</div>
+        <div id="firmaExtra" style="margin-top:18px">${formularioFirmaHTML(c, f, false)}</div>
         <button class="btn btn-green" id="btnConfirmarFirma" style="width:100%;padding:14px;margin-top:14px">${I.check} Confirmar y firmar</button>
         <p class="muted-sm" style="text-align:center;margin-top:10px">Al confirmar, tu firma queda registrada y el documento se bloquea.</p>
       </div>
     </div></div>`;
 
   await renderFirmaPdf();
-  wireFirmaExtra();
+  wireFormularioFirma();
   document.getElementById('btnConfirmarFirma').onclick = confirmarFirma;
 }
 
@@ -3235,7 +3330,7 @@ async function renderFirmaPdf(){
       const cv=document.createElement('canvas'); cv.width=vp.width; cv.height=vp.height; wrap.appendChild(cv); cont.appendChild(wrap);
       await page.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;
     }
-    renderCamposFirma();
+    // Sin campos sobrepuestos: el firmante ve el PDF limpio y firma en el formulario de abajo.
   }catch(e){ console.error(e); cont.innerHTML = `<div class="muted-sm" style="text-align:center;padding:20px">No se pudo mostrar el documento.</div>`; }
 }
 
@@ -3351,7 +3446,7 @@ async function confirmarFirma(){
   const c = firmaState.config, d = firmaState.doc, g = id => document.getElementById(id);
   const camposDoc = d.contenido||[];
   const campoNombre = camposDoc.find(x=>x.tipo==='nombre');
-  const nombre = (campoNombre ? (firmaState.campos[campoNombre.id]||'') : '').trim() || firmaState.firmante.nombre || "";
+  const nombre = (g('ff_nombre')?.value||"").trim() || (campoNombre ? (firmaState.campos[campoNombre.id]||'') : '').trim() || firmaState.firmante.nombre || "";
   const correo = (g('ff_correo')?.value||"").trim() || firmaState.firmante.correo || "";
   const identificacion = (g('ff_id')?.value||"").trim() || firmaState.firmante.identificacion || "";
   const cargo = (g('ff_cargo')?.value||"").trim() || firmaState.firmante.cargo || "";
@@ -3359,8 +3454,10 @@ async function confirmarFirma(){
   if(c.correo && !correo){ toast("El correo es obligatorio","err"); return; }
   if(c.identificacion && !identificacion){ toast("La identificación es obligatoria","err"); return; }
   if(c.cargo && !cargo){ toast("El cargo es obligatorio","err"); return; }
+  if(campoNombre) firmaState.campos[campoNombre.id] = nombre;
   const exigeFirma = c.firma || camposDoc.some(x=>x.tipo==='firma');
-  if(exigeFirma && !firmaState.firma){ toast("Debes firmar el documento (toca el campo de firma)","err"); return; }
+  if(exigeFirma && (!sigPad || sigPad.isEmpty())){ toast("Debes firmar en el recuadro de abajo","err"); return; }
+  if(sigPad && !sigPad.isEmpty()) firmaState.firma = sigPad.dataURL();
   if(c.selfie && !firmaState.selfie){ toast("Falta la selfie","err"); return; }
   if(c.foto_id && !firmaState.fotoId){ toast("Falta la foto de tu documento de identidad","err"); return; }
   if(c.gps && !firmaState.gps){ toast("Comparte tu ubicación","err"); return; }
@@ -3388,12 +3485,16 @@ async function confirmarFirma(){
     toast(m==='ya_firmado'?"Este documento ya fue firmado":m==='no_es_turno'?"Aún no es tu turno":m==='no_disponible'?"El documento no está disponible":"No se pudo registrar la firma","err");
     return;
   }
+  firmaState._miFirmado = { estado:'firmado', nombre, correo, identificacion, cargo, firma:firmaState.firma, selfie:firmaState.selfie, foto_id:firmaState.fotoId, evidencia, firmado_en:new Date().toISOString() };
   document.getElementById('firmaBody').innerHTML = `
     <div class="success-screen">
       <div class="ic">${I.checkBig}</div>
       <h2>¡Documento firmado!</h2>
       <p>Gracias, <b>${esc(nombre)}</b>. Tu firma y la evidencia quedaron registradas de forma segura.${data.finalizado?' El documento está completo.':''}</p>
+      <div style="margin-top:22px"><button class="btn btn-green" id="btnDescargarMio" style="padding:13px 26px">${I.pdf} Descargar documento firmado</button></div>
     </div>`;
+  const bd=document.getElementById('btnDescargarMio'); if(bd) bd.onclick = descargarMiFirmado;
+  setTimeout(descargarMiFirmado, 400);
 }
 
 /* ============================================================
@@ -3443,14 +3544,14 @@ async function renderFirmaDoc(id){
       <div class="pub-body" id="firmaBody">
         <p class="muted-sm" style="margin-bottom:14px">${aviso}</p>
         <div class="pdf-cont" id="firmaPdf"><div class="muted-sm" style="text-align:center;padding:24px">Cargando documento…</div></div>
-        <div id="firmaExtra" style="margin-top:18px">${extraFieldsDocHTML(c)}</div>
+        <div id="firmaExtra" style="margin-top:18px">${formularioFirmaHTML(c, firmaState.firmante, true)}</div>
         <button class="btn btn-green" id="btnConfirmarFirma" style="width:100%;padding:14px;margin-top:14px">${I.check} Confirmar y firmar</button>
         <p class="muted-sm" style="text-align:center;margin-top:10px">Al confirmar, tu firma y la evidencia quedan registradas.</p>
       </div>
     </div></div>`;
 
   await renderFirmaPdf();
-  wireFirmaExtra();
+  wireFormularioFirma();
   document.getElementById('btnConfirmarFirma').onclick = confirmarFirmaDoc;
 }
 
@@ -3466,7 +3567,8 @@ async function confirmarFirmaDoc(){
   if(c.correo && !correo){ toast("El correo es obligatorio","err"); return; }
   if(c.cargo && !cargo){ toast("El cargo es obligatorio","err"); return; }
   const exigeFirma = c.firma || camposDoc.some(x=>x.tipo==='firma');
-  if(exigeFirma && !firmaState.firma){ toast("Debes firmar el documento (toca el campo de firma)","err"); return; }
+  if(exigeFirma && (!sigPad || sigPad.isEmpty())){ toast("Debes firmar en el recuadro de abajo","err"); return; }
+  if(sigPad && !sigPad.isEmpty()) firmaState.firma = sigPad.dataURL();
   if(c.selfie && !firmaState.selfie){ toast("Falta la selfie","err"); return; }
   if(c.foto_id && !firmaState.fotoId){ toast("Falta la foto de tu documento de identidad","err"); return; }
   if(c.gps && !firmaState.gps){ toast("Comparte tu ubicación","err"); return; }
@@ -3504,13 +3606,19 @@ async function confirmarFirmaDoc(){
     return;
   }
   const abierto = !!data.abierto;
+  firmaState._miFirmado = { estado:'firmado', nombre, correo, identificacion, cargo, firma:firmaState.firma, selfie:firmaState.selfie, foto_id:firmaState.fotoId, evidencia, firmado_en:new Date().toISOString() };
   document.getElementById('firmaBody').innerHTML = `
     <div class="success-screen">
       <div class="ic">${I.checkBig}</div>
       <h2>¡Documento firmado!</h2>
       <p>Gracias, <b>${esc(nombre)}</b>. Tu firma y la evidencia quedaron registradas de forma segura.${data.finalizado?' El documento está completo.':''}</p>
-      ${abierto?`<div style="margin-top:24px"><button class="btn btn-green" id="otraFirma" style="padding:13px 26px">${I.plus} Firmar otra persona</button></div>`:''}
+      <div style="margin-top:22px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+        <button class="btn btn-green" id="btnDescargarMio" style="padding:13px 26px">${I.pdf} Descargar documento firmado</button>
+        ${abierto?`<button class="btn btn-ghost" id="otraFirma" style="padding:13px 26px">${I.plus} Firmar otra persona</button>`:''}
+      </div>
     </div>`;
+  const bd=document.getElementById('btnDescargarMio'); if(bd) bd.onclick = descargarMiFirmado;
+  setTimeout(descargarMiFirmado, 400);
   const of = document.getElementById('otraFirma');
   if(of) of.onclick = ()=> renderFirmaDoc(firmaState.docId);
 }
