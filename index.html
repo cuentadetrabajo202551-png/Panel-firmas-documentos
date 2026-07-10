@@ -619,6 +619,11 @@ function desbloquear(){
     if(ls) ls.classList.remove("on");
   }
 }
+/* Solo cambia el texto del reloj de arena SIN tocar el contador (para procesos largos con progreso) */
+function bloquearMsg(msg){
+  const lm = document.getElementById("loadMsg");
+  if(lm) lm.textContent = msg || "Cargando…";
+}
 /* Envuelve una promesa mostrando el bloqueo mientras se resuelve */
 async function conBloqueo(msg, fn){
   bloquear(msg);
@@ -2015,8 +2020,10 @@ function pedirPdf(){
 function cargarPdfArchivo(file){
   if(file.type!=='application/pdf'){ toast("Debe ser un archivo PDF","err"); return; }
   if(file.size > 8*1024*1024){ toast("El PDF es muy grande (máx 8 MB)","err"); return; }
+  bloquear("Cargando PDF…");
   const rd=new FileReader();
-  rd.onload=async ()=>{ pdfEditor.pdfData = rd.result; pdfEditor.campos = []; await renderPdfEditor(); toast("PDF cargado. Arrastra los campos sobre el documento.","ok"); };
+  rd.onload=async ()=>{ try{ pdfEditor.pdfData = rd.result; pdfEditor.campos = []; await renderPdfEditor(); toast("PDF cargado. Arrastra los campos sobre el documento.","ok"); } finally{ desbloquear(); } };
+  rd.onerror=()=>{ desbloquear(); toast("No se pudo leer el archivo","err"); };
   rd.readAsDataURL(file);
 }
 
@@ -2238,11 +2245,13 @@ async function guardarPlantilla(){
   if(!pdfEditor.pdfData){ toast("Sube un PDF para la plantilla","err"); return; }
   const btn = document.getElementById("btnGuardarPlantilla");
   btn.disabled=true; btn.innerHTML="Guardando…";
+  bloquear("Guardando plantilla…");
   const payload = { nombre, categoria, contenido: pdfEditor.campos, pdf: pdfEditor.pdfData };
   const res = editorPlantillaId
     ? await sb.from("doc_plantillas").update(payload).eq("id", editorPlantillaId)
     : await sb.from("doc_plantillas").insert(payload).select().single();
-  if(res.error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar plantilla`; toast("No se pudo guardar: "+res.error.message,"err"); return; }
+  if(res.error){ desbloquear(); btn.disabled=false; btn.innerHTML=`${I.check} Guardar plantilla`; toast("No se pudo guardar: "+res.error.message,"err"); return; }
+  desbloquear();
   toast("Plantilla guardada","ok");
   location.hash = "#/docs";
 }
@@ -2502,18 +2511,19 @@ async function guardarDocumento(enviar){
 
   const btnE=document.getElementById("btnCrearEnviar"), btnB=document.getElementById("btnGuardarBorrador");
   btnE.disabled=true; btnB.disabled=true; btnE.innerHTML="Guardando…";
+  bloquear(enviar?"Creando documento y enlaces…":"Guardando borrador…");
 
   // Congela el documento: copia el PDF y los campos de la plantilla (el dashboard no carga el pdf)
   let contenido = [], pdfSnap = null;
   { const { data:plFull } = await sb.from("doc_plantillas").select("contenido,pdf").eq("id", plantillaId).maybeSingle();
     if(plFull){ if(Array.isArray(plFull.contenido)) contenido = plFull.contenido; pdfSnap = plFull.pdf||null; } }
-  if(!pdfSnap){ btnE.disabled=false; btnB.disabled=false; btnE.innerHTML=`${I.check} Crear y generar enlaces`; toast("La plantilla no tiene un PDF cargado","err"); return; }
+  if(!pdfSnap){ desbloquear(); btnE.disabled=false; btnB.disabled=false; btnE.innerHTML=`${I.check} Crear y generar enlaces`; toast("La plantilla no tiene un PDF cargado","err"); return; }
 
   const { data:doc, error } = await sb.from("doc_documentos").insert({
     plantilla_id: plantillaId, nombre, estado: enviar?'enviado':'borrador',
     config, contenido, pdf: pdfSnap, fecha_limite, firma_ordenada, abierto, lista_id: currentDocListaId || null
   }).select().single();
-  if(error){ btnE.disabled=false; btnB.disabled=false; btnE.innerHTML=`${I.check} Crear y generar enlaces`; toast("No se pudo crear: "+error.message,"err"); return; }
+  if(error){ desbloquear(); btnE.disabled=false; btnB.disabled=false; btnE.innerHTML=`${I.check} Crear y generar enlaces`; toast("No se pudo crear: "+error.message,"err"); return; }
 
   if(validos.length){
     const rows = validos.map((f,idx)=>({
@@ -2527,6 +2537,7 @@ async function guardarDocumento(enviar){
   await sb.from("doc_eventos").insert({ documento_id:doc.id, tipo:'creado', detalle:{nombre} });
   if(enviar) await sb.from("doc_eventos").insert({ documento_id:doc.id, tipo:'enviado', detalle:{firmantes:validos.length} });
 
+  desbloquear();
   toast(enviar?(abierto?"Documento abierto creado — comparte el enlace general":"Documento creado y listo para firmar"):"Borrador guardado","ok");
   location.hash="#/docs";
   if(enviar) setTimeout(()=>abrirDocumento(doc.id), 350);
@@ -2840,9 +2851,10 @@ async function guardarEdicionDocumento(id){
   const firma_ordenada = document.getElementById("edOrden").checked;
   const config={}; document.querySelectorAll("[data-seg]").forEach(c=> config[c.dataset.seg]=c.checked);
   const btn=document.getElementById("btnGuardarEdit"); btn.disabled=true; btn.innerHTML="Guardando…";
+  bloquear("Guardando cambios…");
 
   const { error:e1 } = await sb.from("doc_documentos").update({ nombre, fecha_limite, firma_ordenada, config }).eq("id",id);
-  if(e1){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar cambios`; toast("No se pudo guardar: "+e1.message,"err"); return; }
+  if(e1){ desbloquear(); btn.disabled=false; btn.innerHTML=`${I.check} Guardar cambios`; toast("No se pudo guardar: "+e1.message,"err"); return; }
 
   // Firmantes: borrar pendientes quitados, actualizar existentes, insertar nuevos
   const conNombre = editDocFirmantes.filter(f=> f.estado==='firmado' || f.nombre.trim());
@@ -2858,6 +2870,7 @@ async function guardarEdicionDocumento(id){
     else if(f.nombre.trim()){ await sb.from("doc_firmantes").insert({ documento_id:id, ...datos }); }
   }
   await sb.from("doc_eventos").insert({ documento_id:id, tipo:'editado', detalle:{} });
+  desbloquear();
   toast("Documento actualizado","ok");
   location.hash="#/docs"; setTimeout(()=>abrirDocumento(id), 150);
 }
@@ -3012,7 +3025,7 @@ async function descargarZipFirmados(){
     const usados = {};
     for(let i=0;i<firmados.length;i++){
       const f = firmados[i];
-      bloquear(`Generando PDF ${i+1} de ${firmados.length}…`);
+      bloquearMsg(`Generando PDF ${i+1} de ${firmados.length}…`);
       try{
         const signed = await componerPdfFirmado(doc, [f]);
         let base = String((f.nombre||'firmante')+'_'+(f.identificacion||'')).replace(/[^\w\sáéíóúñ-]/gi,'').trim().replace(/\s+/g,'_').slice(0,60) || ('firmante_'+(i+1));
@@ -3020,7 +3033,7 @@ async function descargarZipFirmados(){
         zip.file(base+'.pdf', signed);
       }catch(e){ console.warn('zip firmante', f.id, e); }
     }
-    bloquear("Comprimiendo ZIP…");
+    bloquearMsg("Comprimiendo ZIP…");
     const blob = await zip.generateAsync({ type:'blob', compression:'DEFLATE' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href=url;
