@@ -13,6 +13,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 :root{
   --brand:#1d33c7;            /* azul corporativo */
@@ -642,7 +643,7 @@ document.getElementById("overlay").addEventListener("mousedown", e=>{
    ROUTER
    ============================================================ */
 function esRutaPublica(){
-  return location.hash.startsWith("#/lista/") || location.hash.startsWith("#/firmar/") || location.hash.startsWith("#/responsable/");
+  return location.hash.startsWith("#/lista/") || location.hash.startsWith("#/firmar/") || location.hash.startsWith("#/responsable/") || location.hash.startsWith("#/firmadoc/");
 }
 
 async function router(){
@@ -653,6 +654,8 @@ async function router(){
   if(mFirmar){ await renderFirmaPublica(decodeURIComponent(mFirmar[1])); return; }
   const mResp = location.hash.match(/^#\/responsable\/(.+)$/);
   if(mResp){ await renderFirmaResponsable(decodeURIComponent(mResp[1])); return; }
+  const mFdoc = location.hash.match(/^#\/firmadoc\/(.+)$/);
+  if(mFdoc){ await renderFirmaDoc(decodeURIComponent(mFdoc[1])); return; }
   // ----- Rutas de ADMINISTRACIÓN (requieren sesión) -----
   const { data:{ session } } = await sb.auth.getSession();
   if(!session){ renderLogin(); return; }
@@ -2255,6 +2258,7 @@ function segResumen(config){
 function estadoBadgeClass(e){ return e==='finalizado'?'activa':e==='enviado'?'enviado':e==='vencido'?'venc':'cerrada'; }
 function estadoLabel(e){ return ({borrador:'Borrador',enviado:'Enviado',finalizado:'Finalizado',vencido:'Vencido'})[e]||e; }
 function linkFirma(token){ return location.href.split("#")[0] + "#/firmar/" + token; }
+function linkFirmaDoc(id){ return location.href.split("#")[0] + "#/firmadoc/" + id; }
 function copiarTexto(t){
   const done=()=>toast("Enlace copiado","ok");
   if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done).catch(()=>fallbackCopy(t,done));
@@ -2345,11 +2349,21 @@ async function renderCrearDocumento(){
       </div>
 
       <div class="card-sec">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">
           <h3 style="margin:0">2. Participantes (firmantes)</h3>
-          <button class="btn btn-ghost btn-sm" id="btnAddFirmante">${I.plus} Agregar</button>
+          <div style="display:flex;gap:6px;flex-wrap:wrap" id="firmantesTools">
+            <button class="btn btn-ghost btn-sm" id="btnPlantillaXls" title="Descargar plantilla de Excel">${I.doc} Plantilla Excel</button>
+            <button class="btn btn-ghost btn-sm" id="btnCargaMasiva" title="Cargar firmantes desde Excel">${I.plus} Carga masiva</button>
+            <button class="btn btn-ghost btn-sm" id="btnAddFirmante">${I.plus} Agregar</button>
+          </div>
         </div>
-        <div id="firmantesList"></div>
+        <label class="chk" style="margin-bottom:12px"><input type="checkbox" id="docAbierto"> Documento abierto — cualquiera puede firmar (sin lista de participantes)</label>
+        <div id="abiertoNota" class="muted-sm" style="display:none;margin:-4px 0 12px;padding:10px 12px;background:var(--brand-soft);border:1px solid var(--brand-soft2);border-radius:10px;color:var(--brand-deep)">Con el documento abierto, cualquier persona con el enlace puede firmar y queda registrada. No se aplica filtro por cédula.</div>
+        <div id="participantesBox">
+          <p class="muted-sm" style="margin-bottom:10px">Solo estas cédulas podrán firmar. Puedes cargarlas en bloque desde un Excel (obligatorio: nombre e identificación).</p>
+          <div id="firmantesList"></div>
+        </div>
+        <input type="file" id="fileFirmantes" accept=".xlsx,.xls,.csv" style="display:none">
       </div>
 
       <div class="card-sec">
@@ -2364,7 +2378,76 @@ async function renderCrearDocumento(){
   document.getElementById("btnAddFirmante").onclick = ()=>{ docFirmantes.push({nombre:'',correo:'',identificacion:'',cargo:''}); renderFirmantes(); };
   document.getElementById("btnGuardarBorrador").onclick = ()=> guardarDocumento(false);
   document.getElementById("btnCrearEnviar").onclick = ()=> guardarDocumento(true);
+  document.getElementById("btnPlantillaXls").onclick = descargarPlantillaFirmantes;
+  document.getElementById("btnCargaMasiva").onclick = ()=> document.getElementById("fileFirmantes").click();
+  document.getElementById("fileFirmantes").onchange = (e)=>{ const f=e.target.files[0]; if(f) cargarFirmantesExcel(f); e.target.value=""; };
+  const chkAb = document.getElementById("docAbierto");
+  chkAb.onchange = ()=>{
+    const ab = chkAb.checked;
+    document.getElementById("participantesBox").style.display = ab ? "none" : "";
+    document.getElementById("firmantesTools").style.display = ab ? "none" : "";
+    document.getElementById("abiertoNota").style.display = ab ? "block" : "none";
+  };
   renderFirmantes();
+}
+
+/* ---------- Carga masiva de firmantes desde Excel ---------- */
+function descargarPlantillaFirmantes(){
+  if(!window.XLSX){ toast("No se pudo cargar el generador de Excel (revisa tu conexión)","err"); return; }
+  const datos = [
+    ["Nombre completo","Identificación","Correo","Cargo"],
+    ["Juan Pérez Gómez","1094567890","juan@ejemplo.com","Operario"],
+    ["María López Ruiz","43567123","","Auxiliar"]
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(datos);
+  ws["!cols"] = [{wch:28},{wch:16},{wch:26},{wch:20}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Firmantes");
+  XLSX.writeFile(wb, "Plantilla_firmantes.xlsx");
+  toast("Plantilla descargada","ok");
+}
+
+async function cargarFirmantesExcel(file){
+  if(!window.XLSX){ toast("No se pudo cargar el lector de Excel (revisa tu conexión)","err"); return; }
+  bloquear("Leyendo archivo…");
+  try{
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, {type:"array"});
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const filas = XLSX.utils.sheet_to_json(ws, {header:1, defval:"", raw:false});
+    if(!filas.length){ toast("El archivo está vacío","err"); return; }
+    const norm = s => String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").trim();
+    const head = (filas[0]||[]).map(norm);
+    const findCol = (...alts)=> head.findIndex(h => alts.some(a => h.includes(a)));
+    let cNom = findCol("nombre"), cId = findCol("identificacion","cedula","documento","cc"),
+        cCor = findCol("correo","email","mail"), cCar = findCol("cargo");
+    let start = 1;
+    if(cNom === -1 && cId === -1){ cNom=0; cId=1; cCor=2; cCar=3; start=0; }
+    const nuevos = []; let ignoradas = 0;
+    for(let i=start;i<filas.length;i++){
+      const r = filas[i]; if(!r) continue;
+      const nombre = String(cNom>=0?r[cNom]:"").trim();
+      const identificacion = String(cId>=0?r[cId]:"").trim();
+      const correo = String(cCor>=0?r[cCor]:"").trim();
+      const cargo = String(cCar>=0?r[cCar]:"").trim();
+      if(!nombre && !identificacion) continue;
+      if(!nombre || !identificacion){ ignoradas++; continue; }
+      nuevos.push({ nombre, correo, identificacion, cargo });
+    }
+    if(!nuevos.length){ toast("No se encontraron filas válidas (se requiere nombre e identificación)","err"); return; }
+    const keyOf = s => s.replace(/[^0-9A-Za-z]/g,"").toLowerCase();
+    const vistos = new Set(docFirmantes.filter(f=>f.identificacion.trim()).map(f=>keyOf(f.identificacion)));
+    const base = docFirmantes.filter(f=>f.nombre.trim()||f.identificacion.trim());
+    let dup=0;
+    nuevos.forEach(n=>{ const k=keyOf(n.identificacion); if(vistos.has(k)){ dup++; return; } vistos.add(k); base.push(n); });
+    docFirmantes = base.length ? base : [{nombre:'',correo:'',identificacion:'',cargo:''}];
+    renderFirmantes();
+    let msg = `${nuevos.length-dup} firmante(s) cargado(s)`;
+    if(ignoradas) msg += ` · ${ignoradas} sin nombre/cédula omitida(s)`;
+    if(dup) msg += ` · ${dup} duplicada(s)`;
+    toast(msg,"ok");
+  }catch(e){ console.error(e); toast("No se pudo leer el archivo: "+(e.message||''),"err"); }
+  finally{ desbloquear(); }
 }
 
 function renderFirmantes(){
@@ -2393,8 +2476,9 @@ async function guardarDocumento(enviar){
   const fecha_limite = document.getElementById("docLimite").value || null;
   const firma_ordenada = document.getElementById("docOrden").checked;
   if(!nombre){ toast("Ponle un nombre al documento","err"); document.getElementById("docNombre").focus(); return; }
-  const validos = docFirmantes.filter(f=>f.nombre.trim());
-  if(enviar && !validos.length){ toast("Agrega al menos un participante con nombre","err"); return; }
+  const abierto = !!(document.getElementById("docAbierto") && document.getElementById("docAbierto").checked);
+  const validos = abierto ? [] : docFirmantes.filter(f=>f.nombre.trim() && f.identificacion.trim());
+  if(enviar && !abierto && !validos.length){ toast("Agrega al menos un participante con nombre e identificación (o marca 'Documento abierto')","err"); return; }
 
   const config={}; document.querySelectorAll("[data-seg]").forEach(c=> config[c.dataset.seg]=c.checked);
 
@@ -2409,7 +2493,7 @@ async function guardarDocumento(enviar){
 
   const { data:doc, error } = await sb.from("doc_documentos").insert({
     plantilla_id: plantillaId, nombre, estado: enviar?'enviado':'borrador',
-    config, contenido, pdf: pdfSnap, fecha_limite, firma_ordenada, lista_id: currentDocListaId || null
+    config, contenido, pdf: pdfSnap, fecha_limite, firma_ordenada, abierto, lista_id: currentDocListaId || null
   }).select().single();
   if(error){ btnE.disabled=false; btnB.disabled=false; btnE.innerHTML=`${I.check} Crear y generar enlaces`; toast("No se pudo crear: "+error.message,"err"); return; }
 
@@ -2425,7 +2509,7 @@ async function guardarDocumento(enviar){
   await sb.from("doc_eventos").insert({ documento_id:doc.id, tipo:'creado', detalle:{nombre} });
   if(enviar) await sb.from("doc_eventos").insert({ documento_id:doc.id, tipo:'enviado', detalle:{firmantes:validos.length} });
 
-  toast(enviar?"Documento creado y listo para firmar":"Borrador guardado","ok");
+  toast(enviar?(abierto?"Documento abierto creado — comparte el enlace general":"Documento creado y listo para firmar"):"Borrador guardado","ok");
   location.hash="#/docs";
   if(enviar) setTimeout(()=>abrirDocumento(doc.id), 350);
 }
@@ -2493,7 +2577,7 @@ async function abrirDocumento(id){
 
   // Carga LIGERA: sin el PDF ni las imágenes de firma (eso es lo pesado) → abre rápido
   const { data:doc, error } = await sb.from("doc_documentos")
-    .select("id,nombre,estado,fecha_limite,firma_ordenada,config,contenido,creado_en,plantilla_id,lista_id")
+    .select("id,nombre,estado,fecha_limite,firma_ordenada,config,contenido,creado_en,plantilla_id,lista_id,abierto")
     .eq("id",id).maybeSingle();
   if(error||!doc){ closeModal(); toast("Documento no encontrado","err"); return; }
   if((!Array.isArray(doc.contenido) || !doc.contenido.length) && doc.plantilla_id){
@@ -2510,14 +2594,17 @@ async function abrirDocumento(id){
 
   const rows = fs.map((f,i)=>{
     let acc;
+    const nombreEsc = esc(f.nombre||'firmante').replace(/'/g,"\\'");
     if(f.estado==='firmado'){
       acc = `<button class="btn btn-ghost btn-sm" onclick="verEvidencia('${f.id}')">${I.eye} Evidencia</button>
-             <button class="btn btn-ghost btn-sm" onclick="descargarPdfFirmante('${f.id}')">${I.pdf} PDF</button>`;
+             <button class="btn btn-ghost btn-sm" onclick="descargarPdfFirmante('${f.id}')">${I.pdf} PDF</button>
+             <button class="btn btn-ghost btn-sm" onclick="repetirFirmaFirmante('${f.id}','${doc.id}','${nombreEsc}')">${I.pen} Repetir firma</button>`;
     } else {
       acc = `<button class="btn btn-ghost btn-sm" onclick="copiarTexto('${linkFirma(f.token)}')">${I.link} Copiar</button>`;
       acc += `<button class="btn btn-ghost btn-sm" onclick="mostrarQR('${linkFirma(f.token)}','Firma del documento')">${I.qr} QR</button>`;
       if(f.correo) acc += `<button class="btn btn-ghost btn-sm" onclick="enviarPorCorreo('${f.id}')">✉️ Correo</button>`;
     }
+    acc += `<button class="btn btn-ghost btn-sm" title="Eliminar firmante" onclick="eliminarFirmanteDoc('${f.id}','${doc.id}','${nombreEsc}')">${I.trash}</button>`;
     return `<tr>
       <td>${i+1}</td>
       <td><b>${esc(f.nombre||'—')}</b>${f.correo?`<div class="muted-sm">${esc(f.correo)}</div>`:''}</td>
@@ -2541,9 +2628,19 @@ async function abrirDocumento(id){
           <div class="info-item"><div class="k">Fecha límite</div><div class="v">${doc.fecha_limite?fmtDate(doc.fecha_limite):'—'}</div></div>
           <div class="info-item"><div class="k">Orden de firma</div><div class="v">${doc.firma_ordenada?'Secuencial':'Cualquier orden'}</div></div>
           <div class="info-item"><div class="k">Campos</div><div class="v">${Array.isArray(doc.contenido)?doc.contenido.length:0}</div></div>
+          <div class="info-item"><div class="k">Tipo de firma</div><div class="v">${doc.abierto?'Abierta (cualquiera)':'Restringida (por cédula)'}</div></div>
           <div class="info-item full"><div class="k">Seguridad activada</div><div class="v">${esc(segResumen(doc.config))}</div></div>
         </div>
-        <h3 style="font-family:var(--display);font-size:16px;margin-bottom:10px">Firmantes (${fs.length})</h3>
+        ${doc.estado==='enviado'?`
+        <div class="resp-firma" style="margin-bottom:16px">
+          <div class="rf-info">
+            <div class="rf-k">Enlace de firma general</div>
+            <div class="rf-v">${doc.abierto?'Cualquiera con el enlace puede firmar':'Solo firman las cédulas de la lista'}</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="copiarTexto('${linkFirmaDoc(doc.id)}')">${I.link} Copiar enlace</button>
+          <button class="btn btn-ghost btn-sm" onclick="mostrarQR('${linkFirmaDoc(doc.id)}','Firma del documento')">${I.qr} QR</button>
+        </div>`:''}
+        <h3 style="font-family:var(--display);font-size:16px;margin-bottom:10px">Firmantes ${doc.abierto?'que han firmado ':''}(${fs.length})</h3>
         ${fs.length?`<div class="table-wrap"><table class="dt"><thead><tr><th>No</th><th>Firmante</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="muted-sm">Sin firmantes registrados.</div>'}
         ${eventos.length?`<h3 style="font-family:var(--display);font-size:16px;margin:24px 0 8px">Historial de eventos</h3>${eventoTimelineHTML(eventos)}`:''}
       </div>
@@ -2870,6 +2967,47 @@ function eliminarDocumento(id){
     const { error } = await sb.from("doc_documentos").delete().eq("id",id);
     if(error){ btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`; toast("No se pudo eliminar: "+error.message,"err"); return; }
     closeModal(); toast("Documento eliminado","ok"); renderDocsAdmin();
+  };
+}
+
+/* ---------- Repetir firma de un firmante (firmó mal / que lo haga otra vez) ---------- */
+function repetirFirmaFirmante(firmanteId, docId, nombre){
+  openModal(`<div class="modal" style="max-width:460px">
+    <div class="modal-head"><div><h2>Repetir firma</h2><p>El firmante podrá volver a firmar con el mismo enlace.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se borrará la firma y la evidencia de <b>${esc(nombre||'este firmante')}</b> y volverá a quedar <b>pendiente</b>, manteniéndolo en la lista. Si el documento estaba cerrado, se reabrirá para permitir la firma. Esta acción no se puede deshacer.</p></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-danger" id="confRepFirma">${I.pen} Sí, repetir firma</button></div></div>`);
+  document.getElementById("confRepFirma").onclick = async ()=>{
+    const btn=document.getElementById("confRepFirma"); btn.disabled=true; btn.innerHTML="Aplicando…";
+    const { error } = await sb.from("doc_firmantes").update({
+      estado:'pendiente', firma:null, selfie:null, foto_id:null, evidencia:null, firmado_en:null, abierto_en:null
+    }).eq("id", firmanteId);
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.pen} Sí, repetir firma`; toast("No se pudo aplicar: "+error.message,"err"); return; }
+    // Si el documento estaba finalizado, reabrirlo para que pueda firmar de nuevo
+    const doc = docDetalleActual;
+    if(doc && doc.estado==='finalizado'){ await sb.from("doc_documentos").update({estado:'enviado'}).eq("id",docId); }
+    await sb.from("doc_eventos").insert({ documento_id:docId, firmante_id:firmanteId, tipo:'editado', detalle:{accion:'repetir_firma', nombre} });
+    closeModal(); toast("Firma restablecida — el firmante puede firmar de nuevo","ok");
+    abrirDocumento(docId);
+  };
+}
+
+/* ---------- Eliminar un firmante del documento ---------- */
+function eliminarFirmanteDoc(firmanteId, docId, nombre){
+  openModal(`<div class="modal" style="max-width:460px">
+    <div class="modal-head"><div><h2>Eliminar firmante</h2><p>Se quita del documento por completo.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminará a <b>${esc(nombre||'este firmante')}</b> del documento, junto con su firma y evidencia. En un documento <b>restringido</b>, su cédula dejará de estar autorizada; si solo quieres que firme otra vez, usa <b>"Repetir firma"</b>. Esta acción no se puede deshacer.</p></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-danger" id="confDelFirm">${I.trash} Sí, eliminar</button></div></div>`);
+  document.getElementById("confDelFirm").onclick = async ()=>{
+    const btn=document.getElementById("confDelFirm"); btn.disabled=true; btn.innerHTML="Eliminando…";
+    const { error } = await sb.from("doc_firmantes").delete().eq("id", firmanteId);
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`; toast("No se pudo eliminar: "+error.message,"err"); return; }
+    await sb.from("doc_eventos").insert({ documento_id:docId, tipo:'editado', detalle:{accion:'eliminar_firmante', nombre} });
+    closeModal(); toast("Firmante eliminado","ok");
+    abrirDocumento(docId);
   };
 }
 
@@ -3200,6 +3338,125 @@ async function confirmarFirma(){
       <h2>¡Documento firmado!</h2>
       <p>Gracias, <b>${esc(nombre)}</b>. Tu firma y la evidencia quedaron registradas de forma segura.${data.finalizado?' El documento está completo.':''}</p>
     </div>`;
+}
+
+/* ============================================================
+   FIRMA POR ENLACE GENERAL DEL DOCUMENTO (una sola URL/QR)
+   - Documento abierto: cualquiera firma y queda registrado.
+   - Documento con participantes: solo firma si su cédula está en la lista.
+   ============================================================ */
+function extraFieldsDocHTML(c){
+  let h = `<div class="field"><label>Nombre completo *</label><input id="ff_nombre" placeholder="Nombre completo"></div>`;
+  h += `<div class="field"><label>Número de identificación (cédula) *</label><input id="ff_id" inputmode="numeric" placeholder="C.C. / documento"></div>`;
+  if(c.correo) h += `<div class="field"><label>Correo electrónico *</label><input id="ff_correo" type="email" placeholder="correo@ejemplo.com"></div>`;
+  if(c.cargo)  h += `<div class="field"><label>Cargo *</label><input id="ff_cargo" placeholder="Tu cargo"></div>`;
+  let extra = `<div class="firma-sec"><h3>Tus datos</h3>${h}</div>`;
+  if(c.selfie  && !tieneCampo('selfie'))  extra += capturaHTML('selfie','Selfie', I.user);
+  if(c.foto_id && !tieneCampo('foto_id')) extra += capturaHTML('fotoId','Documento de identidad', I.doc);
+  if(c.gps) extra += gpsHTML();
+  return extra;
+}
+
+async function renderFirmaDoc(id){
+  document.body.style.overflow="";
+  const cont = document.getElementById("app");
+  cont.innerHTML = `<div class="pub-wrap"><div class="pub-card"><div class="pub-body" style="text-align:center;padding:54px 20px"><div class="muted-sm">Cargando documento…</div></div></div></div>`;
+
+  const { data, error } = await sb.rpc("doc_publico_obtener", { p_id: id });
+  if(error || !data || !data.ok){
+    cont.innerHTML = pantallaFirmaBloqueada(I.lockBig, "Documento no disponible", "Este enlace no es válido o el documento ya no existe. Verifica con quien te lo compartió.");
+    return;
+  }
+  const d = data.documento;
+  firmaState = { token:null, docId:id, doc:d, firmante:{nombre:'',correo:'',identificacion:'',cargo:''}, config:(d.config||{}), campos:{}, firma:null, selfie:null, fotoId:null, gps:null };
+
+  if(d.estado === 'finalizado'){ cont.innerHTML = pantallaFirmaBloqueada(I.lockBig,"Documento finalizado","Este documento ya fue completado y no acepta más firmas."); return; }
+  if(d.estado !== 'enviado'){ cont.innerHTML = pantallaFirmaBloqueada(I.lockBig,"Aún no habilitado","Este documento todavía no está disponible para firma."); return; }
+  if(d.fecha_limite && d.fecha_limite < hoyLocal()){ cont.innerHTML = pantallaFirmaBloqueada(I.lockBig,"Documento vencido","La fecha límite para firmar ya pasó. Contacta al responsable."); return; }
+
+  const c = firmaState.config;
+  const aviso = d.abierto
+    ? "Completa tus datos y firma. Tu registro quedará guardado."
+    : "Solo pueden firmar las personas registradas. Ingresa tu cédula tal como fue registrada.";
+  cont.innerHTML = `
+    <div class="pub-wrap" style="max-width:920px"><div class="pub-card">
+      <div class="pub-head"><div class="acc"></div>
+        <h1>${esc(d.nombre)}</h1>
+        <div class="sub"><span>Don Aseo Ltda.</span><span>${d.abierto?'Firma abierta':'Firma restringida'}</span></div>
+      </div>
+      <div class="pub-body" id="firmaBody">
+        <p class="muted-sm" style="margin-bottom:14px">${aviso}</p>
+        <div class="pdf-cont" id="firmaPdf"><div class="muted-sm" style="text-align:center;padding:24px">Cargando documento…</div></div>
+        <div id="firmaExtra" style="margin-top:18px">${extraFieldsDocHTML(c)}</div>
+        <button class="btn btn-green" id="btnConfirmarFirma" style="width:100%;padding:14px;margin-top:14px">${I.check} Confirmar y firmar</button>
+        <p class="muted-sm" style="text-align:center;margin-top:10px">Al confirmar, tu firma y la evidencia quedan registradas.</p>
+      </div>
+    </div></div>`;
+
+  await renderFirmaPdf();
+  wireFirmaExtra();
+  document.getElementById('btnConfirmarFirma').onclick = confirmarFirmaDoc;
+}
+
+async function confirmarFirmaDoc(){
+  const c = firmaState.config, d = firmaState.doc, g = id => document.getElementById(id);
+  const camposDoc = d.contenido||[];
+  const nombre = (g('ff_nombre')?.value||"").trim();
+  const identificacion = (g('ff_id')?.value||"").trim();
+  const correo = (g('ff_correo')?.value||"").trim();
+  const cargo = (g('ff_cargo')?.value||"").trim();
+  if(!nombre){ toast("Falta tu nombre","err"); return; }
+  if(!identificacion){ toast("Falta tu número de identificación (cédula)","err"); return; }
+  if(c.correo && !correo){ toast("El correo es obligatorio","err"); return; }
+  if(c.cargo && !cargo){ toast("El cargo es obligatorio","err"); return; }
+  const exigeFirma = c.firma || camposDoc.some(x=>x.tipo==='firma');
+  if(exigeFirma && !firmaState.firma){ toast("Debes firmar el documento (toca el campo de firma)","err"); return; }
+  if(c.selfie && !firmaState.selfie){ toast("Falta la selfie","err"); return; }
+  if(c.foto_id && !firmaState.fotoId){ toast("Falta la foto de tu documento de identidad","err"); return; }
+  if(c.gps && !firmaState.gps){ toast("Comparte tu ubicación","err"); return; }
+
+  // Si el PDF tiene un campo "nombre", estámpalo con el nombre ingresado
+  const campoNombre = camposDoc.find(x=>x.tipo==='nombre');
+  if(campoNombre) firmaState.campos[campoNombre.id] = nombre;
+
+  const det = detectarNavegador();
+  let ip=null;
+  if(c.ip){ try{ const r=await fetch('https://api.ipify.org?format=json'); ip=(await r.json()).ip; }catch(e){} }
+  const evidencia = {
+    fecha_hora: c.fecha_hora ? new Date().toISOString() : null,
+    ip: c.ip ? ip : null,
+    navegador: c.navegador ? det.navegador : null,
+    so: c.so ? det.so : null,
+    gps: c.gps ? firmaState.gps : null,
+    campos: firmaState.campos
+  };
+
+  const btn=g('btnConfirmarFirma'); btn.disabled=true; btn.innerHTML="Registrando firma…";
+  const { data, error } = await sb.rpc("doc_publico_firmar", {
+    p_id: firmaState.docId, p_nombre:nombre, p_correo:correo, p_identificacion:identificacion, p_cargo:cargo,
+    p_firma:firmaState.firma, p_selfie:firmaState.selfie, p_foto_id:firmaState.fotoId, p_evidencia:evidencia
+  });
+  if(error || !data || !data.ok){
+    btn.disabled=false; btn.innerHTML=`${I.check} Confirmar y firmar`;
+    const m = data && data.motivo;
+    toast(
+      m==='no_autorizado' ? "Tu cédula no está en la lista de participantes. No puedes firmar este documento." :
+      m==='ya_firmado'    ? "Con esa cédula ya se firmó este documento." :
+      m==='vencido'       ? "El documento está vencido." :
+      m==='no_disponible' ? "El documento no está disponible para firma." :
+      "No se pudo registrar la firma","err");
+    return;
+  }
+  const abierto = !!data.abierto;
+  document.getElementById('firmaBody').innerHTML = `
+    <div class="success-screen">
+      <div class="ic">${I.checkBig}</div>
+      <h2>¡Documento firmado!</h2>
+      <p>Gracias, <b>${esc(nombre)}</b>. Tu firma y la evidencia quedaron registradas de forma segura.${data.finalizado?' El documento está completo.':''}</p>
+      ${abierto?`<div style="margin-top:24px"><button class="btn btn-green" id="otraFirma" style="padding:13px 26px">${I.plus} Firmar otra persona</button></div>`:''}
+    </div>`;
+  const of = document.getElementById('otraFirma');
+  if(of) of.onclick = ()=> renderFirmaDoc(firmaState.docId);
 }
 
 /* ---------- Auto-refresh del panel al volver a la pestaña ---------- */
