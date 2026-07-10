@@ -366,6 +366,7 @@ table.dt tr:hover td{background:#fafbfe}
 .campo-ov .co-preview{pointer-events:none;white-space:nowrap;overflow:hidden;line-height:1;color:#0e1733;font-family:Helvetica,Arial,sans-serif;padding:0 4px;font-weight:600}
 .campo-ov .co-del{position:absolute;top:-9px;right:-9px;width:18px;height:18px;border-radius:50%;background:var(--danger);color:#fff;font-size:11px;display:grid;place-items:center;cursor:pointer;box-shadow:var(--shadow-sm)}
 .campo-ov .co-rz{position:absolute;right:-5px;bottom:-5px;width:12px;height:12px;border-radius:3px;background:#fff;border:2px solid currentColor;cursor:nwse-resize}
+.campo-ov .co-pg{position:absolute;bottom:-11px;left:6px;background:currentColor;color:#fff;border-radius:6px;font-size:9px;font-weight:700;line-height:1.6;padding:0 6px;cursor:pointer;box-shadow:var(--shadow-sm);white-space:nowrap}
 /* campos interactivos en la página de firma del trabajador */
 .campo-firma{position:absolute;border:2px dashed var(--brand);background:rgba(29,51,199,.06);border-radius:5px;display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer}
 .campo-firma:hover{background:rgba(29,51,199,.13)}
@@ -2060,11 +2061,18 @@ async function renderPdfEditor(){
 function addCampo(tipo){
   if(!pdfEditor.numPages){ toast("Sube un PDF primero","err"); return; }
   const ft=FIELD_TYPES[tipo];
-  const nuevo = { id:uid(), tipo, page:0, x:50-ft.w/2, y:6, w:ft.w, h:ft.h };
+  // Coloca el campo en la página que está viendo el usuario (no siempre la primera)
+  let page=0; const midY=window.innerHeight/2;
+  const pages=Array.from(document.querySelectorAll('#pdfCont .pdf-page'));
+  const vis=pages.find(pg=>{ const r=pg.getBoundingClientRect(); return r.top<=midY && r.bottom>=midY; })
+          || pages.find(pg=>{ const r=pg.getBoundingClientRect(); return r.bottom>0 && r.top<window.innerHeight; });
+  if(vis) page=+vis.dataset.page;
+  const nuevo = { id:uid(), tipo, page, x:50-ft.w/2, y:10, w:ft.w, h:ft.h };
   pdfEditor.campos.push(nuevo);
   renderCampos();
   const el = document.querySelector(`.campo-ov[data-id="${nuevo.id}"]`);
   if(el) el.scrollIntoView({behavior:'smooth', block:'center'});
+  toast("Campo agregado en la página "+(page+1)+". Arrástralo donde quieras (puedes pasarlo a otra página).","ok");
 }
 
 function renderCampos(){
@@ -2077,8 +2085,11 @@ function renderCampos(){
     el.className='campo-ov'; el.dataset.id=c.id;
     el.style.left=c.x+'%'; el.style.top=c.y+'%'; el.style.width=c.w+'%'; el.style.height=c.h+'%';
     el.style.borderColor=ft.color; el.style.color=ft.color;
-    el.innerHTML=`<span class="co-lbl">${ft.icon} ${ft.label}</span><span class="co-del" title="Quitar">✕</span><span class="co-rz"></span>`;
+    const pgBtn = pdfEditor.numPages>1 ? `<span class="co-pg" title="Cambiar de página">Pág ${c.page+1}/${pdfEditor.numPages} ⇄</span>` : '';
+    el.innerHTML=`<span class="co-lbl">${ft.icon} ${ft.label}</span><span class="co-del" title="Quitar">✕</span>${pgBtn}<span class="co-rz"></span>`;
     wrap.appendChild(el);
+    const pg = el.querySelector('.co-pg');
+    if(pg) pg.onclick=(ev)=>{ ev.stopPropagation(); ev.preventDefault(); c.page=(c.page+1)%pdfEditor.numPages; renderCampos(); const nuevo=document.querySelector(`.campo-ov[data-id="${c.id}"]`); if(nuevo) nuevo.scrollIntoView({behavior:'smooth',block:'center'}); toast("Campo movido a la página "+(c.page+1),"ok"); };
     // Vista previa del tamaño de letra para campos de texto (así se ve cómo quedará en el PDF)
     const muestras = { nombre:'Nombre Apellido', texto:'Texto de ejemplo', fecha:new Date().toLocaleDateString('es-CO'), nombre_part:'Nombre del Participante', cedula_part:'1.234.567.890' };
     if(muestras[c.tipo]!=null){
@@ -2093,23 +2104,39 @@ function renderCampos(){
 }
 
 function hacerArrastrable(el, c, wrap){
-  let mode=null, sx,sy, ox,oy, ow,oh;
+  let mode=null, sx, sy, ow, oh, gx=0, gy=0, curWrap=wrap, lastX=0, lastY=0, scrollTimer=null;
+  const actualizarPreview=()=>{ const prev=el.querySelector('.co-preview'); if(prev){ prev.style.fontSize = Math.max(8, Math.min((el.clientHeight||0)*0.62, 60)) + 'px'; } };
+  const paginaEn=(x,y)=>{
+    const pages = Array.from(document.querySelectorAll('#pdfCont .pdf-page'));
+    return pages.find(pg=>{ const r=pg.getBoundingClientRect(); return x>=r.left && x<=r.right && y>=r.top && y<=r.bottom; });
+  };
+  const reposicionar=()=>{
+    // Si el cursor está sobre otra página, mueve el campo a esa página (¡pasa a hoja 2, 3, …!)
+    const target = paginaEn(lastX, lastY);
+    if(target && target!==curWrap){ curWrap=target; c.page=+target.dataset.page; curWrap.appendChild(el); }
+    const r=curWrap.getBoundingClientRect();
+    c.x = Math.max(0, Math.min(100-c.w, (lastX-r.left)/r.width*100 - gx));
+    c.y = Math.max(0, Math.min(100-c.h, (lastY-r.top)/r.height*100 - gy));
+    el.style.left=c.x+'%'; el.style.top=c.y+'%'; actualizarPreview();
+  };
   const onMove=(e)=>{
-    const p = e.touches?e.touches[0]:e; const r=wrap.getBoundingClientRect();
-    const dxP=(p.clientX-sx)/r.width*100, dyP=(p.clientY-sy)/r.height*100;
-    if(mode==='move'){ c.x=Math.max(0,Math.min(100-c.w, ox+dxP)); c.y=Math.max(0,Math.min(100-c.h, oy+dyP)); el.style.left=c.x+'%'; el.style.top=c.y+'%'; }
-    else { c.w=Math.max(6,Math.min(100-c.x, ow+dxP)); c.h=Math.max(3,Math.min(100-c.y, oh+dyP)); el.style.width=c.w+'%'; el.style.height=c.h+'%';
-      const prev=el.querySelector('.co-preview'); if(prev){ prev.style.fontSize = Math.max(8, Math.min((el.clientHeight||0)*0.62, 60)) + 'px'; } }
+    const p = e.touches?e.touches[0]:e; lastX=p.clientX; lastY=p.clientY;
+    if(mode==='move'){ reposicionar(); }
+    else { const r=curWrap.getBoundingClientRect(); const dxP=(p.clientX-sx)/r.width*100, dyP=(p.clientY-sy)/r.height*100;
+      c.w=Math.max(6,Math.min(100-c.x, ow+dxP)); c.h=Math.max(3,Math.min(100-c.y, oh+dyP)); el.style.width=c.w+'%'; el.style.height=c.h+'%'; actualizarPreview(); }
     e.preventDefault();
   };
-  const onUp=()=>{ mode=null; document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',onUp); document.removeEventListener('touchmove',onMove); document.removeEventListener('touchend',onUp); };
+  const onUp=()=>{ mode=null; if(scrollTimer){ clearInterval(scrollTimer); scrollTimer=null; } document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',onUp); document.removeEventListener('touchmove',onMove); document.removeEventListener('touchend',onUp); };
   const onDown=(e)=>{
-    if(e.target.classList.contains('co-del')) return;
+    if(e.target.classList.contains('co-del') || e.target.classList.contains('co-pg')) return;
     mode = e.target.classList.contains('co-rz') ? 'resize' : 'move';
-    const p = e.touches?e.touches[0]:e; sx=p.clientX; sy=p.clientY; ox=c.x; oy=c.y; ow=c.w; oh=c.h;
+    const p = e.touches?e.touches[0]:e; sx=p.clientX; sy=p.clientY; ow=c.w; oh=c.h; lastX=p.clientX; lastY=p.clientY;
+    const r=curWrap.getBoundingClientRect(); gx=(p.clientX-r.left)/r.width*100 - c.x; gy=(p.clientY-r.top)/r.height*100 - c.y;
     e.preventDefault();
     document.addEventListener('mousemove',onMove); document.addEventListener('mouseup',onUp);
     document.addEventListener('touchmove',onMove,{passive:false}); document.addEventListener('touchend',onUp);
+    // Auto-scroll cerca de los bordes para poder arrastrar hasta páginas de abajo/arriba
+    if(mode==='move'){ scrollTimer=setInterval(()=>{ const m=70; if(lastY<m){ window.scrollBy(0,-16); reposicionar(); } else if(lastY>window.innerHeight-m){ window.scrollBy(0,16); reposicionar(); } }, 16); }
   };
   el.addEventListener('mousedown',onDown); el.addEventListener('touchstart',onDown,{passive:false});
 }
