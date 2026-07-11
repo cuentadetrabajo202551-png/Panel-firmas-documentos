@@ -3756,12 +3756,15 @@ async function confirmarFirmaDoc(){
     return;
   }
   const abierto = !!data.abierto;
-  firmaState._miFirmado = { estado:'firmado', nombre, correo, identificacion, cargo, firma:firmaState.firma, selfie:firmaState.selfie, foto_id:firmaState.fotoId, evidencia, firmado_en:new Date().toISOString() };
+  // Usa los datos OFICIALES devueltos por el servidor (en restringido = los que el admin registró), no los tecleados
+  const nombreFinal = (data.nombre!=null && String(data.nombre)!=='') ? data.nombre : nombre;
+  const idFinal = (data.identificacion!=null && String(data.identificacion)!=='') ? data.identificacion : identificacion;
+  firmaState._miFirmado = { estado:'firmado', nombre:nombreFinal, correo, identificacion:idFinal, cargo, firma:firmaState.firma, selfie:firmaState.selfie, foto_id:firmaState.fotoId, evidencia, firmado_en:new Date().toISOString() };
   document.getElementById('firmaBody').innerHTML = `
     <div class="success-screen">
       <div class="ic">${I.checkBig}</div>
       <h2>¡Documento firmado!</h2>
-      <p>Gracias, <b>${esc(nombre)}</b>. Tu firma y la evidencia quedaron registradas de forma segura.${data.finalizado?' El documento está completo.':''}</p>
+      <p>Gracias, <b>${esc(nombreFinal)}</b>. Tu firma y la evidencia quedaron registradas de forma segura.${data.finalizado?' El documento está completo.':''}</p>
       <div style="margin-top:22px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
         <button class="btn btn-green" id="btnDescargarMio" style="padding:13px 26px">${I.pdf} Descargar documento firmado</button>
         ${abierto?`<button class="btn btn-ghost" id="otraFirma" style="padding:13px 26px">${I.plus} Firmar otra persona</button>`:''}
