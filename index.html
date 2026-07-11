@@ -405,6 +405,10 @@ table.dt tr:hover td{background:#fafbfe}
 .r-input:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
 .r-firma{margin:14px 0}.r-firma-line{border-top:1.5px dashed var(--ink-3);padding-top:6px;color:var(--ink-3);font-size:12.5px}
 .firma-sec{margin-bottom:18px}.firma-sec h3{font-family:var(--display);font-size:15px;font-weight:700;margin-bottom:10px}
+.firma-legal{margin:18px 0 6px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:#f6f8fd}
+.firma-legal p{font-size:12.5px;line-height:1.5;color:var(--ink-2);margin:0 0 12px;text-align:justify}
+.chk-legal{display:flex;align-items:flex-start;gap:9px;font-size:13.5px;font-weight:700;color:var(--ink);cursor:pointer}
+.chk-legal input{width:20px;height:20px;flex-shrink:0;margin-top:1px;cursor:pointer}
 .cap-box{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
 .cap-prev{display:flex;align-items:center;gap:12px}.cap-prev img{height:84px;border-radius:9px;border:1px solid var(--line);object-fit:cover}
 .cap-ok{color:var(--green);font-weight:700;font-size:13.5px;display:flex;align-items:center;gap:6px}
@@ -1369,16 +1373,29 @@ function initSignature(){
   const ctx = canvas.getContext("2d");
   let drawing=false, hasInk=false, last=null;
 
-  function resize(){
+  function resize(preservar){
+    // Preserva lo dibujado (para no perder la firma al rotar/cambiar de tamaño)
+    const prev = (preservar && hasInk) ? canvas.toDataURL() : null;
     const ratio = window.devicePixelRatio || 1;
     const w = box.clientWidth, h = 200;
     canvas.width = w*ratio; canvas.height = h*ratio;
     canvas.style.width=w+"px"; canvas.style.height=h+"px";
     ctx.setTransform(ratio,0,0,ratio,0,0);
     ctx.lineWidth=2.4; ctx.lineCap="round"; ctx.lineJoin="round"; ctx.strokeStyle="#0e1733";
+    if(prev){ const img=new Image(); img.onload=()=>{ ctx.drawImage(img,0,0,w,h); }; img.src=prev; }
   }
-  resize();
-  window.addEventListener("resize", ()=>{ const d=hasInk?canvas.toDataURL():null; resize(); /* no restauramos para simplicidad */ });
+  let lastW = box.clientWidth;
+  resize(false);
+  // IMPORTANTE: en móvil, hacer scroll muestra/oculta la barra del navegador y dispara "resize";
+  // solo redimensionamos si cambió el ANCHO (rotación), preservando la firma. Un cambio de alto NO borra nada.
+  const onResize = ()=>{
+    if(!document.body.contains(canvas)){ window.removeEventListener("resize", onResize); return; }
+    const w = box.clientWidth;
+    if(w === lastW) return;   // mismo ancho (scroll en móvil): no tocar el canvas
+    lastW = w;
+    resize(true);
+  };
+  window.addEventListener("resize", onResize);
 
   function pos(e){
     const r = canvas.getBoundingClientRect();
@@ -2616,6 +2633,7 @@ async function verEvidencia(id){
           <div class="info-item"><div class="k">Navegador</div><div class="v">${esc(ev.navegador||'—')}</div></div>
           <div class="info-item"><div class="k">Sistema operativo</div><div class="v">${esc(ev.so||'—')}</div></div>
           <div class="info-item full"><div class="k">Ubicación GPS</div><div class="v">${gps?`${(+gps.lat).toFixed(5)}, ${(+gps.lng).toFixed(5)} (±${Math.round(gps.precision||0)} m) · <a href="https://www.google.com/maps?q=${gps.lat},${gps.lng}" target="_blank" rel="noopener">Ver en mapa</a>`:'—'}</div></div>
+          <div class="info-item full"><div class="k">Consentimiento (Ley 527 de 1999)</div><div class="v">${ev.aceptacion&&ev.aceptacion.aceptado?`✔ Aceptado${ev.aceptacion.fecha?' el '+fmtDateTime(ev.aceptacion.fecha):''}`:'—'}</div></div>
           ${camposHTML}
         </div>
         ${imgs?`<div class="ev-imgs">${imgs}</div>`:'<div class="muted-sm">Sin imágenes capturadas.</div>'}
@@ -3299,7 +3317,16 @@ function formularioFirmaHTML(c, f, pedirId){
   if(c.selfie  || tieneCampo('selfie'))  html += capturaHTML('selfie','Selfie', I.user);
   if(c.foto_id || tieneCampo('foto_id')) html += capturaHTML('fotoId','Documento de identidad', I.doc);
   if(c.gps) html += gpsHTML();
+  html += declaracionLegalHTML();
   return html;
+}
+
+/* Declaración de consentimiento (Ley 527 de 1999) + casilla de aceptación que habilita el botón */
+function declaracionLegalHTML(){
+  return `<div class="firma-legal">
+    <p>Declaro que la firma electrónica registrada en este documento ha sido realizada directamente por mí, bajo mi exclusivo control, y refleja mi consentimiento expreso respecto del contenido del presente documento. Reconozco que esta firma produce los mismos efectos jurídicos que una firma manuscrita, conforme a la Ley 527 de 1999 y demás normas aplicables.</p>
+    <label class="chk chk-legal"><input type="checkbox" id="ff_acepto"> <span>He leído y acepto los términos anteriores</span></label>
+  </div>`;
 }
 
 function wireFormularioFirma(){
@@ -3313,6 +3340,9 @@ function wireFormularioFirma(){
   };
   if(document.getElementById('sigCanvas')){ initSignature(); const sc=document.getElementById('sigClear'); if(sc) sc.onclick=()=>sigPad.clear(); }
   document.querySelectorAll('#firmaExtra [data-txt]').forEach(inp=>{ inp.oninput=()=>{ firmaState.campos[inp.dataset.txt]=inp.value; }; });
+  // El botón de firmar queda deshabilitado hasta que acepte la declaración
+  const acepto=document.getElementById('ff_acepto'), btn=document.getElementById('btnConfirmarFirma');
+  if(acepto && btn){ btn.disabled=true; btn.style.opacity='.55'; acepto.onchange=()=>{ btn.disabled=!acepto.checked; btn.style.opacity=acepto.checked?'1':'.55'; }; }
 }
 
 async function renderFirmaPublica(token){
@@ -3435,13 +3465,20 @@ function abrirPadFirma(){
 function tomarFotoCampo(key){
   const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*';
   inp.setAttribute('capture', key==='fotoId' ? 'environment' : 'user');
-  inp.onchange=async ()=>{ const file=inp.files[0]; if(!file) return;
-    firmaState[key] = await comprimirImagen(file, key==='fotoId'?1000:600);
-    const tipo = key==='fotoId' ? 'foto_id' : 'selfie';
-    document.querySelectorAll(`.campo-firma[data-tipo="${tipo}"]`).forEach(el=>{ const c=(firmaState.doc.contenido||[]).find(x=>x.id===el.dataset.id); if(c) pintarCampoFirma(el,c); });
-    const box=document.getElementById('cap_'+key);
-    if(box){ box.innerHTML=`<div class="cap-prev"><img src="${firmaState[key]}"><button class="btn btn-ghost btn-sm" data-recap="${key}">Cambiar</button></div>`; box.querySelector('[data-recap]').onclick=()=>tomarFotoCampo(key); }
-    toast(key==='selfie'?"Selfie lista":"Foto lista","ok");
+  // El input DEBE estar en el DOM para que en móvil el onchange dispare de forma confiable (si no, a veces falla la 1ª vez)
+  inp.style.position='fixed'; inp.style.left='-9999px'; inp.style.opacity='0';
+  document.body.appendChild(inp);
+  inp.onchange=async ()=>{
+    try{
+      const file=inp.files[0]; if(!file) return;
+      const box=document.getElementById('cap_'+key);
+      if(box) box.innerHTML=`<div class="muted-sm" style="padding:8px">Procesando imagen…</div>`;
+      firmaState[key] = await comprimirImagen(file, key==='fotoId'?1000:600);
+      const box2=document.getElementById('cap_'+key);
+      if(box2){ box2.innerHTML=`<div class="cap-prev"><img src="${firmaState[key]}"><button class="btn btn-ghost btn-sm" data-recap="${key}">Cambiar</button></div>`; box2.querySelector('[data-recap]').onclick=()=>tomarFotoCampo(key); }
+      toast(key==='selfie'?"Selfie lista":"Foto lista","ok");
+    }catch(e){ console.error(e); toast("No se pudo procesar la imagen, intenta de nuevo","err"); }
+    finally{ inp.remove(); }
   };
   inp.click();
 }
@@ -3484,6 +3521,7 @@ function wireFirmaForm(){
 
 async function confirmarFirma(){
   const c = firmaState.config, d = firmaState.doc, g = id => document.getElementById(id);
+  if(!g('ff_acepto')?.checked){ toast("Debes aceptar la declaración para poder firmar","err"); return; }
   const camposDoc = d.contenido||[];
   const campoNombre = camposDoc.find(x=>x.tipo==='nombre');
   const nombre = (g('ff_nombre')?.value||"").trim() || (campoNombre ? (firmaState.campos[campoNombre.id]||'') : '').trim() || firmaState.firmante.nombre || "";
@@ -3511,7 +3549,8 @@ async function confirmarFirma(){
     navegador: c.navegador ? det.navegador : null,
     so: c.so ? det.so : null,
     gps: c.gps ? firmaState.gps : null,
-    campos: firmaState.campos
+    campos: firmaState.campos,
+    aceptacion: { texto:'Declaración de firma electrónica - Ley 527 de 1999', aceptado:true, fecha:new Date().toISOString() }
   };
 
   const btn=g('btnConfirmarFirma'); btn.disabled=true; btn.innerHTML="Registrando firma…";
@@ -3597,6 +3636,7 @@ async function renderFirmaDoc(id){
 
 async function confirmarFirmaDoc(){
   const c = firmaState.config, d = firmaState.doc, g = id => document.getElementById(id);
+  if(!g('ff_acepto')?.checked){ toast("Debes aceptar la declaración para poder firmar","err"); return; }
   const camposDoc = d.contenido||[];
   const nombre = (g('ff_nombre')?.value||"").trim();
   const identificacion = (g('ff_id')?.value||"").trim();
@@ -3626,7 +3666,8 @@ async function confirmarFirmaDoc(){
     navegador: c.navegador ? det.navegador : null,
     so: c.so ? det.so : null,
     gps: c.gps ? firmaState.gps : null,
-    campos: firmaState.campos
+    campos: firmaState.campos,
+    aceptacion: { texto:'Declaración de firma electrónica - Ley 527 de 1999', aceptado:true, fecha:new Date().toISOString() }
   };
 
   const btn=g('btnConfirmarFirma'); btn.disabled=true; btn.innerHTML="Registrando firma…";
