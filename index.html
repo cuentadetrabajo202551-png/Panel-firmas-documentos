@@ -2084,15 +2084,18 @@ async function renderPdfEditor(){
     pdfEditor.numPages = pdf.numPages;
     cont.innerHTML = "";
     const W = Math.min(820, Math.max(360, (cont.clientWidth||760) - 36));
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
     for(let i=1;i<=pdf.numPages;i++){
       const page = await pdf.getPage(i);
       const vp1 = page.getViewport({scale:1});
       const vp = page.getViewport({scale: W/vp1.width});
       const wrap = document.createElement('div'); wrap.className='pdf-page'; wrap.dataset.page=i-1;
       wrap.style.width=vp.width+'px'; wrap.style.height=vp.height+'px';
-      const canvas = document.createElement('canvas'); canvas.width=vp.width; canvas.height=vp.height;
+      const canvas = document.createElement('canvas');
+      canvas.width=Math.floor(vp.width*dpr); canvas.height=Math.floor(vp.height*dpr);
+      canvas.style.width=vp.width+'px'; canvas.style.height=vp.height+'px';
       wrap.appendChild(canvas); cont.appendChild(wrap);
-      await page.render({canvasContext:canvas.getContext('2d'), viewport:vp}).promise;
+      await page.render({ canvasContext:canvas.getContext('2d'), viewport:vp, transform: dpr!==1 ? [dpr,0,0,dpr,0,0] : undefined }).promise;
     }
     renderCampos();
   }catch(e){ console.error(e); cont.innerHTML = `<div class="empty"><div class="ic">${I.pdf}</div><h3>No se pudo leer el PDF</h3><p>${esc(e.message||'Archivo no válido')}</p></div>`; }
@@ -3043,11 +3046,15 @@ async function renderPdfEnCont(src, cont){
   const pdf = await window.pdfjsLib.getDocument({data:bytes}).promise;
   cont.innerHTML="";
   const W = Math.min(820, Math.max(360, (cont.clientWidth||760)-36));
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
   for(let i=1;i<=pdf.numPages;i++){
     const page=await pdf.getPage(i); const vp1=page.getViewport({scale:1}); const vp=page.getViewport({scale:W/vp1.width});
     const wrap=document.createElement('div'); wrap.className='pdf-page'; wrap.style.width=vp.width+'px'; wrap.style.height=vp.height+'px';
-    const cv=document.createElement('canvas'); cv.width=vp.width; cv.height=vp.height; wrap.appendChild(cv); cont.appendChild(wrap);
-    await page.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;
+    const cv=document.createElement('canvas');
+    cv.width=Math.floor(vp.width*dpr); cv.height=Math.floor(vp.height*dpr);
+    cv.style.width=vp.width+'px'; cv.style.height=vp.height+'px';
+    wrap.appendChild(cv); cont.appendChild(wrap);
+    await page.render({ canvasContext:cv.getContext('2d'), viewport:vp, transform: dpr!==1 ? [dpr,0,0,dpr,0,0] : undefined }).promise;
   }
 }
 
@@ -3441,11 +3448,15 @@ async function renderFirmaPdf(){
     const pdf = await window.pdfjsLib.getDocument({data:bytes}).promise;
     cont.innerHTML = "";
     const W = Math.min(820, Math.max(360, (cont.clientWidth||760)-36));
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);   // nitidez en pantallas de alta densidad (móviles)
     for(let i=1;i<=pdf.numPages;i++){
       const page=await pdf.getPage(i); const vp1=page.getViewport({scale:1}); const vp=page.getViewport({scale:W/vp1.width});
       const wrap=document.createElement('div'); wrap.className='pdf-page'; wrap.dataset.page=i-1; wrap.style.width=vp.width+'px'; wrap.style.height=vp.height+'px';
-      const cv=document.createElement('canvas'); cv.width=vp.width; cv.height=vp.height; wrap.appendChild(cv); cont.appendChild(wrap);
-      await page.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;
+      const cv=document.createElement('canvas');
+      cv.width=Math.floor(vp.width*dpr); cv.height=Math.floor(vp.height*dpr);
+      cv.style.width=vp.width+'px'; cv.style.height=vp.height+'px';
+      wrap.appendChild(cv); cont.appendChild(wrap);
+      await page.render({ canvasContext:cv.getContext('2d'), viewport:vp, transform: dpr!==1 ? [dpr,0,0,dpr,0,0] : undefined }).promise;
     }
     // Sin campos sobrepuestos: el firmante ve el PDF limpio y firma en el formulario de abajo.
   }catch(e){ console.error(e); cont.innerHTML = `<div class="muted-sm" style="text-align:center;padding:20px">No se pudo mostrar el documento.</div>`; }
