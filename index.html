@@ -207,7 +207,7 @@ input,textarea,select{font-family:inherit;font-size:14px;color:var(--ink)}
 .modal-head h2{font-family:var(--display);font-size:21px;font-weight:700;letter-spacing:-.01em}
 .modal-head p{font-size:13px;color:var(--ink-3);margin-top:3px}
 .modal-body{padding:24px 26px;max-height:64vh;overflow-y:auto}
-.modal-foot{padding:18px 26px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end;background:#fbfcfe}
+.modal-foot{padding:18px 26px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;background:#fbfcfe}
 .close-x{width:34px;height:34px;border-radius:9px;background:#f1f3f9;color:var(--ink-2);display:grid;place-items:center;flex-shrink:0;transition:.15s}
 .close-x:hover{background:var(--danger-soft);color:var(--danger)}
 
@@ -2691,6 +2691,9 @@ async function abrirDocumento(id){
   const eventos = edata||[];
   docDetalleActual = doc; docDetalleFirmantes = fs; _docPesadoId = null;
 
+  // La columna "Foto" solo aparece si el documento captura selfie (por config o por campo en la plantilla)
+  const tieneSelfie = !!(doc.config && doc.config.selfie) || (Array.isArray(doc.contenido) && doc.contenido.some(c=>c.tipo==='selfie'));
+
   const rows = fs.map((f,i)=>{
     let acc;
     const nombreEsc = esc(f.nombre||'firmante').replace(/'/g,"\\'");
@@ -2710,7 +2713,7 @@ async function abrirDocumento(id){
       <td><b>${esc(f.nombre||'—')}</b>${f.correo?`<div class="muted-sm">${esc(f.correo)}</div>`:''}${f.identificacion?`<div class="muted-sm">C.C. ${esc(f.identificacion)}</div>`:''}</td>
       <td><span class="badge ${f.estado==='firmado'?'activa':'cerrada'}"><span class="dot"></span>${f.estado==='firmado'?'Firmado':'Pendiente'}</span></td>
       <td data-firma-cell="${f.id}">${miniPh}</td>
-      <td data-foto-cell="${f.id}">${miniPh}</td>
+      ${tieneSelfie ? `<td data-foto-cell="${f.id}">${miniPh}</td>` : ''}
       <td><div class="acc-mini">${acc}</div></td>
     </tr>`;
   }).join("");
@@ -2743,7 +2746,7 @@ async function abrirDocumento(id){
           <button class="btn btn-ghost btn-sm" onclick="mostrarQR('${linkFirmaDoc(doc.id)}','Firma del documento', ()=>abrirDocumento('${doc.id}'))">${I.qr} QR</button>
         </div>`:''}
         <h3 style="font-family:var(--display);font-size:16px;margin-bottom:10px">Firmantes ${doc.abierto?'que han firmado ':''}(${fs.length})</h3>
-        ${fs.length?`<div class="table-wrap"><table class="dt"><thead><tr><th>No</th><th>Firmante</th><th>Estado</th><th>Firma</th><th>Foto</th><th>Acciones</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="muted-sm">Sin firmantes registrados.</div>'}
+        ${fs.length?`<div class="table-wrap"><table class="dt"><thead><tr><th>No</th><th>Firmante</th><th>Estado</th><th>Firma</th>${tieneSelfie?'<th>Foto</th>':''}<th>Acciones</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="muted-sm">Sin firmantes registrados.</div>'}
         ${eventos.length?`<h3 style="font-family:var(--display);font-size:16px;margin:24px 0 8px">Historial de eventos</h3>${eventoTimelineHTML(eventos)}`:''}
       </div>
       <div class="modal-foot">
@@ -2758,13 +2761,14 @@ async function abrirDocumento(id){
     </div>`;
 
   // La ventana abre YA; las miniaturas (firma/foto) se cargan aparte y se rellenan cuando llegan (más fluido)
-  cargarMiniaturasFirmantes(id);
+  cargarMiniaturasFirmantes(id, tieneSelfie);
 }
 
 /* Rellena las miniaturas de firma y foto en la tabla del detalle, sin bloquear la apertura */
-async function cargarMiniaturasFirmantes(docId){
+async function cargarMiniaturasFirmantes(docId, conSelfie){
   try{
-    const { data } = await sb.from("doc_firmantes").select("id,firma,selfie").eq("documento_id",docId);
+    const cols = conSelfie ? "id,firma,selfie" : "id,firma";
+    const { data } = await sb.from("doc_firmantes").select(cols).eq("documento_id",docId);
     if(!data) return;
     // Si el modal ya cambió (cerró/abrió otro doc), no hacer nada
     if(!document.querySelector(`[data-firma-cell]`)) return;
