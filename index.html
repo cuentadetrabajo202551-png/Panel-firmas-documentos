@@ -240,6 +240,10 @@ table.dt td{padding:11px 14px;border-bottom:1px solid var(--line-2);vertical-ali
 table.dt tr:last-child td{border-bottom:none}
 table.dt tr:hover td{background:#fafbfe}
 .sig-thumb{height:34px;width:auto;max-width:120px;border:1px solid var(--line);border-radius:6px;background:#fff}
+.foto-thumb{height:36px;width:36px;object-fit:cover;border:1px solid var(--line);border-radius:7px;background:#fff;cursor:pointer}
+.dt .icon-btn{width:30px;height:30px;border-radius:8px}
+.dt .icon-btn svg{width:15px;height:15px}
+.dt .acc-mini{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
 .muted-sm{color:var(--ink-3);font-size:12.5px}
 
 /* ---------- Public form ---------- */
@@ -1853,9 +1857,17 @@ async function loadDocsState(){
   DOCSTATE.firmantes  = f.data || [];
 }
 
-async function renderDocsAdmin(){
-  bloquear("Cargando documentos…");
-  try{ await loadDocsState(); } finally{ desbloquear(); }
+let _docsTimer = null;
+function _tickDocs(){
+  if(location.hash!=="#/docs"){ if(_docsTimer){ clearInterval(_docsTimer); _docsTimer=null; } return; }
+  if(document.hidden) return;              // no refrescar en segundo plano
+  renderDocsAdmin(true);                   // refresco silencioso (sin reloj de arena)
+}
+
+async function renderDocsAdmin(silent){
+  const scrollY = window.scrollY;
+  if(silent){ await loadDocsState(); }
+  else { bloquear("Cargando documentos…"); try{ await loadDocsState(); } finally{ desbloquear(); } }
   const docs = DOCSTATE.documentos, firmas = DOCSTATE.firmantes, plantillas = DOCSTATE.plantillas;
   const hoy = hoyLocal();
   const creados    = docs.length;
@@ -1918,6 +1930,9 @@ async function renderDocsAdmin(){
       else if(act==="del") eliminarDocumento(id);
     };
   });
+  if(silent) window.scrollTo(0, scrollY);   // conservar la posición en el refresco silencioso
+  // Refresco automático silencioso de los números (sin overlay) mientras se está en el home
+  if(!silent){ if(_docsTimer) clearInterval(_docsTimer); _docsTimer = setInterval(_tickDocs, 20000); }
 }
 
 function plantillaCard(p){
@@ -2663,9 +2678,9 @@ async function abrirDocumento(id){
     .select("id,documento_id,nombre,correo,identificacion,cargo,orden,token,estado,evidencia,firmado_en")
     .eq("documento_id",id).order("orden",{ascending:true});
   const fs = fdata||[];
-  // Carga ligera de las firmas (imagen) para mostrarlas como miniatura en la tabla
-  const { data:firmasData } = await sb.from("doc_firmantes").select("id,firma").eq("documento_id",id);
-  if(firmasData){ const mf={}; firmasData.forEach(r=>{ mf[r.id]=r.firma; }); fs.forEach(f=>{ if(mf[f.id]) f.firma=mf[f.id]; }); }
+  // Carga ligera de firma + selfie (miniaturas para la tabla)
+  const { data:firmasData } = await sb.from("doc_firmantes").select("id,firma,selfie").eq("documento_id",id);
+  if(firmasData){ const mf={}; firmasData.forEach(r=>{ mf[r.id]=r; }); fs.forEach(f=>{ const r=mf[f.id]; if(r){ f.firma=r.firma; f.selfie=r.selfie; } }); }
   const { data:edata } = await sb.from("doc_eventos").select("*").eq("documento_id",id).order("ocurrido_en",{ascending:true});
   const eventos = edata||[];
   docDetalleActual = doc; docDetalleFirmantes = fs; _docPesadoId = null;
@@ -2674,21 +2689,22 @@ async function abrirDocumento(id){
     let acc;
     const nombreEsc = esc(f.nombre||'firmante').replace(/'/g,"\\'");
     if(f.estado==='firmado'){
-      acc = `<button class="btn btn-ghost btn-sm" onclick="verEvidencia('${f.id}')">${I.eye} Evidencia</button>
-             <button class="btn btn-ghost btn-sm" onclick="descargarPdfFirmante('${f.id}')">${I.pdf} PDF</button>
-             <button class="btn btn-ghost btn-sm" onclick="repetirFirmaFirmante('${f.id}','${doc.id}','${nombreEsc}')">${I.pen} Repetir firma</button>`;
+      acc = `<button class="icon-btn" title="Ver evidencia" onclick="verEvidencia('${f.id}')">${I.eye}</button>
+             <button class="icon-btn" title="Descargar PDF firmado" onclick="descargarPdfFirmante('${f.id}')">${I.pdf}</button>
+             <button class="icon-btn" title="Repetir firma" onclick="repetirFirmaFirmante('${f.id}','${doc.id}','${nombreEsc}')">${I.pen}</button>`;
     } else {
-      acc = `<button class="btn btn-ghost btn-sm" onclick="copiarTexto('${linkFirma(f.token)}')">${I.link} Copiar</button>`;
-      acc += `<button class="btn btn-ghost btn-sm" onclick="mostrarQR('${linkFirma(f.token)}','Firma del documento')">${I.qr} QR</button>`;
-      if(f.correo) acc += `<button class="btn btn-ghost btn-sm" onclick="enviarPorCorreo('${f.id}')">✉️ Correo</button>`;
+      acc = `<button class="icon-btn" title="Copiar enlace" onclick="copiarTexto('${linkFirma(f.token)}')">${I.link}</button>`;
+      acc += `<button class="icon-btn" title="Compartir QR" onclick="mostrarQR('${linkFirma(f.token)}','Firma del documento')">${I.qr}</button>`;
+      if(f.correo) acc += `<button class="icon-btn" title="Enviar por correo" onclick="enviarPorCorreo('${f.id}')">✉️</button>`;
     }
-    acc += `<button class="btn btn-ghost btn-sm" title="Eliminar firmante" onclick="eliminarFirmanteDoc('${f.id}','${doc.id}','${nombreEsc}')">${I.trash}</button>`;
+    acc += `<button class="icon-btn danger" title="Eliminar firmante" onclick="eliminarFirmanteDoc('${f.id}','${doc.id}','${nombreEsc}')">${I.trash}</button>`;
     return `<tr>
       <td>${i+1}</td>
       <td><b>${esc(f.nombre||'—')}</b>${f.correo?`<div class="muted-sm">${esc(f.correo)}</div>`:''}${f.identificacion?`<div class="muted-sm">C.C. ${esc(f.identificacion)}</div>`:''}</td>
       <td><span class="badge ${f.estado==='firmado'?'activa':'cerrada'}"><span class="dot"></span>${f.estado==='firmado'?'Firmado':'Pendiente'}</span></td>
       <td>${f.firma?`<img class="sig-thumb" src="${f.firma}" alt="firma">`:'<span class="muted-sm">—</span>'}</td>
-      <td><div style="display:flex;gap:5px;flex-wrap:wrap">${acc}</div></td>
+      <td>${f.selfie?`<img class="foto-thumb" src="${f.selfie}" alt="foto" title="Ver evidencia" onclick="verEvidencia('${f.id}')">`:'<span class="muted-sm">—</span>'}</td>
+      <td><div class="acc-mini">${acc}</div></td>
     </tr>`;
   }).join("");
 
@@ -2720,7 +2736,7 @@ async function abrirDocumento(id){
           <button class="btn btn-ghost btn-sm" onclick="mostrarQR('${linkFirmaDoc(doc.id)}','Firma del documento')">${I.qr} QR</button>
         </div>`:''}
         <h3 style="font-family:var(--display);font-size:16px;margin-bottom:10px">Firmantes ${doc.abierto?'que han firmado ':''}(${fs.length})</h3>
-        ${fs.length?`<div class="table-wrap"><table class="dt"><thead><tr><th>No</th><th>Firmante</th><th>Estado</th><th>Firma</th><th>Acciones</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="muted-sm">Sin firmantes registrados.</div>'}
+        ${fs.length?`<div class="table-wrap"><table class="dt"><thead><tr><th>No</th><th>Firmante</th><th>Estado</th><th>Firma</th><th>Foto</th><th>Acciones</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="muted-sm">Sin firmantes registrados.</div>'}
         ${eventos.length?`<h3 style="font-family:var(--display);font-size:16px;margin:24px 0 8px">Historial de eventos</h3>${eventoTimelineHTML(eventos)}`:''}
       </div>
       <div class="modal-foot">
@@ -3716,6 +3732,8 @@ function esRutaEdicion(){
 document.addEventListener("visibilitychange", ()=>{
   // No recargar si está oculta, en una vista pública, o en un formulario (perdería lo escrito)
   if(document.hidden || esRutaPublica() || esRutaEdicion()) return;
+  // Home de documentos: refresco SILENCIOSO (sin reloj de arena) para no molestar
+  if(location.hash === "#/docs"){ renderDocsAdmin(true); return; }
   router();   // re-renderiza el módulo activo (asistencia o documentos)
 });
 
