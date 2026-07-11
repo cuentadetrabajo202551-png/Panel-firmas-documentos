@@ -1854,7 +1854,7 @@ let DOCSTATE = { documentos: [], plantillas: [], firmantes: [] };
 
 async function loadDocsState(){
   const [d, p, f] = await Promise.all([
-    sb.from("doc_documentos").select("id,nombre,estado,fecha_limite,creado_en,lista_id").order("creado_en",{ascending:false}),
+    sb.from("doc_documentos").select("id,nombre,estado,fecha_limite,creado_en,lista_id,abierto,contenido").order("creado_en",{ascending:false}),
     sb.from("doc_plantillas").select("id,nombre,categoria,creada_en,contenido").order("creada_en",{ascending:false}),
     sb.from("doc_firmantes").select("id,documento_id,estado")
   ]);
@@ -2696,6 +2696,8 @@ async function abrirDocumento(id){
 
   // La columna "Foto" solo aparece si el documento captura selfie (por config o por campo en la plantilla)
   const tieneSelfie = !!(doc.config && doc.config.selfie) || (Array.isArray(doc.contenido) && doc.contenido.some(c=>c.tipo==='selfie'));
+  // Documento de "copia por persona": el PDF/vista combinado no aplica (cada quien tiene su copia individual)
+  const multiCopia = docEsMultiCopia(doc, fs.length);
 
   const rows = fs.map((f,i)=>{
     let acc;
@@ -2755,8 +2757,8 @@ async function abrirDocumento(id){
       <div class="modal-foot">
         <button class="btn btn-danger" onclick="eliminarDocumento('${doc.id}')">${I.trash} Eliminar</button>
         ${doc.estado!=='finalizado'?`<button class="btn btn-ghost" onclick="location.hash='#/docs/documento/${doc.id}/editar'">${I.pen} Editar</button>`:''}
-        <button class="btn btn-ghost" onclick="verDocumento()">${I.eye} Ver documento</button>
-        <button class="btn btn-green" onclick="generarPDFDocumento()">${I.pdf} PDF completo</button>
+        ${!multiCopia?`<button class="btn btn-ghost" onclick="verDocumento()">${I.eye} Ver documento</button>
+        <button class="btn btn-green" onclick="generarPDFDocumento()">${I.pdf} PDF completo</button>`:''}
         ${fs.filter(f=>f.estado==='firmado').length?`<button class="btn btn-green" onclick="descargarZipFirmados()">${I.doc} Descargar todos (ZIP)</button>`:''}
         ${doc.estado==='borrador'?`<button class="btn btn-primary" onclick="enviarDocumento('${doc.id}')">${I.check} Marcar como enviado</button>`:''}
         ${doc.estado==='enviado'?`<button class="btn btn-danger" onclick="finalizarDocumento('${doc.id}')">${I.lock} Cerrar documento</button>`:''}
@@ -3233,10 +3235,19 @@ function eliminarFirmanteDoc(firmanteId, docId, nombre){
   };
 }
 
+/* ¿El documento es de "copia por persona" (circular masiva)? Si sí, el PDF/vista COMBINADO no tiene sentido
+   (solo mostraría al 1er firmante). Se detecta cuando hay más firmantes que campos de firma, o si es abierto. */
+function docEsMultiCopia(doc, nFirmantes){
+  if(doc && doc.abierto) return true;
+  const slots = (doc && Array.isArray(doc.contenido)) ? doc.contenido.filter(c=>c.tipo==='firma').length : 0;
+  return (nFirmantes||0) > Math.max(1, slots);
+}
+
 function documentoCard(d){
   const fs = DOCSTATE.firmantes.filter(f=>f.documento_id===d.id);
   const total = fs.length, firmados = fs.filter(f=>f.estado==='firmado').length;
   const pct = total ? Math.round(firmados/total*100) : 0;
+  const multiCopia = docEsMultiCopia(d, total);
   return `<div class="lcard">
     <div class="lcard-top">
       <span class="tipo">${total} firmante${total===1?'':'s'}</span>
@@ -3253,7 +3264,7 @@ function documentoCard(d){
         <button class="icon-btn" title="Ver detalle / firmantes" data-doc="ver" data-id="${d.id}">${I.eye}</button>
         ${d.estado==='enviado'?`<button class="icon-btn" title="Copiar enlace de firma" data-doc="link" data-id="${d.id}">${I.link}</button>
         <button class="icon-btn" title="Compartir QR de firma" data-doc="qr" data-id="${d.id}">${I.qr}</button>`:''}
-        <button class="icon-btn" title="Generar PDF" data-doc="pdf" data-id="${d.id}">${I.pdf}</button>
+        ${!multiCopia?`<button class="icon-btn" title="Generar PDF" data-doc="pdf" data-id="${d.id}">${I.pdf}</button>`:''}
         <button class="icon-btn danger" title="Eliminar" data-doc="del" data-id="${d.id}">${I.trash}</button>
       </div>
     </div>
