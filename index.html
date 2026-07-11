@@ -641,12 +641,20 @@ async function conBloqueo(msg, fn){
 }
 
 /* ---------- Modal helpers ---------- */
+let _modalVolver = null;   // función a ejecutar al cerrar un sub-modal (para volver al modal anterior)
 function openModal(html){
+  _modalVolver = null;     // abrir un modal "raíz" limpia cualquier retorno pendiente
   document.getElementById("modalHost").innerHTML = html;
   document.getElementById("overlay").classList.add("open");
   document.body.style.overflow="hidden";
 }
+/* Abre un sub-modal recordando a qué volver al cerrarlo (X o clic fuera) */
+function openSubModal(html, volver){
+  openModal(html);
+  _modalVolver = volver || null;
+}
 function closeModal(){
+  if(_modalVolver){ const v=_modalVolver; _modalVolver=null; v(); return; }   // volver al modal anterior
   document.getElementById("overlay").classList.remove("open");
   document.body.style.overflow="";
   setTimeout(()=>{ document.getElementById("modalHost").innerHTML=""; },220);
@@ -1071,9 +1079,9 @@ async function openDetail(id){
           <h3 style="font-family:var(--display);font-size:17px">Asistentes (${(l.asistentes||[]).length})</h3>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn btn-ghost btn-sm" onclick="copyLink('${l.id}')">${I.copy} Copiar enlace</button>
-            <button class="btn btn-ghost btn-sm" onclick="mostrarQR(linkFor('${l.id}'),'Registro de asistencia')">${I.qr} Código QR</button>
+            <button class="btn btn-ghost btn-sm" onclick="mostrarQR(linkFor('${l.id}'),'Registro de asistencia', ()=>openDetail('${l.id}'))">${I.qr} Código QR</button>
             <button class="btn btn-ghost btn-sm" onclick="copyText(linkResponsable('${l.id}'),'Enlace de firma del responsable copiado')">${I.pen} Enlace responsable</button>
-            <button class="btn btn-ghost btn-sm" onclick="mostrarQR(linkResponsable('${l.id}'),'Firma del responsable')">${I.qr} QR responsable</button>
+            <button class="btn btn-ghost btn-sm" onclick="mostrarQR(linkResponsable('${l.id}'),'Firma del responsable', ()=>openDetail('${l.id}'))">${I.qr} QR responsable</button>
           </div>
         </div>
 
@@ -2352,7 +2360,7 @@ function copiarTexto(t){
 }
 
 /* Compartir por QR (cliente, no envía el enlace a terceros) */
-function mostrarQR(url, titulo){
+function mostrarQR(url, titulo, volver){
   openModal(`<div class="modal" style="max-width:380px">
     <div class="modal-head"><div><h2>${esc(titulo||'Compartir')}</h2><p>Escanea el código para abrir el enlace</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
@@ -2374,6 +2382,7 @@ function mostrarQR(url, titulo){
     if(!dataUrl){ toast("QR no disponible","err"); return; }
     const a=document.createElement('a'); a.href=dataUrl; a.download='QR_DonAseo.png'; document.body.appendChild(a); a.click(); a.remove();
   };
+  if(volver) _modalVolver = volver;   // al cerrar el QR, volver al modal anterior
 }
 
 /* ---------- Integración con Asistencia (Fase 6) ---------- */
@@ -2633,7 +2642,7 @@ async function verEvidencia(id){
     f.selfie ? `<div class="ev-img"><img src="${f.selfie}"><div class="cap">Selfie</div></div>` : '',
     f.foto_id? `<div class="ev-img"><img src="${f.foto_id}"><div class="cap">Documento de identidad</div></div>` : ''
   ].join('');
-  openModal(`
+  openSubModal(`
     <div class="modal lg">
       <div class="modal-head"><div><h2>Evidencia de firma</h2><p>${esc(f.nombre||'')}</p></div>
         <button class="close-x" onclick="closeModal()">${I.close}</button></div>
@@ -2656,7 +2665,7 @@ async function verEvidencia(id){
       <div class="modal-foot">
         <button class="btn btn-ghost" onclick="abrirDocumento('${f.documento_id}')">${I.back} Volver al documento</button>
       </div>
-    </div>`);
+    </div>`, ()=>abrirDocumento(f.documento_id));
 }
 
 let _docPesadoId = null;
@@ -2678,9 +2687,6 @@ async function abrirDocumento(id){
     .select("id,documento_id,nombre,correo,identificacion,cargo,orden,token,estado,evidencia,firmado_en")
     .eq("documento_id",id).order("orden",{ascending:true});
   const fs = fdata||[];
-  // Carga ligera de firma + selfie (miniaturas para la tabla)
-  const { data:firmasData } = await sb.from("doc_firmantes").select("id,firma,selfie").eq("documento_id",id);
-  if(firmasData){ const mf={}; firmasData.forEach(r=>{ mf[r.id]=r; }); fs.forEach(f=>{ const r=mf[f.id]; if(r){ f.firma=r.firma; f.selfie=r.selfie; } }); }
   const { data:edata } = await sb.from("doc_eventos").select("*").eq("documento_id",id).order("ocurrido_en",{ascending:true});
   const eventos = edata||[];
   docDetalleActual = doc; docDetalleFirmantes = fs; _docPesadoId = null;
@@ -2694,16 +2700,17 @@ async function abrirDocumento(id){
              <button class="icon-btn" title="Repetir firma" onclick="repetirFirmaFirmante('${f.id}','${doc.id}','${nombreEsc}')">${I.pen}</button>`;
     } else {
       acc = `<button class="icon-btn" title="Copiar enlace" onclick="copiarTexto('${linkFirma(f.token)}')">${I.link}</button>`;
-      acc += `<button class="icon-btn" title="Compartir QR" onclick="mostrarQR('${linkFirma(f.token)}','Firma del documento')">${I.qr}</button>`;
+      acc += `<button class="icon-btn" title="Compartir QR" onclick="mostrarQR('${linkFirma(f.token)}','Firma del documento', ()=>abrirDocumento('${doc.id}'))">${I.qr}</button>`;
       if(f.correo) acc += `<button class="icon-btn" title="Enviar por correo" onclick="enviarPorCorreo('${f.id}')">✉️</button>`;
     }
     acc += `<button class="icon-btn danger" title="Eliminar firmante" onclick="eliminarFirmanteDoc('${f.id}','${doc.id}','${nombreEsc}')">${I.trash}</button>`;
+    const miniPh = f.estado==='firmado' ? '<span class="muted-sm">…</span>' : '<span class="muted-sm">—</span>';
     return `<tr>
       <td>${i+1}</td>
       <td><b>${esc(f.nombre||'—')}</b>${f.correo?`<div class="muted-sm">${esc(f.correo)}</div>`:''}${f.identificacion?`<div class="muted-sm">C.C. ${esc(f.identificacion)}</div>`:''}</td>
       <td><span class="badge ${f.estado==='firmado'?'activa':'cerrada'}"><span class="dot"></span>${f.estado==='firmado'?'Firmado':'Pendiente'}</span></td>
-      <td>${f.firma?`<img class="sig-thumb" src="${f.firma}" alt="firma">`:'<span class="muted-sm">—</span>'}</td>
-      <td>${f.selfie?`<img class="foto-thumb" src="${f.selfie}" alt="foto" title="Ver evidencia" onclick="verEvidencia('${f.id}')">`:'<span class="muted-sm">—</span>'}</td>
+      <td data-firma-cell="${f.id}">${miniPh}</td>
+      <td data-foto-cell="${f.id}">${miniPh}</td>
       <td><div class="acc-mini">${acc}</div></td>
     </tr>`;
   }).join("");
@@ -2733,7 +2740,7 @@ async function abrirDocumento(id){
             <div class="rf-v">${doc.abierto?'Cualquiera con el enlace puede firmar':'Solo firman las cédulas de la lista'}</div>
           </div>
           <button class="btn btn-ghost btn-sm" onclick="copiarTexto('${linkFirmaDoc(doc.id)}')">${I.link} Copiar enlace</button>
-          <button class="btn btn-ghost btn-sm" onclick="mostrarQR('${linkFirmaDoc(doc.id)}','Firma del documento')">${I.qr} QR</button>
+          <button class="btn btn-ghost btn-sm" onclick="mostrarQR('${linkFirmaDoc(doc.id)}','Firma del documento', ()=>abrirDocumento('${doc.id}'))">${I.qr} QR</button>
         </div>`:''}
         <h3 style="font-family:var(--display);font-size:16px;margin-bottom:10px">Firmantes ${doc.abierto?'que han firmado ':''}(${fs.length})</h3>
         ${fs.length?`<div class="table-wrap"><table class="dt"><thead><tr><th>No</th><th>Firmante</th><th>Estado</th><th>Firma</th><th>Foto</th><th>Acciones</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="muted-sm">Sin firmantes registrados.</div>'}
@@ -2749,6 +2756,26 @@ async function abrirDocumento(id){
         ${doc.estado==='enviado'?`<button class="btn btn-danger" onclick="finalizarDocumento('${doc.id}')">${I.lock} Cerrar documento</button>`:''}
       </div>
     </div>`;
+
+  // La ventana abre YA; las miniaturas (firma/foto) se cargan aparte y se rellenan cuando llegan (más fluido)
+  cargarMiniaturasFirmantes(id);
+}
+
+/* Rellena las miniaturas de firma y foto en la tabla del detalle, sin bloquear la apertura */
+async function cargarMiniaturasFirmantes(docId){
+  try{
+    const { data } = await sb.from("doc_firmantes").select("id,firma,selfie").eq("documento_id",docId);
+    if(!data) return;
+    // Si el modal ya cambió (cerró/abrió otro doc), no hacer nada
+    if(!document.querySelector(`[data-firma-cell]`)) return;
+    data.forEach(r=>{
+      const f=(docDetalleFirmantes||[]).find(x=>x.id===r.id); if(f){ f.firma=r.firma; f.selfie=r.selfie; }
+      const fc=document.querySelector(`[data-firma-cell="${r.id}"]`);
+      if(fc) fc.innerHTML = r.firma ? `<img class="sig-thumb" src="${r.firma}" alt="firma">` : '<span class="muted-sm">—</span>';
+      const pc=document.querySelector(`[data-foto-cell="${r.id}"]`);
+      if(pc) pc.innerHTML = r.selfie ? `<img class="foto-thumb" src="${r.selfie}" alt="foto">` : '<span class="muted-sm">—</span>';
+    });
+  }catch(e){ console.warn('miniaturas', e); }
 }
 
 /* Carga bajo demanda lo pesado (PDF + imágenes de firmas) solo cuando se necesita */
@@ -3023,14 +3050,14 @@ async function renderPdfEnCont(src, cont){
 async function verDocumento(){
   const doc = docDetalleActual;
   if(!doc){ toast("Abre el documento primero","err"); return; }
-  openModal(`<div class="modal lg">
+  openSubModal(`<div class="modal lg">
     <div class="modal-head"><div><h2>${esc(doc.nombre)}</h2><p>Documento con las firmas estampadas</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body"><div class="pdf-cont" id="verPdf"><div class="load-box"><div class="spinner"></div><div class="muted-sm">Cargando documento…</div></div></div></div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="abrirDocumento('${doc.id}')">${I.back} Volver</button>
       <button class="btn btn-green" onclick="generarPDFDocumento()">${I.pdf} Descargar PDF</button>
-    </div></div>`);
+    </div></div>`, ()=>abrirDocumento(doc.id));
   try{
     await cargarPesadoDoc();
     if(!doc.pdf){ const c=document.getElementById('verPdf'); if(c) c.innerHTML=`<div class="muted-sm" style="text-align:center;padding:20px">Este documento no tiene PDF asociado.</div>`; return; }
