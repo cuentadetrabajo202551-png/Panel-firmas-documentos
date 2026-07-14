@@ -93,6 +93,7 @@ input,textarea,select{font-family:inherit;font-size:14px;color:var(--ink)}
   .topnav{margin-left:0;order:3;width:100%;gap:6px}
   .topbar-spacer{flex:0 0 0;width:0}
   .btn-pc-only{display:none!important}
+  .dot-pc-only{display:none!important}
 }
 
 /* ---------- Layout ---------- */
@@ -331,34 +332,6 @@ table.dt tr:hover td{background:#fafbfe}
 .paleta button{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:9px;background:var(--brand-soft);color:var(--brand-deep);font-weight:700;font-size:12.5px;border:1px solid var(--brand-soft2);transition:.15s}
 .paleta button svg{width:15px;height:15px}
 .paleta button:hover{background:var(--brand);color:#fff}
-.hoja{background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);max-width:760px;margin:0 auto;padding:40px 46px}
-.blk{position:relative;margin:3px 0;padding:8px 10px;border:1.5px solid transparent;border-radius:10px;transition:.12s}
-.blk:hover{border-color:var(--brand-soft2);background:#fafbff}
-.blk-tools{position:absolute;top:-13px;right:8px;display:none;gap:3px;background:#fff;border:1px solid var(--line);border-radius:9px;padding:3px;box-shadow:var(--shadow-sm);z-index:5}
-.blk:hover .blk-tools{display:flex}
-.blk-tools button{width:27px;height:27px;border-radius:6px;display:grid;place-items:center;color:var(--ink-2);background:transparent;font-size:15px;font-weight:700}
-.blk-tools button:hover{background:var(--brand-soft);color:var(--brand-deep)}
-.blk-tools button.del:hover{background:var(--danger-soft);color:var(--danger)}
-.blk-tools button svg{width:15px;height:15px}
-.blk-tools button:disabled{opacity:.3;cursor:default}
-.blk [contenteditable]{outline:none;border-radius:6px;min-height:1em}
-.blk [contenteditable]:focus{box-shadow:0 0 0 3px var(--brand-soft)}
-.blk [contenteditable]:empty:before{content:attr(data-ph);color:var(--ink-3)}
-.b-titulo{font-family:var(--display);font-size:24px;font-weight:700;color:var(--ink);text-align:center}
-.b-subtitulo{font-family:var(--display);font-size:16px;font-weight:600;color:var(--ink-2);text-align:center}
-.b-texto{font-size:14px;color:var(--ink);line-height:1.6;white-space:pre-wrap}
-.b-logo{text-align:center}
-.b-logo img{height:58px}
-.b-tabla table{width:100%;border-collapse:collapse}
-.b-tabla td{border:1px solid var(--line);padding:7px 9px;font-size:13px;min-width:40px;outline:none}
-.b-tabla td:focus{box-shadow:inset 0 0 0 2px var(--brand-soft)}
-.b-img img{max-width:100%;border-radius:8px;display:block;margin:0 auto}
-.b-campo,.b-firma{border:1.5px dashed var(--brand-soft2);border-radius:10px;padding:12px;background:#f6f8ff}
-.b-ph-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--brand-deep);display:flex;align-items:center;gap:6px;margin-bottom:7px}
-.b-ph-label svg{width:14px;height:14px}
-.b-ph-label [contenteditable]{text-transform:none;letter-spacing:0;font-size:13px}
-.b-ph-input{height:34px;border:1px dashed var(--ink-3);border-radius:8px;background:#fff;display:flex;align-items:center;padding:0 10px;color:var(--ink-3);font-size:13px}
-.b-firma-pad{height:74px;border:1px dashed var(--ink-3);border-radius:8px;background:#fff;display:grid;place-items:center;color:var(--ink-3);font-size:13px}
 .tabla-ctrl{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
 .tabla-ctrl button{font-size:11.5px;padding:5px 10px;border-radius:7px;background:var(--brand-soft);color:var(--brand-deep);font-weight:600}
 .tabla-ctrl button:hover{background:var(--brand);color:#fff}
@@ -2079,10 +2052,6 @@ function eliminarPlantilla(id){
   };
 }
 
-/* ============================================================
-   CONSTRUCTOR DE PLANTILLAS POR BLOQUES
-   ============================================================ */
-let editorBloques = [];
 let editorPlantillaId = null;
 
 /* === Editor PDF (modelo tipo DocuSign): subir PDF + colocar campos === */
@@ -2284,111 +2253,6 @@ function hacerArrastrable(el, c, wrap){
   el.addEventListener('mousedown',onDown); el.addEventListener('touchstart',onDown,{passive:false});
 }
 
-function agregarBloque(tipo){
-  const def = {
-    titulo:{tipo:'titulo',texto:''}, subtitulo:{tipo:'subtitulo',texto:''},
-    logo:{tipo:'logo'}, texto:{tipo:'texto',texto:''},
-    tabla:{tipo:'tabla',filas:[['',''],['','']]}, imagen:{tipo:'imagen',src:''},
-    campo:{tipo:'campo',etiqueta:'Campo dinámico'}, firma:{tipo:'firma',etiqueta:'Firma'},
-    fecha:{tipo:'fecha',etiqueta:'Fecha'}, campotexto:{tipo:'campotexto',etiqueta:'Texto'}
-  }[tipo];
-  if(!def) return;
-  editorBloques.push(JSON.parse(JSON.stringify(def)));
-  renderBloques();
-  // enfocar el último bloque editable
-  const last = document.querySelector(".blk:last-child [contenteditable]");
-  if(last) last.focus();
-}
-
-function phBlock(icon, b, hint){
-  return `
-    <div class="b-campo">
-      <div class="b-ph-label">${icon} <span contenteditable data-field="etiqueta" data-ph="Etiqueta…">${esc(b.etiqueta||"")}</span></div>
-      <div class="b-ph-input">${esc(hint)}</div>
-    </div>`;
-}
-
-function bloqueHTML(b, i, total){
-  const tools = `
-    <div class="blk-tools">
-      <button data-act="up" title="Subir" ${i===0?'disabled':''}>↑</button>
-      <button data-act="down" title="Bajar" ${i===total-1?'disabled':''}>↓</button>
-      <button class="del" data-act="del" title="Eliminar">${I.trash}</button>
-    </div>`;
-  let c = "";
-  switch(b.tipo){
-    case "titulo":    c = `<div class="b-titulo" contenteditable data-field="texto" data-ph="Título…">${esc(b.texto||"")}</div>`; break;
-    case "subtitulo": c = `<div class="b-subtitulo" contenteditable data-field="texto" data-ph="Subtítulo…">${esc(b.texto||"")}</div>`; break;
-    case "texto":     c = `<div class="b-texto" contenteditable data-field="texto" data-ph="Escribe el texto…">${esc(b.texto||"")}</div>`; break;
-    case "logo":      c = `<div class="b-logo"><img src="${LOGO}" alt="logo"></div>`; break;
-    case "imagen":    c = b.src
-        ? `<div class="b-img"><img src="${b.src}"><div class="tabla-ctrl"><button data-img="1">Cambiar imagen</button></div></div>`
-        : `<div class="b-img"><div class="tabla-ctrl"><button data-img="1">⬆ Subir imagen</button></div></div>`;
-      break;
-    case "tabla": {
-      const filas = b.filas||[['','']];
-      const rows = filas.map((row,r)=>`<tr>${row.map((cell,col)=>`<td contenteditable data-cell="1" data-r="${r}" data-c="${col}">${esc(cell||"")}</td>`).join("")}</tr>`).join("");
-      c = `<div class="b-tabla"><table><tbody>${rows}</tbody></table>
-        <div class="tabla-ctrl">
-          <button data-tabla="+fila">+ fila</button><button data-tabla="-fila">− fila</button>
-          <button data-tabla="+col">+ columna</button><button data-tabla="-col">− columna</button>
-        </div></div>`;
-      break;
-    }
-    case "campo":      c = phBlock(I.doc, b, "Se completa al crear el documento"); break;
-    case "fecha":      c = phBlock(I.cal, b, "Fecha (automática o al firmar)"); break;
-    case "campotexto": c = phBlock(I.pen, b, "Lo llena la persona al firmar"); break;
-    case "firma":      c = `
-      <div class="b-firma">
-        <div class="b-ph-label">${I.pen} <span contenteditable data-field="etiqueta" data-ph="Etiqueta de la firma…">${esc(b.etiqueta||"")}</span></div>
-        <div class="b-firma-pad">✍️ Espacio de firma</div>
-      </div>`; break;
-    default: c = `<div class="b-texto">${esc(b.tipo||"")}</div>`;
-  }
-  return `<div class="blk" data-idx="${i}" data-tipo="${b.tipo}">${tools}${c}</div>`;
-}
-
-function renderBloques(){
-  const hoja = document.getElementById("hoja");
-  if(!hoja) return;
-  if(!editorBloques.length){
-    hoja.innerHTML = `<div style="text-align:center;color:var(--ink-3);padding:46px 10px">Agrega bloques desde la paleta de arriba ↑</div>`;
-    return;
-  }
-  hoja.innerHTML = editorBloques.map((b,i)=>bloqueHTML(b,i,editorBloques.length)).join("");
-
-  hoja.querySelectorAll(".blk-tools button").forEach(btn=>{
-    btn.onclick = ()=>{
-      if(btn.disabled) return;
-      const i = +btn.closest(".blk").dataset.idx, act = btn.dataset.act;
-      if(act==="up" && i>0){ [editorBloques[i-1],editorBloques[i]]=[editorBloques[i],editorBloques[i-1]]; renderBloques(); }
-      else if(act==="down" && i<editorBloques.length-1){ [editorBloques[i+1],editorBloques[i]]=[editorBloques[i],editorBloques[i+1]]; renderBloques(); }
-      else if(act==="del"){ editorBloques.splice(i,1); renderBloques(); }
-    };
-  });
-  hoja.querySelectorAll("[data-field]").forEach(el=>{
-    el.oninput = ()=>{ const i=+el.closest(".blk").dataset.idx; editorBloques[i][el.dataset.field]=el.innerText; };
-  });
-  hoja.querySelectorAll("[data-cell]").forEach(el=>{
-    el.oninput = ()=>{ const i=+el.closest(".blk").dataset.idx, r=+el.dataset.r, col=+el.dataset.c; editorBloques[i].filas[r][col]=el.innerText; };
-  });
-  hoja.querySelectorAll("[data-tabla]").forEach(btn=>{
-    btn.onclick = ()=> opTabla(+btn.closest(".blk").dataset.idx, btn.dataset.tabla);
-  });
-  hoja.querySelectorAll("[data-img]").forEach(btn=>{
-    btn.onclick = ()=> subirImagen(+btn.closest(".blk").dataset.idx);
-  });
-}
-
-function opTabla(i, op){
-  const filas = editorBloques[i].filas;
-  if(op==="+fila") filas.push(new Array(filas[0].length).fill(""));
-  else if(op==="-fila" && filas.length>1) filas.pop();
-  else if(op==="+col") filas.forEach(f=>f.push(""));
-  else if(op==="-col" && filas[0].length>1) filas.forEach(f=>f.pop());
-  renderBloques();
-}
-
 function comprimirImagen(file, maxW){
   return new Promise(res=>{
     const rd=new FileReader();
@@ -2400,12 +2264,6 @@ function comprimirImagen(file, maxW){
     }; img.onerror=()=>res(rd.result); img.src=rd.result; };
     rd.readAsDataURL(file);
   });
-}
-function subirImagen(i){
-  const inp=document.createElement("input"); inp.type="file"; inp.accept="image/*";
-  inp.onchange=async ()=>{ const f=inp.files[0]; if(!f) return;
-    editorBloques[i].src = await comprimirImagen(f, 800); renderBloques(); };
-  inp.click();
 }
 
 async function guardarPlantilla(){
@@ -3412,32 +3270,6 @@ function pantallaFirmaOk(titulo,msg){
   return `<div class="pub-wrap"><div class="pub-card"><div class="pub-body"><div class="success-screen"><div class="ic">${I.checkBig}</div><h2>${esc(titulo)}</h2><p>${esc(msg)}</p></div></div></div></div>`;
 }
 
-function renderBloquesLectura(bloques){
-  return (bloques||[]).map((b,i)=>{
-    switch(b.tipo){
-      case 'titulo':    return `<div class="r-titulo">${esc(b.texto||'')}</div>`;
-      case 'subtitulo': return `<div class="r-subtitulo">${esc(b.texto||'')}</div>`;
-      case 'texto':     return `<div class="r-texto">${esc(b.texto||'')}</div>`;
-      case 'logo':      return `<div class="r-logo"><img src="${LOGO}" alt="logo"></div>`;
-      case 'imagen':    return b.src?`<div class="r-img"><img src="${b.src}"></div>`:'';
-      case 'tabla': { const filas=b.filas||[]; return `<table class="r-tabla">${filas.map(row=>`<tr>${row.map(cl=>`<td>${esc(cl||'')}</td>`).join('')}</tr>`).join('')}</table>`; }
-      case 'campo':     return `<div class="r-campo"><span class="r-lbl">${esc(b.etiqueta||'')}:</span> <span style="color:var(--ink-3)">__________</span></div>`;
-      case 'fecha':     return `<div class="r-campo"><span class="r-lbl">${esc(b.etiqueta||'Fecha')}:</span> <span>${new Date().toLocaleDateString('es-CO')}</span></div>`;
-      case 'campotexto':return `<div class="r-campo"><label class="r-lbl">${esc(b.etiqueta||'')}</label><input class="r-input" data-campo="${esc(b.etiqueta||('campo'+i))}" placeholder="Escribe aquí…"></div>`;
-      case 'firma':     return `<div class="r-firma"><div class="r-lbl">${esc(b.etiqueta||'Firma')}</div><div class="r-firma-line">Tu firma se aplicará al confirmar ↓</div></div>`;
-      default: return '';
-    }
-  }).join('');
-}
-
-function campoIdentidadHTML(f){
-  const c=firmaState.config;
-  let fields=`<div class="field"><label>Nombre completo *</label><input id="ff_nombre" value="${esc(f.nombre||'')}" placeholder="Nombre completo"></div>`;
-  if(c.correo)         fields+=`<div class="field"><label>Correo electrónico *</label><input id="ff_correo" type="email" value="${esc(f.correo||'')}" placeholder="correo@ejemplo.com"></div>`;
-  if(c.identificacion) fields+=`<div class="field"><label>Número de identificación *</label><input id="ff_id" value="${esc(f.identificacion||'')}" placeholder="C.C. / documento"></div>`;
-  if(c.cargo)          fields+=`<div class="field"><label>Cargo *</label><input id="ff_cargo" value="${esc(f.cargo||'')}" placeholder="Tu cargo"></div>`;
-  return `<div class="firma-sec"><h3>Tus datos</h3>${fields}</div>`;
-}
 function capturaHTML(key,label,icon){
   return `<div class="firma-sec"><h3>${esc(label)} *</h3>
     <div id="cap_${key}" class="cap-box"><button class="btn btn-ghost" data-cap="${key}">${icon} Tomar ${esc(label.toLowerCase())}</button></div></div>`;
@@ -3664,31 +3496,6 @@ function wireFirmaExtra(){
     if(gps){ firmaState.gps=gps; document.getElementById('gpsBox').innerHTML=`<div class="cap-ok">${I.check} Ubicación capturada (±${Math.round(gps.precision)} m)</div>`; }
     else { gbtn.disabled=false; gbtn.innerHTML=`${I.pin} Reintentar ubicación`; toast("No se pudo obtener la ubicación. Revisa los permisos.","err"); }
   };
-}
-
-function tomarFoto(key){
-  const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*';
-  inp.setAttribute('capture', key==='fotoId' ? 'environment' : 'user');
-  inp.onchange=async ()=>{ const file=inp.files[0]; if(!file) return;
-    firmaState[key] = await comprimirImagen(file, key==='fotoId'?1000:600);
-    const box=document.getElementById('cap_'+key);
-    box.innerHTML=`<div class="cap-prev"><img src="${firmaState[key]}"><button class="btn btn-ghost btn-sm" data-recap="${key}">Cambiar</button></div>`;
-    box.querySelector('[data-recap]').onclick=()=>tomarFoto(key);
-  };
-  inp.click();
-}
-
-function wireFirmaForm(){
-  document.querySelectorAll('[data-cap]').forEach(btn=>{ btn.onclick=()=>tomarFoto(btn.dataset.cap); });
-  const gbtn=document.getElementById('btnGps');
-  if(gbtn) gbtn.onclick = async ()=>{
-    gbtn.disabled=true; gbtn.innerHTML='Obteniendo ubicación…';
-    const g = await obtenerGPS();
-    if(g){ firmaState.gps=g; document.getElementById('gpsBox').innerHTML=`<div class="cap-ok">${I.check} Ubicación capturada (±${Math.round(g.precision)} m)</div>`; }
-    else { gbtn.disabled=false; gbtn.innerHTML=`${I.pin} Reintentar ubicación`; toast("No se pudo obtener la ubicación. Revisa los permisos.","err"); }
-  };
-  if(firmaState.config.firma){ initSignature(); const sc=document.getElementById('sigClear'); if(sc) sc.onclick=()=>sigPad.clear(); }
-  document.getElementById('btnConfirmarFirma').onclick = confirmarFirma;
 }
 
 async function confirmarFirma(){
@@ -3984,22 +3791,22 @@ async function renderDotacionAdmin(silent){
           </div>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <button class="btn btn-ghost" id="btnCatalogo">${I.box} Catálogo de ítems</button>
+          <button class="btn btn-ghost btn-pc-only" id="btnCatalogo">${I.box} Catálogo de ítems</button>
           ${!enTodos && puedeEscribir()?`<button class="btn btn-ghost btn-pc-only" id="btnPlantillaTrab">${I.doc} Plantilla Excel</button>
           <button class="btn btn-ghost btn-pc-only" id="btnCargaTrab">${I.plus} Carga masiva</button>`:''}
-          ${totalEntregas?`<button class="btn btn-ghost" id="btnZipKardex">${I.doc} Descargar todos (ZIP)</button>`:''}
-          ${!enTodos && puedeEscribir()?`<button class="btn btn-primary" id="btnNuevoTrab">${I.plus} Nuevo trabajador</button>`:''}
+          ${totalEntregas?`<button class="btn btn-ghost btn-pc-only" id="btnZipKardex">${I.doc} Descargar todos (ZIP)</button>`:''}
+          ${!enTodos && puedeEscribir()?`<button class="btn btn-primary btn-pc-only" id="btnNuevoTrab">${I.plus} Nuevo trabajador</button>`:''}
         </div>
       </div>
 
-      <div class="stats">
+      <div class="stats dot-pc-only">
         <div class="stat s-total"><div class="label">Trabajadores</div><div class="value">${totalTrab}</div></div>
         <div class="stat s-act"><div class="label">Entregas registradas</div><div class="value">${totalEntregas}</div></div>
         <div class="stat s-asi"><div class="label">Entregas este mes</div><div class="value">${entregasMes}</div></div>
         <div class="stat s-clo"><div class="label">Sin entregas aún</div><div class="value">${sinEntregas}</div></div>
       </div>
 
-      <div class="tabs" style="margin-bottom:18px">
+      <div class="tabs dot-pc-only" style="margin-bottom:18px">
         <button class="tab ${dotVista==='trabajadores'?'active':''}" data-vista="trabajadores">${I.users} Trabajadores</button>
         <button class="tab ${dotVista==='estadisticas'?'active':''}" data-vista="estadisticas">📊 Estadísticas</button>
       </div>
