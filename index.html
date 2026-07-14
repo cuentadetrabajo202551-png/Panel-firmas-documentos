@@ -548,6 +548,45 @@ if(window.emailjs){ try{ emailjs.init({ publicKey: EMAILJS_KEY }); }catch(e){ tr
 /* ---------- Estado en memoria (cache del panel admin) ---------- */
 let STATE = { listas: [], userEmail: "" };
 
+/* ---------- Permisos del usuario logueado (roles/módulos/contratos) ---------- */
+let MIPERFIL = { cargado:false, activo:true, esAdmin:false, modulos:[], contratos:[], editarCatalogo:false, nombre:"", uid:null };
+
+async function cargarMiPerfil(){
+  const { data:{ session } } = await sb.auth.getSession();
+  if(!session){ MIPERFIL = { cargado:false, activo:true, esAdmin:false, modulos:[], contratos:[], editarCatalogo:false, nombre:"", uid:null }; return; }
+  const uid = session.user.id;
+  const [{ data:p }, { data:pm }, { data:pc }] = await Promise.all([
+    sb.from("perfiles").select("es_admin,activo,dotacion_editar_catalogo,nombre").eq("id",uid).maybeSingle(),
+    sb.from("perfil_modulos").select("modulo").eq("perfil_id",uid),
+    sb.from("perfil_contratos").select("contrato_id").eq("perfil_id",uid)
+  ]);
+  MIPERFIL = {
+    cargado: true,
+    activo: p ? p.activo!==false : true,   // si no hay fila todavía (BD sin migrar), no bloquea por defecto
+    esAdmin: !!(p && p.es_admin),
+    modulos: (pm||[]).map(x=>x.modulo),
+    contratos: (pc||[]).map(x=>x.contrato_id),
+    editarCatalogo: !!(p && p.dotacion_editar_catalogo),
+    nombre: (p && p.nombre) || session.user.email || "",
+    uid
+  };
+}
+function tieneModulo(m){ return MIPERFIL.esAdmin || (MIPERFIL.activo && MIPERFIL.modulos.includes(m)); }
+function tieneContratoDotacion(id){ return MIPERFIL.esAdmin || MIPERFIL.contratos.includes(id); }
+
+/* Pantalla de candado: se usa cuando el usuario no tiene acceso a un módulo o está desactivado */
+function renderSinAcceso(tituloModulo){
+  const desactivado = MIPERFIL.cargado && !MIPERFIL.activo;
+  document.getElementById("app").innerHTML = `
+    ${topbar('')}
+    <div class="wrap"><div class="empty">
+      <div class="ic">${I.lockBig}</div>
+      <h3>${desactivado?'Tu acceso fue desactivado':'No tienes acceso a '+esc(tituloModulo)}</h3>
+      <p>${desactivado?'Contacta al administrador del sistema para más información.':'Contacta al administrador si crees que deberías tener acceso a este módulo.'}</p>
+    </div></div>`;
+  wireLogout();
+}
+
 /* ---------- Mapeo entre columnas de la BD y el objeto del programa ---------- */
 function rowToList(r){
   return {
@@ -699,7 +738,14 @@ async function router(){
   const { data:{ session } } = await sb.auth.getSession();
   if(!session){ renderLogin(); return; }
   STATE.userEmail = session.user?.email || "";
-  if(location.hash.startsWith("#/docs")){
+  if(!MIPERFIL.cargado) await cargarMiPerfil();
+  if(MIPERFIL.cargado && !MIPERFIL.activo){ renderSinAcceso(""); return; }
+
+  if(location.hash.startsWith("#/configuracion")){
+    if(!MIPERFIL.esAdmin){ renderSinAcceso("Configuración"); return; }
+    await renderConfiguracion();
+  } else if(location.hash.startsWith("#/docs")){
+    if(!tieneModulo('documentos')){ renderSinAcceso("Documentos y Firmas"); return; }
     const mPlant = location.hash.match(/^#\/docs\/plantilla\/(.+)$/);
     const mEditDoc = location.hash.match(/^#\/docs\/documento\/(.+)\/editar$/);
     if(mPlant){ await renderConstructor(mPlant[1]==='nueva' ? null : decodeURIComponent(mPlant[1])); }
@@ -707,10 +753,12 @@ async function router(){
     else if(mEditDoc){ await renderEditarDocumento(decodeURIComponent(mEditDoc[1])); }
     else { await renderDocsAdmin(); }   // MÓDULO: Documentos y Firmas
   } else if(location.hash.startsWith("#/dotacion")){
+    if(!tieneModulo('dotacion')){ renderSinAcceso("Dotación"); return; }
     const mFicha = location.hash.match(/^#\/dotacion\/trabajador\/(.+)$/);
     if(mFicha){ await renderFichaTrabajador(decodeURIComponent(mFicha[1])); }
     else { await renderDotacionAdmin(); }   // MÓDULO: Dotación
   } else {
+    if(!tieneModulo('asistencia')){ renderSinAcceso("Asistencia"); return; }
     bloquear("Cargando…");
     try{ await loadState(); } finally{ desbloquear(); }
     renderAdmin();                    // MÓDULO: Asistencia (existente, intacto)
@@ -774,9 +822,10 @@ function topbar(active){
         <div class="brand-accent"></div>
       </div>
       <nav class="topnav">
-        <a href="#/" class="${active==='asistencia'?'active':''}">Asistencia</a>
-        <a href="#/docs" class="${active==='docs'?'active':''}">📄 Documentos y Firmas</a>
-        <a href="#/dotacion" class="${active==='dotacion'?'active':''}">🦺 Dotación</a>
+        ${tieneModulo('asistencia')?`<a href="#/" class="${active==='asistencia'?'active':''}">Asistencia</a>`:''}
+        ${tieneModulo('documentos')?`<a href="#/docs" class="${active==='docs'?'active':''}">📄 Documentos y Firmas</a>`:''}
+        ${tieneModulo('dotacion')?`<a href="#/dotacion" class="${active==='dotacion'?'active':''}">🦺 Dotación</a>`:''}
+        ${MIPERFIL.esAdmin?`<a href="#/configuracion" class="${active==='configuracion'?'active':''}">⚙️ Configuración</a>`:''}
       </nav>
       <div class="topbar-spacer"></div>
       ${STATE.userEmail?`<span class="user-chip" title="${esc(STATE.userEmail)}">${I.user} ${esc(STATE.userEmail)}</span>`:""}
@@ -785,7 +834,11 @@ function topbar(active){
 }
 function wireLogout(){
   const b = document.getElementById("btnLogout");
-  if(b) b.onclick = async ()=>{ await sb.auth.signOut(); STATE.listas=[]; STATE.userEmail=""; location.hash=""; router(); };
+  if(b) b.onclick = async ()=>{
+    await sb.auth.signOut(); STATE.listas=[]; STATE.userEmail="";
+    MIPERFIL = { cargado:false, activo:true, esAdmin:false, modulos:[], contratos:[], editarCatalogo:false, nombre:"", uid:null };
+    location.hash=""; router();
+  };
 }
 
 /* ============================================================
@@ -3809,35 +3862,81 @@ function esRutaEdicion(){
    Directorio de trabajadores + catálogo de ítems + entregas
    (firma en persona, mismo dispositivo) + kárdex imprimible.
    ============================================================ */
-let DOTACION = { trabajadores: [], catalogo: [], entregas: [] };
+let DOTACION = { contratos: [], trabajadores: [], catalogo: [], entregas: [], entregaItems: [] };
 let dotQuery = "";
 let entregaDraft = null;
+let contratoActualId = localStorage.getItem('dot_contrato_actual') || null; // null hasta que se carguen los contratos; "todos" = vista combinada
+let dotVista = "trabajadores"; // "trabajadores" | "estadisticas"
+let dotPeriodo = "todo"; // "todo" | "mes" | "anio" (para Estadísticas)
 
 async function loadDotacionState(){
-  const [t, c, e] = await Promise.all([
-    sb.from("dot_trabajadores").select("id,nombre,identificacion,cargo,area,creado_en").order("nombre",{ascending:true}),
+  const [co, t, c, e, ei] = await Promise.all([
+    sb.from("dot_contratos").select("id,nombre,activo,creado_en").order("creado_en",{ascending:true}),
+    sb.from("dot_trabajadores").select("id,nombre,identificacion,cargo,area,contrato_id,creado_en").order("nombre",{ascending:true}),
     sb.from("dot_catalogo").select("*").order("nombre",{ascending:true}),
-    sb.from("dot_entregas").select("id,trabajador_id,fecha").order("fecha",{ascending:false})
+    sb.from("dot_entregas").select("id,trabajador_id,fecha").order("fecha",{ascending:false}),
+    sb.from("dot_entrega_items").select("entrega_id,nombre_item,cantidad")
   ]);
-  const err = t.error || c.error || e.error;
+  const err = co.error || t.error || c.error || e.error || ei.error;
   if(err){ console.warn(err); toast("Error cargando dotación: "+err.message,"err"); }
+  DOTACION.contratos = co.data || [];
   DOTACION.trabajadores = t.data || [];
   DOTACION.catalogo = c.data || [];
   DOTACION.entregas = e.data || [];
+  DOTACION.entregaItems = ei.data || [];
+  // Si el contrato guardado ya no existe (o nunca se eligió uno), cae al primero activo, o al primero que haya
+  const existe = contratoActualId==='todos' || DOTACION.contratos.some(x=>x.id===contratoActualId);
+  if(!existe){
+    const primero = DOTACION.contratos.find(x=>x.activo) || DOTACION.contratos[0];
+    contratoActualId = primero ? primero.id : null;
+    if(contratoActualId) localStorage.setItem('dot_contrato_actual', contratoActualId);
+  }
+}
+
+function contratoActual(){ return DOTACION.contratos.find(x=>x.id===contratoActualId) || null; }
+/* Trabajadores del contrato seleccionado (o todos, en vista combinada) */
+function trabajadoresDelContrato(){
+  return contratoActualId==='todos' ? DOTACION.trabajadores : DOTACION.trabajadores.filter(t=>t.contrato_id===contratoActualId);
 }
 
 /* ---------- Panel principal ---------- */
+function entregasDelContrato(){
+  if(contratoActualId==='todos') return DOTACION.entregas;
+  const ids = new Set(trabajadoresDelContrato().map(t=>t.id));
+  return DOTACION.entregas.filter(e=>ids.has(e.trabajador_id));
+}
+
 async function renderDotacionAdmin(silent){
   const scrollY = window.scrollY;
   if(silent){ await loadDotacionState(); }
   else { bloquear("Cargando dotación…"); try{ await loadDotacionState(); } finally{ desbloquear(); } }
 
-  const totalTrab = DOTACION.trabajadores.length;
-  const totalEntregas = DOTACION.entregas.length;
+  if(!DOTACION.contratos.length){
+    document.getElementById("app").innerHTML = MIPERFIL.esAdmin ? `${topbar('dotacion')}
+      <div class="wrap"><div class="empty"><div class="ic">${I.box}</div>
+        <h3>Crea tu primer contrato</h3>
+        <p>Cada contrato (ej. "Hospital de Medellín") tiene su propio directorio de trabajadores y entregas.</p>
+        <div style="margin-top:18px"><button class="btn btn-primary" id="btnPrimerContrato">${I.plus} Crear contrato</button></div>
+      </div></div>` : `${topbar('dotacion')}
+      <div class="wrap"><div class="empty"><div class="ic">${I.box}</div>
+        <h3>Aún no tienes ningún contrato asignado</h3>
+        <p>Pídele al administrador que te dé acceso a un contrato desde Configuración.</p>
+      </div></div>`;
+    wireLogout();
+    const bpc=document.getElementById("btnPrimerContrato"); if(bpc) bpc.onclick = ()=> abrirFormContrato(null, ()=> renderDotacionAdmin());
+    return;
+  }
+
+  const trabs = trabajadoresDelContrato();
+  const entregasC = entregasDelContrato();
+  const totalTrab = trabs.length;
+  const totalEntregas = entregasC.length;
   const mesActual = hoyLocal().slice(0,7);
-  const entregasMes = DOTACION.entregas.filter(e=>(e.fecha||"").startsWith(mesActual)).length;
-  const conEntrega = new Set(DOTACION.entregas.map(e=>e.trabajador_id));
-  const sinEntregas = DOTACION.trabajadores.filter(t=>!conEntrega.has(t.id)).length;
+  const entregasMes = entregasC.filter(e=>(e.fecha||"").startsWith(mesActual)).length;
+  const conEntrega = new Set(entregasC.map(e=>e.trabajador_id));
+  const sinEntregas = trabs.filter(t=>!conEntrega.has(t.id)).length;
+  const c = contratoActual();
+  const enTodos = contratoActualId==='todos';
 
   document.getElementById("app").innerHTML = `
     ${topbar('dotacion')}
@@ -3846,12 +3945,20 @@ async function renderDotacionAdmin(silent){
         <div>
           <h1>Dotación y Entrega de EPP</h1>
           <p>Registra la entrega de elementos de protección personal y uniformes, con firma digital en el momento.</p>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
+            <select id="selContrato" style="font-weight:700;font-size:13.5px;padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--brand-deep)">
+              ${DOTACION.contratos.filter(x=>tieneContratoDotacion(x.id)).map(x=>`<option value="${x.id}" ${x.id===contratoActualId?'selected':''}>${esc(x.nombre)}${x.activo?'':' (archivado)'}</option>`).join('')}
+              ${MIPERFIL.esAdmin?`<option value="todos" ${enTodos?'selected':''}>— Todos los contratos —</option>`:''}
+            </select>
+            ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-sm" id="btnGestionContratos">${I.pen} Gestionar contratos</button>`:''}
+          </div>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
           <button class="btn btn-ghost" id="btnCatalogo">${I.box} Catálogo de ítems</button>
-          <button class="btn btn-ghost" id="btnPlantillaTrab">${I.doc} Plantilla Excel</button>
-          <button class="btn btn-ghost" id="btnCargaTrab">${I.plus} Carga masiva</button>
-          <button class="btn btn-primary" id="btnNuevoTrab">${I.plus} Nuevo trabajador</button>
+          ${!enTodos?`<button class="btn btn-ghost" id="btnPlantillaTrab">${I.doc} Plantilla Excel</button>
+          <button class="btn btn-ghost" id="btnCargaTrab">${I.plus} Carga masiva</button>`:''}
+          ${totalEntregas?`<button class="btn btn-ghost" id="btnZipKardex">${I.doc} Descargar todos (ZIP)</button>`:''}
+          ${!enTodos?`<button class="btn btn-primary" id="btnNuevoTrab">${I.plus} Nuevo trabajador</button>`:''}
         </div>
       </div>
 
@@ -3862,32 +3969,55 @@ async function renderDotacionAdmin(silent){
         <div class="stat s-clo"><div class="label">Sin entregas aún</div><div class="value">${sinEntregas}</div></div>
       </div>
 
-      <div class="toolbar">
-        <div class="search">
-          ${I.search}
-          <input type="text" id="dotSearch" placeholder="Buscar por nombre, cédula, cargo o área…" value="${esc(dotQuery)}">
-        </div>
+      <div class="tabs" style="margin-bottom:18px">
+        <button class="tab ${dotVista==='trabajadores'?'active':''}" data-vista="trabajadores">${I.users} Trabajadores</button>
+        <button class="tab ${dotVista==='estadisticas'?'active':''}" data-vista="estadisticas">📊 Estadísticas</button>
       </div>
 
-      <div id="dotGrid"></div>
+      <div id="dotBody"></div>
       <input type="file" id="fileTrabajadores" accept=".xlsx,.xls,.csv" style="display:none">
     </div>`;
 
   wireLogout();
+  document.getElementById("selContrato").onchange = (e)=>{
+    contratoActualId = e.target.value;
+    localStorage.setItem('dot_contrato_actual', contratoActualId);
+    renderDotacionAdmin();
+  };
+  const bgc=document.getElementById("btnGestionContratos"); if(bgc) bgc.onclick = abrirGestionContratos;
   document.getElementById("btnCatalogo").onclick = abrirCatalogoModal;
-  document.getElementById("btnPlantillaTrab").onclick = descargarPlantillaTrabajadoresDot;
-  document.getElementById("btnCargaTrab").onclick = ()=> document.getElementById("fileTrabajadores").click();
+  const bpt=document.getElementById("btnPlantillaTrab"); if(bpt) bpt.onclick = descargarPlantillaTrabajadoresDot;
+  const bct=document.getElementById("btnCargaTrab"); if(bct) bct.onclick = ()=> document.getElementById("fileTrabajadores").click();
   document.getElementById("fileTrabajadores").onchange = (e)=>{ const f=e.target.files[0]; if(f) cargarTrabajadoresExcelDot(f); e.target.value=""; };
-  document.getElementById("btnNuevoTrab").onclick = ()=> abrirTrabajadorForm(null);
+  const bnt=document.getElementById("btnNuevoTrab"); if(bnt) bnt.onclick = ()=> abrirTrabajadorForm(null);
+  const bzk=document.getElementById("btnZipKardex"); if(bzk) bzk.onclick = descargarZipKardexTodos;
+  document.querySelectorAll(".tab[data-vista]").forEach(tb=>{
+    tb.onclick = ()=>{ dotVista = tb.dataset.vista; renderDotacionBody(); document.querySelectorAll(".tab[data-vista]").forEach(x=>x.classList.toggle('active', x===tb)); };
+  });
+  renderDotacionBody();
+  if(silent) window.scrollTo(0, scrollY);
+}
+
+function renderDotacionBody(){
+  if(dotVista==='estadisticas'){ renderDotEstadisticas(); return; }
+  const host = document.getElementById("dotBody");
+  if(!host) return;
+  host.innerHTML = `
+    <div class="toolbar">
+      <div class="search">
+        ${I.search}
+        <input type="text" id="dotSearch" placeholder="Buscar por nombre, cédula, cargo o área…" value="${esc(dotQuery)}">
+      </div>
+    </div>
+    <div id="dotGrid"></div>`;
   document.getElementById("dotSearch").oninput = (e)=>{ dotQuery = e.target.value; renderDotTrabajadoresGrid(); };
   renderDotTrabajadoresGrid();
-  if(silent) window.scrollTo(0, scrollY);
 }
 
 function renderDotTrabajadoresGrid(){
   const host = document.getElementById("dotGrid");
   if(!host) return;
-  let db = DOTACION.trabajadores.slice();
+  let db = trabajadoresDelContrato();
   const q = dotQuery.trim().toLowerCase();
   if(q) db = db.filter(t=>
     (t.nombre||"").toLowerCase().includes(q) ||
@@ -3896,8 +4026,8 @@ function renderDotTrabajadoresGrid(){
     (t.area||"").toLowerCase().includes(q)
   );
   if(!db.length){
-    host.innerHTML = `<div class="empty"><div class="ic">${I.box}</div><h3>${DOTACION.trabajadores.length?'Sin resultados':'Sin trabajadores todavía'}</h3>
-      <p>${DOTACION.trabajadores.length?'Prueba con otro término de búsqueda.':'Agrega trabajadores uno por uno o con carga masiva desde Excel.'}</p></div>`;
+    host.innerHTML = `<div class="empty"><div class="ic">${I.box}</div><h3>${trabajadoresDelContrato().length?'Sin resultados':'Sin trabajadores todavía'}</h3>
+      <p>${trabajadoresDelContrato().length?'Prueba con otro término de búsqueda.':'Agrega trabajadores uno por uno o con carga masiva desde Excel.'}</p></div>`;
     return;
   }
   host.innerHTML = `<div class="grid">${db.map(trabajadorCard).join("")}</div>`;
@@ -3916,6 +4046,7 @@ function trabajadorCard(t){
   const entregasT = DOTACION.entregas.filter(e=>e.trabajador_id===t.id);
   const n = entregasT.length;
   const ultima = n ? entregasT.reduce((a,b)=> (a.fecha>b.fecha?a:b)).fecha : null;
+  const nombreContrato = contratoActualId==='todos' ? (DOTACION.contratos.find(c=>c.id===t.contrato_id)?.nombre) : null;
   return `<div class="lcard">
     <div class="lcard-top">
       <span class="tipo">${esc(t.cargo||'Trabajador')}</span>
@@ -3925,6 +4056,7 @@ function trabajadorCard(t){
     <div class="meta">
       <div>${I.user}<span>C.C. ${esc(t.identificacion)}</span></div>
       <div>${I.pin}<span>${esc(t.area||'—')}</span></div>
+      ${nombreContrato?`<div>${I.box}<span>${esc(nombreContrato)}</span></div>`:''}
       ${ultima?`<div>${I.cal}<span>Última entrega: ${fmtDate(ultima)}</span></div>`:''}
     </div>
     <div class="lcard-foot">
@@ -3939,13 +4071,83 @@ function trabajadorCard(t){
   </div>`;
 }
 
+/* ---------- Contratos (clientes) ---------- */
+function abrirFormContrato(id, alGuardar){
+  const c = id ? DOTACION.contratos.find(x=>x.id===id) : null;
+  openSubModal(`<div class="modal" style="max-width:440px">
+    <div class="modal-head"><div><h2>${c?'Renombrar contrato':'Nuevo contrato'}</h2><p>Ej. "Hospital de Medellín", "Colegio San José"…</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Nombre del contrato *</label><input id="ctNombre" value="${esc(c?.nombre||'')}" placeholder="Nombre del cliente o contrato"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardarContrato">${I.check} Guardar</button>
+    </div></div>`, ()=>{ if(alGuardar) alGuardar(); else abrirGestionContratos(); });
+  document.getElementById('btnGuardarContrato').onclick = async ()=>{
+    const nombre = document.getElementById('ctNombre').value.trim();
+    if(!nombre){ toast("Escribe el nombre del contrato","err"); return; }
+    const btn = document.getElementById('btnGuardarContrato'); btn.disabled=true; btn.innerHTML="Guardando…";
+    let error, data;
+    if(c){ ({error} = await sb.from("dot_contratos").update({nombre}).eq("id",c.id)); }
+    else { ({data,error} = await sb.from("dot_contratos").insert({nombre}).select().single()); }
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
+    await loadDotacionState();
+    if(!c && data) { contratoActualId = data.id; localStorage.setItem('dot_contrato_actual', data.id); }
+    toast(c?"Contrato actualizado":"Contrato creado","ok");
+    closeModal(); // vuelve a "alGuardar" (gestión de contratos, o directo al panel si era el primero)
+  };
+}
+
+function abrirGestionContratos(){
+  openSubModal(`<div class="modal" style="max-width:520px">
+    <div class="modal-head"><div><h2>Gestionar contratos</h2><p>Cada contrato tiene su propio directorio y sus entregas.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <button class="btn btn-primary btn-sm" id="btnNuevoContrato" style="margin-bottom:14px">${I.plus} Nuevo contrato</button>
+      <div id="contratosLista"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
+  </div>`, ()=>renderDotacionAdmin());
+  document.getElementById('btnNuevoContrato').onclick = ()=> abrirFormContrato(null, ()=>abrirGestionContratos());
+  renderContratosLista();
+}
+
+function renderContratosLista(){
+  const host = document.getElementById('contratosLista'); if(!host) return;
+  host.innerHTML = DOTACION.contratos.map(c=>{
+    const n = DOTACION.trabajadores.filter(t=>t.contrato_id===c.id).length;
+    return `<div class="cat-row">
+      <span style="flex:1;font-weight:600;font-size:13.5px;${c.activo?'':'opacity:.5'}">${esc(c.nombre)}${c.activo?'':' · archivado'}</span>
+      <span class="muted-sm" style="width:90px">${n} trabajador${n===1?'':'es'}</span>
+      <button class="icon-btn" title="Renombrar" data-ct-edit="${c.id}">${I.pen}</button>
+      <button class="icon-btn" title="${c.activo?'Archivar':'Reactivar'}" data-ct-toggle="${c.id}">${c.activo?I.lock:I.check}</button>
+    </div>`;
+  }).join('');
+  host.querySelectorAll('[data-ct-edit]').forEach(b=>{ b.onclick = ()=> abrirFormContrato(b.dataset.ctEdit, ()=>abrirGestionContratos()); });
+  host.querySelectorAll('[data-ct-toggle]').forEach(b=>{
+    b.onclick = async ()=>{
+      const c = DOTACION.contratos.find(x=>x.id===b.dataset.ctToggle);
+      const { error } = await sb.from("dot_contratos").update({activo: !c.activo}).eq("id", c.id);
+      if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
+      await loadDotacionState();
+      renderContratosLista();
+      toast(c.activo?"Contrato archivado":"Contrato reactivado","ok");
+    };
+  });
+}
+
 /* ---------- Directorio: crear / editar / eliminar trabajador ---------- */
 function abrirTrabajadorForm(id){
   const t = id ? DOTACION.trabajadores.find(x=>x.id===id) : null;
+  const contratoDefault = t ? t.contrato_id : (contratoActualId==='todos' ? (DOTACION.contratos[0]?.id||'') : contratoActualId);
   openModal(`<div class="modal" style="max-width:480px">
     <div class="modal-head"><div><h2>${t?'Editar trabajador':'Nuevo trabajador'}</h2><p>Se guarda en el directorio para futuras entregas.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
+      <div class="field"><label>Contrato *</label>
+        <select id="tContrato">${DOTACION.contratos.map(c=>`<option value="${c.id}" ${c.id===contratoDefault?'selected':''}>${esc(c.nombre)}</option>`).join('')}</select>
+      </div>
       <div class="field"><label>Nombre completo *</label><input id="tNombre" value="${esc(t?.nombre||'')}" placeholder="Nombres y apellidos"></div>
       <div class="field"><label>Número de identificación (cédula) *</label><input id="tCedula" value="${esc(t?.identificacion||'')}" placeholder="C.C." inputmode="numeric"></div>
       <div class="field row2">
@@ -3961,22 +4163,24 @@ function abrirTrabajadorForm(id){
 }
 
 async function guardarTrabajador(id){
+  const contrato_id = document.getElementById('tContrato').value;
   const nombre = document.getElementById('tNombre').value.trim();
   const identificacion = document.getElementById('tCedula').value.trim();
   const cargo = document.getElementById('tCargo').value.trim() || null;
   const area = document.getElementById('tArea').value.trim() || null;
+  if(!contrato_id){ toast("Selecciona el contrato","err"); return; }
   if(!nombre){ toast("Falta el nombre","err"); return; }
   if(!identificacion){ toast("Falta la identificación","err"); return; }
   const btn = document.getElementById('btnGuardarTrab'); btn.disabled=true; btn.innerHTML="Guardando…";
   bloquear("Guardando…");
   let error;
-  if(id){ ({error} = await sb.from("dot_trabajadores").update({nombre,identificacion,cargo,area}).eq("id",id)); }
-  else { ({error} = await sb.from("dot_trabajadores").insert({nombre,identificacion,cargo,area})); }
+  if(id){ ({error} = await sb.from("dot_trabajadores").update({nombre,identificacion,cargo,area,contrato_id}).eq("id",id)); }
+  else { ({error} = await sb.from("dot_trabajadores").insert({nombre,identificacion,cargo,area,contrato_id})); }
   desbloquear();
   if(error){
     btn.disabled=false; btn.innerHTML=`${I.check} Guardar`;
     const dup = /duplicate|unique/i.test(error.message||"");
-    toast(dup?"Ya existe un trabajador con esa cédula":"No se pudo guardar: "+error.message,"err");
+    toast(dup?"Ya existe un trabajador con esa cédula en este contrato":"No se pudo guardar: "+error.message,"err");
     return;
   }
   await loadDotacionState();
@@ -4022,6 +4226,7 @@ function descargarPlantillaTrabajadoresDot(){
 
 async function cargarTrabajadoresExcelDot(file){
   if(!window.XLSX){ toast("No se pudo cargar el lector de Excel (revisa tu conexión)","err"); return; }
+  if(contratoActualId==='todos'){ toast("Selecciona un contrato específico antes de cargar trabajadores","err"); return; }
   bloquear("Leyendo archivo…");
   try{
     const buf = await file.arrayBuffer();
@@ -4049,7 +4254,8 @@ async function cargarTrabajadoresExcelDot(file){
     }
     if(!filasValidas.length){ toast("No se encontraron filas válidas (se requiere nombre e identificación)","err"); return; }
     const keyOf = s => s.replace(/[^0-9A-Za-z]/g,"").toLowerCase();
-    const existentes = {}; DOTACION.trabajadores.forEach(t=>{ existentes[keyOf(t.identificacion)] = t; });
+    // La cédula es única POR CONTRATO: solo comparamos contra los trabajadores de este mismo contrato
+    const existentes = {}; trabajadoresDelContrato().forEach(t=>{ existentes[keyOf(t.identificacion)] = t; });
     const nuevos = [], actualizaciones = [];
     const vistosEnArchivo = new Set(); let dup = 0;
     filasValidas.forEach(f=>{
@@ -4057,7 +4263,7 @@ async function cargarTrabajadoresExcelDot(file){
       if(vistosEnArchivo.has(k)){ dup++; return; }
       vistosEnArchivo.add(k);
       if(existentes[k]){ actualizaciones.push({ id: existentes[k].id, ...f }); }
-      else { nuevos.push(f); }
+      else { nuevos.push({ ...f, contrato_id: contratoActualId }); }
     });
     let errores = 0;
     if(nuevos.length){
@@ -4082,35 +4288,114 @@ async function cargarTrabajadoresExcelDot(file){
 
 /* ---------- Catálogo de ítems (guantes, botas, casco…) ---------- */
 function abrirCatalogoModal(){
-  openModal(`<div class="modal" style="max-width:520px">
-    <div class="modal-head"><div><h2>Catálogo de ítems</h2><p>Lo que se puede entregar como dotación.</p></div>
+  const puedeEditar = MIPERFIL.esAdmin || MIPERFIL.editarCatalogo;
+  openModal(`<div class="modal" style="max-width:560px">
+    <div class="modal-head"><div><h2>Catálogo de ítems</h2><p>Lo que se puede entregar como dotación (compartido entre todos los contratos).</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
+      ${!puedeEditar?`<p class="muted-sm" style="margin-bottom:12px">Solo puedes ver el catálogo. Si necesitas agregar o editar ítems, pídele al administrador que te dé ese permiso.</p>`:''}
+      ${puedeEditar?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+        <button class="btn btn-ghost btn-sm" id="btnPlantillaCat">${I.doc} Plantilla Excel</button>
+        <button class="btn btn-ghost btn-sm" id="btnCargaCat">${I.plus} Carga masiva</button>
+      </div>
       <div class="field row2" style="margin-bottom:14px">
         <div><input id="catNombre" placeholder="Nombre del ítem (ej. Guantes de nitrilo)"></div>
         <div style="display:flex;gap:8px">
           <input id="catUnidad" placeholder="Unidad (par, unidad…)" style="flex:1">
           <button class="btn btn-primary btn-sm" id="btnAddCat">${I.plus} Agregar</button>
         </div>
-      </div>
+      </div>`:''}
       <div id="catLista"></div>
+      <input type="file" id="fileCatalogo" accept=".xlsx,.xls,.csv" style="display:none">
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
   </div>`);
-  document.getElementById('btnAddCat').onclick = guardarItemCatalogo;
+  const bac=document.getElementById('btnAddCat'); if(bac) bac.onclick = guardarItemCatalogo;
+  const bpc=document.getElementById('btnPlantillaCat'); if(bpc) bpc.onclick = descargarPlantillaCatalogoDot;
+  const bcc=document.getElementById('btnCargaCat'); if(bcc) bcc.onclick = ()=> document.getElementById('fileCatalogo').click();
+  const fc=document.getElementById('fileCatalogo'); if(fc) fc.onchange = (e)=>{ const f=e.target.files[0]; if(f) cargarCatalogoExcelDot(f); e.target.value=""; };
   renderCatalogoLista();
+}
+
+function descargarPlantillaCatalogoDot(){
+  if(!window.XLSX){ toast("No se pudo cargar el generador de Excel (revisa tu conexión)","err"); return; }
+  const datos = [
+    ["Nombre del ítem","Unidad"],
+    ["Guantes de nitrilo","par"],
+    ["Botas de seguridad","par"],
+    ["Casco de seguridad","unidad"]
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(datos);
+  ws["!cols"] = [{wch:32},{wch:16}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Catalogo");
+  XLSX.writeFile(wb, "Plantilla_catalogo_dotacion.xlsx");
+  toast("Plantilla descargada","ok");
+}
+
+async function cargarCatalogoExcelDot(file){
+  if(!window.XLSX){ toast("No se pudo cargar el lector de Excel (revisa tu conexión)","err"); return; }
+  bloquear("Leyendo archivo…");
+  try{
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, {type:"array"});
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const filas = XLSX.utils.sheet_to_json(ws, {header:1, defval:"", raw:false});
+    if(!filas.length){ toast("El archivo está vacío","err"); return; }
+    const norm = s => String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").trim();
+    const head = (filas[0]||[]).map(norm);
+    const findCol = (...alts)=> head.findIndex(h => alts.some(a => h.includes(a)));
+    let cNom = findCol("nombre","item","ítem"), cUn = findCol("unidad");
+    let start = 1;
+    if(cNom === -1){ cNom=0; cUn=1; start=0; }
+    const nombresValidos = []; let ignoradas = 0;
+    for(let i=start;i<filas.length;i++){
+      const r = filas[i]; if(!r) continue;
+      const nombre = String(cNom>=0?r[cNom]:"").trim();
+      const unidad = String(cUn>=0?r[cUn]:"").trim();
+      if(!nombre){ if(r.some(v=>String(v||"").trim())) ignoradas++; continue; }
+      nombresValidos.push({ nombre, unidad: unidad||null });
+    }
+    if(!nombresValidos.length){ toast("No se encontraron filas válidas (se requiere el nombre del ítem)","err"); return; }
+    const keyOf = s => s.trim().toLowerCase();
+    const existentes = new Set(DOTACION.catalogo.map(c=>keyOf(c.nombre)));
+    const vistosEnArchivo = new Set(); let dup = 0, yaExistian = 0;
+    const nuevos = [];
+    nombresValidos.forEach(it=>{
+      const k = keyOf(it.nombre);
+      if(vistosEnArchivo.has(k)){ dup++; return; }
+      vistosEnArchivo.add(k);
+      if(existentes.has(k)){ yaExistian++; return; }
+      nuevos.push(it);
+    });
+    if(nuevos.length){
+      const { error } = await sb.from("dot_catalogo").insert(nuevos);
+      if(error){ toast("No se pudo cargar el catálogo: "+error.message,"err"); return; }
+    }
+    await loadDotacionState();
+    renderCatalogoLista();
+    let msg = `${nuevos.length} ítem(s) nuevo(s) agregado(s)`;
+    if(yaExistian) msg += ` · ${yaExistian} ya existían (sin cambios)`;
+    if(ignoradas) msg += ` · ${ignoradas} fila(s) sin nombre omitida(s)`;
+    if(dup) msg += ` · ${dup} duplicada(s) en el archivo`;
+    toast(msg,"ok");
+  }catch(e){ console.error(e); toast("No se pudo leer el archivo: "+(e.message||''),"err"); }
+  finally{ desbloquear(); }
 }
 
 function renderCatalogoLista(){
   const host = document.getElementById('catLista'); if(!host) return;
   const items = DOTACION.catalogo;
+  const puedeEditar = MIPERFIL.esAdmin || MIPERFIL.editarCatalogo;
   host.innerHTML = items.length ? items.map(c=>`
     <div class="cat-row">
       <span style="flex:1;font-weight:600;font-size:13.5px;${c.activo?'':'opacity:.45;text-decoration:line-through'}">${esc(c.nombre)}</span>
       <span class="muted-sm" style="width:70px">${esc(c.unidad||'—')}</span>
-      <label class="chk" style="padding:0"><input type="checkbox" data-cat-activo="${c.id}" ${c.activo?'checked':''}> activo</label>
-      <button class="icon-btn danger" title="Eliminar" data-cat-del="${c.id}">${I.trash}</button>
-    </div>`).join('') : '<div class="muted-sm" style="padding:14px 0">Sin ítems todavía. Agrega el primero arriba.</div>';
+      ${puedeEditar
+        ? `<label class="chk" style="padding:0"><input type="checkbox" data-cat-activo="${c.id}" ${c.activo?'checked':''}> activo</label>
+           <button class="icon-btn danger" title="Eliminar" data-cat-del="${c.id}">${I.trash}</button>`
+        : `<span class="muted-sm" style="width:60px">${c.activo?'Activo':'Inactivo'}</span>`}
+    </div>`).join('') : '<div class="muted-sm" style="padding:14px 0">Sin ítems todavía.</div>';
   host.querySelectorAll('[data-cat-activo]').forEach(chk=>{
     chk.onchange = ()=> toggleItemCatalogo(chk.dataset.catActivo, chk.checked);
   });
@@ -4179,7 +4464,7 @@ function abrirNuevaEntrega(trabajadorId){
 
 function renderPasoEntrega1(){
   const t = entregaDraft.trabajadorId ? DOTACION.trabajadores.find(x=>x.id===entregaDraft.trabajadorId) : null;
-  const opcionesTrab = DOTACION.trabajadores.map(x=>`<option value="${x.id}" ${x.id===entregaDraft.trabajadorId?'selected':''}>${esc(x.nombre)} — C.C. ${esc(x.identificacion)}</option>`).join('');
+  const opcionesTrab = trabajadoresDelContrato().map(x=>`<option value="${x.id}" ${x.id===entregaDraft.trabajadorId?'selected':''}>${esc(x.nombre)} — C.C. ${esc(x.identificacion)}</option>`).join('');
   openModal(`<div class="modal lg">
     <div class="modal-head"><div><h2>Registrar entrega de dotación</h2><p>Paso 1 de 3 — Ítems a entregar</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
@@ -4386,7 +4671,7 @@ async function renderFichaTrabajador(id){
           <button class="btn btn-ghost btn-sm" id="btnVolverDot">${I.back} Volver</button>
         </div>
         <div class="page-head">
-          <div><h1>${esc(t.nombre)}</h1><p>C.C. ${esc(t.identificacion)}${t.cargo?' · '+esc(t.cargo):''}${t.area?' · '+esc(t.area):''}</p></div>
+          <div><h1>${esc(t.nombre)}</h1><p>C.C. ${esc(t.identificacion)}${t.cargo?' · '+esc(t.cargo):''}${t.area?' · '+esc(t.area):''} · ${esc(DOTACION.contratos.find(c=>c.id===t.contrato_id)?.nombre||'—')}</p></div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
             <button class="btn btn-ghost" id="btnEditarTrab">${I.pen} Editar datos</button>
             ${listaEntregas.length?`<button class="btn btn-ghost" id="btnKardex">${I.pdf} Imprimir kárdex</button>`:''}
@@ -4423,111 +4708,348 @@ function eliminarEntrega(entregaId, trabajadorId){
 }
 
 /* ---------- Kárdex acumulado en PDF (evidencia por si hay un reclamo) ---------- */
+/* Arma el PDF del kárdex de UN trabajador. Devuelve {doc, nombreBase} o null si no tiene entregas.
+   No guarda el archivo — lo reutilizan tanto la descarga individual como el ZIP masivo. */
+async function construirKardexPDF(trabajadorId){
+  const { data: t } = await sb.from("dot_trabajadores").select("id,nombre,identificacion,cargo,area,contrato_id").eq("id",trabajadorId).maybeSingle();
+  if(!t) return null;
+  const { data: entregas } = await sb.from("dot_entregas")
+    .select("id,fecha,responsable_nombre,responsable_cargo,firma_trabajador,firma_responsable")
+    .eq("trabajador_id", trabajadorId).order("fecha",{ascending:true});
+  const listaEntregas = entregas || [];
+  if(!listaEntregas.length) return null;
+  const ids = listaEntregas.map(e=>e.id);
+  const { data: items } = await sb.from("dot_entrega_items").select("entrega_id,nombre_item,cantidad,talla").in("entrega_id", ids);
+  const itemsPorEntrega = {};
+  (items||[]).forEach(it=>{ (itemsPorEntrega[it.entrega_id] = itemsPorEntrega[it.entrega_id]||[]).push(it); });
+  const nombreContrato = (DOTACION.contratos.find(c=>c.id===t.contrato_id)||{}).nombre || "";
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:"mm", format:"a4"});
+  const PW = 210, M = 10, RIGHT = PW - M;
+  const x0=M, x1=M+22, x2=M+94, x3=M+137, x4=RIGHT; // Fecha 22 / Ítems 72 / Firma trab. 43 / Firma resp. 53
+
+  function grayHead(y,h){ doc.setFillColor(238,241,248); doc.rect(M,y,RIGHT-M,h,"F"); }
+
+  function encabezado(){
+    let y=M;
+    const hH=24, logoW=44;
+    doc.setDrawColor(150,160,190); doc.setLineWidth(0.3); doc.rect(M,y,RIGHT-M,hH);
+    doc.line(M+logoW,y,M+logoW,y+hH);
+    try{ doc.addImage(LOGO,"JPEG",M+4,y+2,36,36*315/570); }catch(e){}
+    doc.setTextColor(20,33,90); doc.setFont("helvetica","bold"); doc.setFontSize(14);
+    doc.text("CONTROL DE ENTREGA DE DOTACIÓN Y EPP", M+logoW+(RIGHT-M-logoW)/2, y+13, {align:"center"});
+    doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(90,90,110);
+    doc.text(pdfTexto("Kárdex acumulado por trabajador"+(nombreContrato?" · "+nombreContrato:"")+" · Don Aseo Ltda."), M+logoW+(RIGHT-M-logoW)/2, y+19, {align:"center"});
+    y += hH;
+
+    const fh=16;
+    doc.setDrawColor(150,160,190); doc.rect(M,y,RIGHT-M,fh);
+    doc.line(M+95,y,M+95,y+fh);
+    doc.setFont("helvetica","bold"); doc.setFontSize(7); doc.setTextColor(90,90,110);
+    doc.text("TRABAJADOR", M+3, y+5);
+    doc.text("CARGO / ÁREA", M+98, y+5);
+    doc.setFont("helvetica","bold"); doc.setFontSize(10.5); doc.setTextColor(20,20,20);
+    doc.text(pdfTexto(t.nombre||""), M+3, y+11);
+    doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(60,60,70);
+    doc.text("C.C. "+(t.identificacion||""), M+3, y+15.5);
+    doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor(20,20,20);
+    doc.text(doc.splitTextToSize(pdfTexto((t.cargo||"—")+(t.area?(" · "+t.area):"")), RIGHT-M-100), M+98, y+11);
+    y += fh + 2;
+    return y;
+  }
+
+  function tablaHead(y){
+    const h=8;
+    grayHead(y,h);
+    doc.setDrawColor(150,160,190);
+    [x0,x1,x2,x3,x4].forEach(x=>doc.line(x,y,x,y+h));
+    doc.rect(M,y,RIGHT-M,h);
+    doc.setFont("helvetica","bold"); doc.setFontSize(7); doc.setTextColor(40,40,60);
+    const ct=(a,b,txt)=>doc.text(txt,(a+b)/2,y+5.2,{align:"center"});
+    ct(x0,x1,"FECHA"); ct(x1,x2,"ÍTEMS ENTREGADOS");
+    ct(x2,x3,"FIRMA TRABAJADOR"); ct(x3,x4,"FIRMA RESPONSABLE");
+    return y+h;
+  }
+
+  const FOOTER_Y = 290;
+  function piePagina(pag){
+    doc.setFontSize(6.6); doc.setTextColor(140,140,160);
+    doc.text("Este documento constituye evidencia de la entrega de dotación, firmada digitalmente por el trabajador y el responsable.", PW/2, FOOTER_Y, {align:"center"});
+    doc.text("Generado el "+fmtDateTime(new Date())+" · Don Aseo Ltda. · Pág. "+pag, PW/2, FOOTER_Y+4, {align:"center"});
+  }
+
+  const FOOTER_TOP = 278;
+  let y = encabezado();
+  y = tablaHead(y);
+  let pag = 1;
+  listaEntregas.forEach(e=>{
+    const its = itemsPorEntrega[e.id]||[];
+    const lineas = its.length ? its.map(it=>"• "+it.nombre_item+" × "+it.cantidad+(it.talla?" ("+it.talla+")":"")) : ["—"];
+    const wrapped = doc.splitTextToSize(pdfTexto(lineas.join("\n")), x2-x1-4);
+    const rowH = Math.max(16, wrapped.length*3.6 + 5);
+    if(y + rowH > FOOTER_TOP){
+      piePagina(pag);
+      doc.addPage(); pag++;
+      y = M+2; y = tablaHead(y);
+    }
+    doc.setDrawColor(180,188,210);
+    [x0,x1,x2,x3,x4].forEach(x=>doc.line(x,y,x,y+rowH));
+    doc.line(M,y+rowH,RIGHT,y+rowH);
+    doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(20,20,20);
+    doc.text(fmtDate(e.fecha), (x0+x1)/2, y+rowH/2+1, {align:"center"});
+    doc.setFontSize(7.4);
+    doc.text(wrapped, x1+2, y+5);
+    if(e.firma_trabajador){ try{ doc.addImage(e.firma_trabajador,"PNG",x2+3,y+2,x3-x2-6,rowH-4); }catch(err){} }
+    if(e.firma_responsable){ try{ doc.addImage(e.firma_responsable,"PNG",x3+3,y+2,x4-x3-6,rowH-4); }catch(err){} }
+    doc.setFontSize(6); doc.setTextColor(120,120,140);
+    if(e.responsable_nombre) doc.text(pdfTexto(e.responsable_nombre), x3+3, y+rowH-1.5);
+    y += rowH;
+  });
+  piePagina(pag);
+
+  const safe = (t.nombre||"trabajador").replace(/[^\w\sáéíóúñ-]/gi,"").trim().replace(/\s+/g,"_").slice(0,40);
+  return { doc, nombreBase: safe };
+}
+
 async function generarKardexPDF(trabajadorId){
   if(!window.jspdf || !window.jspdf.jsPDF){ toast("No se pudo cargar el generador de PDF (revisa tu conexión)","err"); return; }
   bloquear("Generando PDF…");
   try{
-    const { data: t } = await sb.from("dot_trabajadores").select("id,nombre,identificacion,cargo,area").eq("id",trabajadorId).maybeSingle();
-    if(!t){ toast("Trabajador no encontrado","err"); return; }
-    const { data: entregas } = await sb.from("dot_entregas")
-      .select("id,fecha,responsable_nombre,responsable_cargo,firma_trabajador,firma_responsable")
-      .eq("trabajador_id", trabajadorId).order("fecha",{ascending:true});
-    const listaEntregas = entregas || [];
-    if(!listaEntregas.length){ toast("Este trabajador no tiene entregas registradas","err"); return; }
-    const ids = listaEntregas.map(e=>e.id);
-    const { data: items } = await sb.from("dot_entrega_items").select("entrega_id,nombre_item,cantidad,talla").in("entrega_id", ids);
-    const itemsPorEntrega = {};
-    (items||[]).forEach(it=>{ (itemsPorEntrega[it.entrega_id] = itemsPorEntrega[it.entrega_id]||[]).push(it); });
-
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({unit:"mm", format:"a4"});
-    const PW = 210, M = 10, RIGHT = PW - M;
-    const x0=M, x1=M+22, x2=M+94, x3=M+137, x4=RIGHT; // Fecha 22 / Ítems 72 / Firma trab. 43 / Firma resp. 53
-
-    function grayHead(y,h){ doc.setFillColor(238,241,248); doc.rect(M,y,RIGHT-M,h,"F"); }
-
-    function encabezado(){
-      let y=M;
-      const hH=24, logoW=44;
-      doc.setDrawColor(150,160,190); doc.setLineWidth(0.3); doc.rect(M,y,RIGHT-M,hH);
-      doc.line(M+logoW,y,M+logoW,y+hH);
-      try{ doc.addImage(LOGO,"JPEG",M+4,y+2,36,36*315/570); }catch(e){}
-      doc.setTextColor(20,33,90); doc.setFont("helvetica","bold"); doc.setFontSize(14);
-      doc.text("CONTROL DE ENTREGA DE DOTACIÓN Y EPP", M+logoW+(RIGHT-M-logoW)/2, y+13, {align:"center"});
-      doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(90,90,110);
-      doc.text("Kárdex acumulado por trabajador · Don Aseo Ltda.", M+logoW+(RIGHT-M-logoW)/2, y+19, {align:"center"});
-      y += hH;
-
-      const fh=16;
-      doc.setDrawColor(150,160,190); doc.rect(M,y,RIGHT-M,fh);
-      doc.line(M+95,y,M+95,y+fh);
-      doc.setFont("helvetica","bold"); doc.setFontSize(7); doc.setTextColor(90,90,110);
-      doc.text("TRABAJADOR", M+3, y+5);
-      doc.text("CARGO / ÁREA", M+98, y+5);
-      doc.setFont("helvetica","bold"); doc.setFontSize(10.5); doc.setTextColor(20,20,20);
-      doc.text(t.nombre||"", M+3, y+11);
-      doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(60,60,70);
-      doc.text("C.C. "+(t.identificacion||""), M+3, y+15.5);
-      doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor(20,20,20);
-      doc.text(doc.splitTextToSize((t.cargo||"—")+(t.area?(" · "+t.area):""), RIGHT-M-100), M+98, y+11);
-      y += fh + 2;
-      return y;
-    }
-
-    function tablaHead(y){
-      const h=8;
-      grayHead(y,h);
-      doc.setDrawColor(150,160,190);
-      [x0,x1,x2,x3,x4].forEach(x=>doc.line(x,y,x,y+h));
-      doc.rect(M,y,RIGHT-M,h);
-      doc.setFont("helvetica","bold"); doc.setFontSize(7); doc.setTextColor(40,40,60);
-      const ct=(a,b,txt)=>doc.text(txt,(a+b)/2,y+5.2,{align:"center"});
-      ct(x0,x1,"FECHA"); ct(x1,x2,"ÍTEMS ENTREGADOS");
-      ct(x2,x3,"FIRMA TRABAJADOR"); ct(x3,x4,"FIRMA RESPONSABLE");
-      return y+h;
-    }
-
-    const FOOTER_Y = 290;
-    function piePagina(pag){
-      doc.setFontSize(6.6); doc.setTextColor(140,140,160);
-      doc.text("Este documento constituye evidencia de la entrega de dotación, firmada digitalmente por el trabajador y el responsable.", PW/2, FOOTER_Y, {align:"center"});
-      doc.text("Generado el "+fmtDateTime(new Date())+" · Don Aseo Ltda. · Pág. "+pag, PW/2, FOOTER_Y+4, {align:"center"});
-    }
-
-    const FOOTER_TOP = 278;
-    let y = encabezado();
-    y = tablaHead(y);
-    let pag = 1;
-    listaEntregas.forEach(e=>{
-      const its = itemsPorEntrega[e.id]||[];
-      const lineas = its.length ? its.map(it=>"• "+it.nombre_item+" × "+it.cantidad+(it.talla?" ("+it.talla+")":"")) : ["—"];
-      const wrapped = doc.splitTextToSize(lineas.join("\n"), x2-x1-4);
-      const rowH = Math.max(16, wrapped.length*3.6 + 5);
-      if(y + rowH > FOOTER_TOP){
-        piePagina(pag);
-        doc.addPage(); pag++;
-        y = M+2; y = tablaHead(y);
-      }
-      doc.setDrawColor(180,188,210);
-      [x0,x1,x2,x3,x4].forEach(x=>doc.line(x,y,x,y+rowH));
-      doc.line(M,y+rowH,RIGHT,y+rowH);
-      doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(20,20,20);
-      doc.text(fmtDate(e.fecha), (x0+x1)/2, y+rowH/2+1, {align:"center"});
-      doc.setFontSize(7.4);
-      doc.text(wrapped, x1+2, y+5);
-      if(e.firma_trabajador){ try{ doc.addImage(e.firma_trabajador,"PNG",x2+3,y+2,x3-x2-6,rowH-4); }catch(err){} }
-      if(e.firma_responsable){ try{ doc.addImage(e.firma_responsable,"PNG",x3+3,y+2,x4-x3-6,rowH-4); }catch(err){} }
-      doc.setFontSize(6); doc.setTextColor(120,120,140);
-      if(e.responsable_nombre) doc.text(pdfTexto(e.responsable_nombre), x3+3, y+rowH-1.5);
-      y += rowH;
-    });
-    piePagina(pag);
-
-    const safe = (t.nombre||"trabajador").replace(/[^\w\sáéíóúñ-]/gi,"").trim().replace(/\s+/g,"_").slice(0,40);
-    doc.save("Kardex_dotacion_"+safe+".pdf");
+    const r = await construirKardexPDF(trabajadorId);
+    if(!r){ toast("Este trabajador no tiene entregas registradas","err"); return; }
+    r.doc.save("Kardex_dotacion_"+r.nombreBase+".pdf");
     toast("PDF generado","ok");
   }catch(e){ console.error(e); toast("No se pudo generar el PDF: "+(e.message||''),"err"); }
   finally{ desbloquear(); }
+}
+
+/* Descarga el kárdex de TODOS los trabajadores del contrato actual, empaquetados en un ZIP */
+async function descargarZipKardexTodos(){
+  if(!window.jspdf || !window.jspdf.jsPDF){ toast("No se pudo cargar el generador de PDF (revisa tu conexión)","err"); return; }
+  if(!window.JSZip){ toast("No se pudo cargar el compresor ZIP (revisa tu conexión)","err"); return; }
+  const lista = trabajadoresDelContrato();
+  if(!lista.length){ toast("No hay trabajadores para exportar","err"); return; }
+  bloquear("Preparando ZIP…");
+  try{
+    const zip = new JSZip();
+    const usados = {};
+    let incluidos = 0, sinEntregas = 0;
+    for(let i=0;i<lista.length;i++){
+      const t = lista[i];
+      bloquearMsg(`Generando kárdex ${i+1} de ${lista.length}…`);
+      try{
+        const r = await construirKardexPDF(t.id);
+        if(!r){ sinEntregas++; continue; }
+        let base = r.nombreBase || ('trabajador_'+(i+1));
+        if(usados[base]!=null){ usados[base]++; base = base+'_'+usados[base]; } else usados[base]=0;
+        zip.file(base+'.pdf', r.doc.output('arraybuffer'));
+        incluidos++;
+      }catch(e){ console.warn('kardex zip', t.id, e); }
+    }
+    if(!incluidos){ toast("Ningún trabajador tiene entregas registradas todavía","err"); return; }
+    bloquearMsg("Comprimiendo ZIP…");
+    const blob = await zip.generateAsync({ type:'blob', compression:'DEFLATE' });
+    const url = URL.createObjectURL(blob);
+    const nombreContrato = contratoActualId==='todos' ? 'todos_los_contratos' : (contratoActual()?.nombre||'contrato');
+    const safeContrato = String(nombreContrato).replace(/[^\w\sáéíóúñ-]/gi,'').trim().replace(/\s+/g,'_').slice(0,40);
+    const a = document.createElement('a'); a.href=url;
+    a.download = 'Kardex_dotacion_'+safeContrato+'.zip';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 6000);
+    let msg = `ZIP generado con ${incluidos} kárdex`;
+    if(sinEntregas) msg += ` (${sinEntregas} trabajador(es) sin entregas, omitido(s))`;
+    toast(msg,"ok");
+  }catch(e){ console.error(e); toast("No se pudo generar el ZIP: "+(e.message||''),"err"); }
+  finally{ desbloquear(); }
+}
+
+/* ---------- Estadísticas: para eso existe el catálogo fijo — saber cuánto se ha entregado de cada ítem ---------- */
+function renderDotEstadisticas(){
+  const host = document.getElementById('dotBody');
+  if(!host) return;
+  const trabIds = new Set(trabajadoresDelContrato().map(t=>t.id));
+  const prefijo = dotPeriodo==='mes' ? hoyLocal().slice(0,7) : (dotPeriodo==='anio' ? hoyLocal().slice(0,4) : null);
+  const entregasFiltradas = DOTACION.entregas.filter(e=> trabIds.has(e.trabajador_id) && (!prefijo || (e.fecha||"").startsWith(prefijo)));
+  const idsEntFiltradas = new Set(entregasFiltradas.map(e=>e.id));
+  const itemsFiltrados = DOTACION.entregaItems.filter(it=> idsEntFiltradas.has(it.entrega_id));
+
+  const porItem = {};
+  itemsFiltrados.forEach(it=>{
+    const k = it.nombre_item;
+    if(!porItem[k]) porItem[k] = { nombre:k, cantidad:0, entregas:0 };
+    porItem[k].cantidad += (+it.cantidad || 0);
+    porItem[k].entregas += 1;
+  });
+  const ranking = Object.values(porItem).sort((a,b)=> b.cantidad - a.cantidad);
+  const totalItems = ranking.reduce((s,r)=>s+r.cantidad, 0);
+  const maxCantidad = ranking.length ? ranking[0].cantidad : 0;
+  const trabajadoresAtendidos = new Set(entregasFiltradas.map(e=>e.trabajador_id)).size;
+
+  host.innerHTML = `
+    <div class="tabs" style="margin-bottom:16px">
+      <button class="tab ${dotPeriodo==='todo'?'active':''}" data-periodo="todo">Todo el tiempo</button>
+      <button class="tab ${dotPeriodo==='mes'?'active':''}" data-periodo="mes">Este mes</button>
+      <button class="tab ${dotPeriodo==='anio'?'active':''}" data-periodo="anio">Este año</button>
+    </div>
+    <div class="stats">
+      <div class="stat s-total"><div class="label">Entregas en el periodo</div><div class="value">${entregasFiltradas.length}</div></div>
+      <div class="stat s-act"><div class="label">Trabajadores atendidos</div><div class="value">${trabajadoresAtendidos}</div></div>
+      <div class="stat s-asi"><div class="label">Ítems entregados (total)</div><div class="value">${totalItems}</div></div>
+      <div class="stat s-clo"><div class="label">Ítem más entregado</div><div class="value" style="font-size:16px;line-height:1.3">${ranking.length?esc(ranking[0].nombre):'—'}</div></div>
+    </div>
+    <div class="sec-bar"><h2>Ítems entregados por tipo</h2><span class="muted-sm">${ranking.length} tipo(s)</span></div>
+    ${ranking.length ? `<div class="table-wrap"><table class="dt"><thead><tr><th>Ítem</th><th>Cantidad total</th><th>Nº de entregas</th><th></th></tr></thead><tbody>
+      ${ranking.map(r=>`<tr>
+        <td>${esc(r.nombre)}</td>
+        <td><b>${r.cantidad}</b></td>
+        <td>${r.entregas}</td>
+        <td style="width:160px"><div style="background:var(--brand-soft);border-radius:6px;height:8px;overflow:hidden"><div style="background:var(--brand);height:100%;width:${maxCantidad?Math.round(r.cantidad/maxCantidad*100):0}%"></div></div></td>
+      </tr>`).join('')}
+    </tbody></table></div>` : `<div class="empty"><div class="ic">${I.box}</div><h3>Sin datos todavía</h3><p>Cuando registres entregas, aquí verás cuánto se ha entregado de cada ítem del catálogo.</p></div>`}
+  `;
+  host.querySelectorAll('[data-periodo]').forEach(b=>{
+    b.onclick = ()=>{ dotPeriodo = b.dataset.periodo; renderDotEstadisticas(); };
+  });
+}
+
+/* ============================================================
+   MÓDULO CONFIGURACIÓN · Usuarios y permisos (solo administradores)
+   Crear/desactivar el LOGIN (correo+contraseña) se sigue haciendo desde
+   el panel de Supabase (Authentication → Users) — aquí solo se asigna
+   rol/módulos/contratos una vez el login ya existe (ver CAMBIOS_SQL_7.sql).
+   ============================================================ */
+async function renderConfiguracion(){
+  bloquear("Cargando usuarios…");
+  let perfiles = [];
+  try{
+    const { data } = await sb.from("perfiles")
+      .select("id,email,nombre,es_admin,activo,dotacion_editar_catalogo")
+      .order("email",{ascending:true});
+    perfiles = data || [];
+  } finally { desbloquear(); }
+
+  const filas = perfiles.map(p=>{
+    const esUnoMismo = p.id === MIPERFIL.uid;
+    return `<tr>
+      <td><b>${esc(p.nombre||p.email||'—')}</b>${esUnoMismo?' <span class="muted-sm">(tú)</span>':''}</td>
+      <td><span class="badge ${p.es_admin?'activa':'cerrada'}"><span class="dot"></span>${p.es_admin?'Administrador':'Usuario'}</span></td>
+      <td><label class="chk" style="padding:0"><input type="checkbox" data-perf-activo="${p.id}" ${p.activo?'checked':''} ${esUnoMismo?'disabled':''}> ${p.activo?'Activo':'Inactivo'}</label></td>
+      <td><button class="btn btn-ghost btn-sm" data-perf-editar="${p.id}">${I.pen} Permisos</button></td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById("app").innerHTML = `
+    ${topbar('configuracion')}
+    <div class="wrap">
+      <div class="page-head">
+        <div><h1>Configuración</h1><p>Usuarios y permisos de acceso a cada módulo y contrato.</p></div>
+      </div>
+      <div class="resp-firma" style="margin-bottom:20px">
+        <div class="rf-info">
+          <div class="rf-k">Dar de alta a alguien nuevo</div>
+          <div class="rf-v" style="font-size:13px;font-weight:600">Créale la cuenta (correo y contraseña) en Supabase → Authentication → Users. Aparecerá aquí bloqueada por defecto — solo falta asignarle permisos.</div>
+        </div>
+      </div>
+      <div class="sec-bar"><h2>Usuarios</h2><span class="muted-sm">${perfiles.length} registrado(s)</span></div>
+      ${perfiles.length
+        ? `<div class="table-wrap"><table class="dt"><thead><tr><th>Usuario</th><th>Rol</th><th>Estado</th><th>Permisos</th></tr></thead><tbody>${filas}</tbody></table></div>`
+        : `<div class="empty"><div class="ic">${I.user}</div><h3>Sin usuarios todavía</h3><p>Correrá automáticamente cuando alguien inicie sesión, o al correr CAMBIOS_SQL_7.sql si ya tienes usuarios creados.</p></div>`}
+    </div>`;
+  wireLogout();
+  document.querySelectorAll('[data-perf-activo]').forEach(chk=>{
+    chk.onchange = ()=> toggleActivoPerfil(chk.dataset.perfActivo, chk.checked);
+  });
+  document.querySelectorAll('[data-perf-editar]').forEach(b=>{
+    b.onclick = ()=> abrirPermisosUsuario(b.dataset.perfEditar);
+  });
+}
+
+async function toggleActivoPerfil(id, activo){
+  if(id === MIPERFIL.uid){ toast("No puedes desactivar tu propia cuenta","err"); return; }
+  const { error } = await sb.from("perfiles").update({ activo }).eq("id", id);
+  if(error){ toast("No se pudo actualizar: "+error.message,"err"); renderConfiguracion(); return; }
+  toast(activo?"Usuario activado":"Usuario desactivado","ok");
+  renderConfiguracion();
+}
+
+async function abrirPermisosUsuario(perfilId){
+  bloquear("Cargando permisos…");
+  let perfil, modulos, contratosMarcados, todosLosContratos;
+  try{
+    const [{ data:p }, { data:pm }, { data:pc }, { data:cs }] = await Promise.all([
+      sb.from("perfiles").select("id,email,nombre,es_admin,activo,dotacion_editar_catalogo").eq("id",perfilId).maybeSingle(),
+      sb.from("perfil_modulos").select("modulo").eq("perfil_id",perfilId),
+      sb.from("perfil_contratos").select("contrato_id").eq("perfil_id",perfilId),
+      sb.from("dot_contratos").select("id,nombre").order("nombre",{ascending:true})
+    ]);
+    perfil = p; modulos = (pm||[]).map(x=>x.modulo); contratosMarcados = (pc||[]).map(x=>x.contrato_id); todosLosContratos = cs||[];
+  } finally { desbloquear(); }
+  if(!perfil){ toast("Usuario no encontrado","err"); return; }
+
+  const esUnoMismo = perfil.id === MIPERFIL.uid;
+  openModal(`<div class="modal" style="max-width:520px">
+    <div class="modal-head"><div><h2>${esc(perfil.nombre||perfil.email||'Usuario')}</h2><p>${esc(perfil.email||'')}</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <label class="chk"><input type="checkbox" id="pfAdmin" ${perfil.es_admin?'checked':''} ${esUnoMismo?'disabled':''}> Es administrador (acceso total a todo)</label>
+      ${esUnoMismo?`<p class="muted-sm" style="margin:-4px 0 10px">No puedes quitarte tu propio acceso de administrador.</p>`:''}
+      <div id="permisosDetalle" style="${perfil.es_admin?'display:none':''}">
+        <div class="sec-bar" style="margin-top:14px"><h2 style="font-size:14px">Módulos</h2></div>
+        <label class="chk"><input type="checkbox" data-pf-mod="asistencia" ${modulos.includes('asistencia')?'checked':''}> Asistencia</label>
+        <label class="chk"><input type="checkbox" data-pf-mod="documentos" ${modulos.includes('documentos')?'checked':''}> Documentos y Firmas</label>
+        <label class="chk"><input type="checkbox" data-pf-mod="dotacion" ${modulos.includes('dotacion')?'checked':''}> Dotación</label>
+        <div id="permisosDotacion" style="margin-top:10px;padding:12px 14px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;${modulos.includes('dotacion')?'':'display:none'}">
+          <div class="sec-bar" style="margin:0 0 8px"><h2 style="font-size:13px">Contratos permitidos</h2></div>
+          ${todosLosContratos.length
+            ? todosLosContratos.map(c=>`<label class="chk" style="padding:3px 0"><input type="checkbox" data-pf-contrato="${c.id}" ${contratosMarcados.includes(c.id)?'checked':''}> ${esc(c.nombre)}</label>`).join('')
+            : '<p class="muted-sm">Aún no hay contratos creados.</p>'}
+          <label class="chk" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line)"><input type="checkbox" id="pfCatalogo" ${perfil.dotacion_editar_catalogo?'checked':''}> Puede editar el catálogo de ítems</label>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardarPermisos">${I.check} Guardar</button>
+    </div></div>`);
+
+  document.getElementById('pfAdmin').onchange = (e)=>{
+    document.getElementById('permisosDetalle').style.display = e.target.checked ? 'none' : 'block';
+  };
+  const chkDot = document.querySelector('[data-pf-mod="dotacion"]');
+  if(chkDot) chkDot.onchange = (e)=>{ document.getElementById('permisosDotacion').style.display = e.target.checked ? 'block' : 'none'; };
+  document.getElementById('btnGuardarPermisos').onclick = ()=> guardarPermisosUsuario(perfilId);
+}
+
+async function guardarPermisosUsuario(perfilId){
+  const esAdmin = document.getElementById('pfAdmin').checked;
+  const modulosMarcados = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-mod]:checked')).map(el=>el.dataset.pfMod);
+  const contratosMarcados = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-contrato]:checked')).map(el=>el.dataset.pfContrato);
+  const chkCat = document.getElementById('pfCatalogo');
+  const editarCatalogo = chkCat ? chkCat.checked : false;
+
+  const btn = document.getElementById('btnGuardarPermisos'); btn.disabled=true; btn.innerHTML="Guardando…";
+  bloquear("Guardando permisos…");
+  try{
+    const { error:e1 } = await sb.from("perfiles").update({ es_admin: esAdmin, dotacion_editar_catalogo: editarCatalogo }).eq("id", perfilId);
+    if(e1){ toast("No se pudo guardar: "+e1.message,"err"); return; }
+
+    // Reemplazo simple: borra lo que había y vuelve a insertar lo marcado (evita comparar/diferenciar)
+    await sb.from("perfil_modulos").delete().eq("perfil_id", perfilId);
+    if(modulosMarcados.length){
+      const { error:e2 } = await sb.from("perfil_modulos").insert(modulosMarcados.map(m=>({perfil_id:perfilId, modulo:m})));
+      if(e2){ toast("Se guardó parcialmente, error en módulos: "+e2.message,"err"); }
+    }
+    await sb.from("perfil_contratos").delete().eq("perfil_id", perfilId);
+    if(contratosMarcados.length){
+      const { error:e3 } = await sb.from("perfil_contratos").insert(contratosMarcados.map(c=>({perfil_id:perfilId, contrato_id:c})));
+      if(e3){ toast("Se guardó parcialmente, error en contratos: "+e3.message,"err"); }
+    }
+    toast("Permisos actualizados","ok");
+    closeModal();
+    if(perfilId === MIPERFIL.uid){ await cargarMiPerfil(); }   // si te editaste a ti mismo, refresca tus propios permisos
+    renderConfiguracion();
+  } finally { desbloquear(); }
 }
 
 /* ---------- Auto-refresh del panel al volver a la pestaña ---------- */
@@ -4535,9 +5057,10 @@ document.addEventListener("visibilitychange", ()=>{
   // No recargar si está oculta, en una vista pública, o en un formulario (perdería lo escrito)
   if(document.hidden || esRutaPublica() || esRutaEdicion()) return;
   // Home de documentos / dotación: refresco SILENCIOSO (sin reloj de arena) para no molestar
-  if(location.hash === "#/docs"){ renderDocsAdmin(true); return; }
-  if(location.hash === "#/dotacion"){ renderDotacionAdmin(true); return; }
-  router();   // re-renderiza el módulo activo (asistencia, documentos o dotación)
+  // (si el acceso fue revocado mientras la pestaña estaba abierta, cae a router() para mostrar el candado)
+  if(location.hash === "#/docs" && tieneModulo('documentos')){ renderDocsAdmin(true); return; }
+  if(location.hash === "#/dotacion" && tieneModulo('dotacion')){ renderDotacionAdmin(true); return; }
+  router();   // re-renderiza el módulo activo (asistencia, documentos, dotación o configuración)
 });
 
 /* ---------- Si la sesión se cierra, volver al login ---------- */
