@@ -396,6 +396,20 @@ table.dt tr:hover td{background:#fafbfe}
 .badge.venc .dot{background:var(--danger)}
 @media(max-width:760px){.seg-grid{grid-template-columns:1fr} .firmante-row{grid-template-columns:1fr 1fr 38px} .firmante-num{display:none}}
 
+/* ---------- Módulo Dotación ---------- */
+.item-row{display:grid;grid-template-columns:26px 1.8fr 0.7fr 0.9fr 38px;gap:8px;align-items:center;margin-bottom:8px}
+.item-row select,.item-row input{padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:13px;outline:none;width:100%;background:#fff}
+.item-row select:focus,.item-row input:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
+.item-row .icon-btn{width:34px;height:34px}
+@media(max-width:760px){.item-row{grid-template-columns:1fr 1fr 1fr 38px}.item-row .firmante-num{display:none}}
+.cat-row{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid var(--line)}
+.cat-row input[type="text"]{flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13.5px}
+.cat-row input[type="text"].cat-unidad{flex:0 0 90px}
+.trab-summary{background:#f6f8fd;border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:16px}
+.trab-summary .tk{font-size:12px;color:var(--ink-3);font-weight:600;text-transform:uppercase}
+.trab-summary .tv{font-size:15px;font-weight:700;color:var(--ink);margin-top:2px}
+.entrega-item-tag{display:inline-block;background:var(--brand-soft);color:var(--brand-deep);border-radius:7px;padding:2px 9px;font-size:12px;font-weight:600;margin:0 5px 5px 0}
+
 /* ---------- Firma pública (Fase 4) ---------- */
 .doc-render{border:1px solid var(--line);border-radius:12px;padding:24px 26px;margin-bottom:20px;background:#fff}
 .r-titulo{font-family:var(--display);font-size:21px;font-weight:700;text-align:center;margin:6px 0;color:var(--ink)}
@@ -509,7 +523,8 @@ const I = {
   copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>',
   qr:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v7h-7"/></svg>',
   back:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>',
-  trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>'
+  trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>',
+  box:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>'
 };
 
 /* ============================================================
@@ -691,6 +706,10 @@ async function router(){
     else if(location.hash === "#/docs/documento/nuevo"){ await renderCrearDocumento(); }
     else if(mEditDoc){ await renderEditarDocumento(decodeURIComponent(mEditDoc[1])); }
     else { await renderDocsAdmin(); }   // MÓDULO: Documentos y Firmas
+  } else if(location.hash.startsWith("#/dotacion")){
+    const mFicha = location.hash.match(/^#\/dotacion\/trabajador\/(.+)$/);
+    if(mFicha){ await renderFichaTrabajador(decodeURIComponent(mFicha[1])); }
+    else { await renderDotacionAdmin(); }   // MÓDULO: Dotación
   } else {
     bloquear("Cargando…");
     try{ await loadState(); } finally{ desbloquear(); }
@@ -757,6 +776,7 @@ function topbar(active){
       <nav class="topnav">
         <a href="#/" class="${active==='asistencia'?'active':''}">Asistencia</a>
         <a href="#/docs" class="${active==='docs'?'active':''}">📄 Documentos y Firmas</a>
+        <a href="#/dotacion" class="${active==='dotacion'?'active':''}">🦺 Dotación</a>
       </nav>
       <div class="topbar-spacer"></div>
       ${STATE.userEmail?`<span class="user-chip" title="${esc(STATE.userEmail)}">${I.user} ${esc(STATE.userEmail)}</span>`:""}
@@ -3784,13 +3804,740 @@ function esRutaEdicion(){
     || h.startsWith("#/docs/plantilla/");
 }
 
+/* ============================================================
+   MÓDULO DOTACIÓN · Entrega de EPP/uniformes con firma digital
+   Directorio de trabajadores + catálogo de ítems + entregas
+   (firma en persona, mismo dispositivo) + kárdex imprimible.
+   ============================================================ */
+let DOTACION = { trabajadores: [], catalogo: [], entregas: [] };
+let dotQuery = "";
+let entregaDraft = null;
+
+async function loadDotacionState(){
+  const [t, c, e] = await Promise.all([
+    sb.from("dot_trabajadores").select("id,nombre,identificacion,cargo,area,creado_en").order("nombre",{ascending:true}),
+    sb.from("dot_catalogo").select("*").order("nombre",{ascending:true}),
+    sb.from("dot_entregas").select("id,trabajador_id,fecha").order("fecha",{ascending:false})
+  ]);
+  const err = t.error || c.error || e.error;
+  if(err){ console.warn(err); toast("Error cargando dotación: "+err.message,"err"); }
+  DOTACION.trabajadores = t.data || [];
+  DOTACION.catalogo = c.data || [];
+  DOTACION.entregas = e.data || [];
+}
+
+/* ---------- Panel principal ---------- */
+async function renderDotacionAdmin(silent){
+  const scrollY = window.scrollY;
+  if(silent){ await loadDotacionState(); }
+  else { bloquear("Cargando dotación…"); try{ await loadDotacionState(); } finally{ desbloquear(); } }
+
+  const totalTrab = DOTACION.trabajadores.length;
+  const totalEntregas = DOTACION.entregas.length;
+  const mesActual = hoyLocal().slice(0,7);
+  const entregasMes = DOTACION.entregas.filter(e=>(e.fecha||"").startsWith(mesActual)).length;
+  const conEntrega = new Set(DOTACION.entregas.map(e=>e.trabajador_id));
+  const sinEntregas = DOTACION.trabajadores.filter(t=>!conEntrega.has(t.id)).length;
+
+  document.getElementById("app").innerHTML = `
+    ${topbar('dotacion')}
+    <div class="wrap">
+      <div class="page-head">
+        <div>
+          <h1>Dotación y Entrega de EPP</h1>
+          <p>Registra la entrega de elementos de protección personal y uniformes, con firma digital en el momento.</p>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-ghost" id="btnCatalogo">${I.box} Catálogo de ítems</button>
+          <button class="btn btn-ghost" id="btnPlantillaTrab">${I.doc} Plantilla Excel</button>
+          <button class="btn btn-ghost" id="btnCargaTrab">${I.plus} Carga masiva</button>
+          <button class="btn btn-primary" id="btnNuevoTrab">${I.plus} Nuevo trabajador</button>
+        </div>
+      </div>
+
+      <div class="stats">
+        <div class="stat s-total"><div class="label">Trabajadores</div><div class="value">${totalTrab}</div></div>
+        <div class="stat s-act"><div class="label">Entregas registradas</div><div class="value">${totalEntregas}</div></div>
+        <div class="stat s-asi"><div class="label">Entregas este mes</div><div class="value">${entregasMes}</div></div>
+        <div class="stat s-clo"><div class="label">Sin entregas aún</div><div class="value">${sinEntregas}</div></div>
+      </div>
+
+      <div class="toolbar">
+        <div class="search">
+          ${I.search}
+          <input type="text" id="dotSearch" placeholder="Buscar por nombre, cédula, cargo o área…" value="${esc(dotQuery)}">
+        </div>
+      </div>
+
+      <div id="dotGrid"></div>
+      <input type="file" id="fileTrabajadores" accept=".xlsx,.xls,.csv" style="display:none">
+    </div>`;
+
+  wireLogout();
+  document.getElementById("btnCatalogo").onclick = abrirCatalogoModal;
+  document.getElementById("btnPlantillaTrab").onclick = descargarPlantillaTrabajadoresDot;
+  document.getElementById("btnCargaTrab").onclick = ()=> document.getElementById("fileTrabajadores").click();
+  document.getElementById("fileTrabajadores").onchange = (e)=>{ const f=e.target.files[0]; if(f) cargarTrabajadoresExcelDot(f); e.target.value=""; };
+  document.getElementById("btnNuevoTrab").onclick = ()=> abrirTrabajadorForm(null);
+  document.getElementById("dotSearch").oninput = (e)=>{ dotQuery = e.target.value; renderDotTrabajadoresGrid(); };
+  renderDotTrabajadoresGrid();
+  if(silent) window.scrollTo(0, scrollY);
+}
+
+function renderDotTrabajadoresGrid(){
+  const host = document.getElementById("dotGrid");
+  if(!host) return;
+  let db = DOTACION.trabajadores.slice();
+  const q = dotQuery.trim().toLowerCase();
+  if(q) db = db.filter(t=>
+    (t.nombre||"").toLowerCase().includes(q) ||
+    (t.identificacion||"").toLowerCase().includes(q) ||
+    (t.cargo||"").toLowerCase().includes(q) ||
+    (t.area||"").toLowerCase().includes(q)
+  );
+  if(!db.length){
+    host.innerHTML = `<div class="empty"><div class="ic">${I.box}</div><h3>${DOTACION.trabajadores.length?'Sin resultados':'Sin trabajadores todavía'}</h3>
+      <p>${DOTACION.trabajadores.length?'Prueba con otro término de búsqueda.':'Agrega trabajadores uno por uno o con carga masiva desde Excel.'}</p></div>`;
+    return;
+  }
+  host.innerHTML = `<div class="grid">${db.map(trabajadorCard).join("")}</div>`;
+  host.querySelectorAll("[data-trab]").forEach(b=>{
+    b.onclick = ()=>{
+      const id=b.dataset.id, act=b.dataset.trab;
+      if(act==="ver") location.hash = "#/dotacion/trabajador/"+id;
+      else if(act==="entregar") abrirNuevaEntrega(id);
+      else if(act==="editar") abrirTrabajadorForm(id);
+      else if(act==="del") eliminarTrabajador(id);
+    };
+  });
+}
+
+function trabajadorCard(t){
+  const entregasT = DOTACION.entregas.filter(e=>e.trabajador_id===t.id);
+  const n = entregasT.length;
+  const ultima = n ? entregasT.reduce((a,b)=> (a.fecha>b.fecha?a:b)).fecha : null;
+  return `<div class="lcard">
+    <div class="lcard-top">
+      <span class="tipo">${esc(t.cargo||'Trabajador')}</span>
+      ${n===0?'<span class="badge cerrada"><span class="dot"></span>Sin entregas</span>':''}
+    </div>
+    <h3>${esc(t.nombre)}</h3>
+    <div class="meta">
+      <div>${I.user}<span>C.C. ${esc(t.identificacion)}</span></div>
+      <div>${I.pin}<span>${esc(t.area||'—')}</span></div>
+      ${ultima?`<div>${I.cal}<span>Última entrega: ${fmtDate(ultima)}</span></div>`:''}
+    </div>
+    <div class="lcard-foot">
+      <div class="attn"><span class="num">${n}</span><span class="lab">entrega${n===1?'':'s'}<br>registrada${n===1?'':'s'}</span></div>
+      <div class="card-actions">
+        <button class="icon-btn" title="Ver ficha" data-trab="ver" data-id="${t.id}">${I.eye}</button>
+        <button class="icon-btn" title="Registrar entrega" data-trab="entregar" data-id="${t.id}">${I.plus}</button>
+        <button class="icon-btn" title="Editar" data-trab="editar" data-id="${t.id}">${I.pen}</button>
+        <button class="icon-btn danger" title="Eliminar" data-trab="del" data-id="${t.id}">${I.trash}</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ---------- Directorio: crear / editar / eliminar trabajador ---------- */
+function abrirTrabajadorForm(id){
+  const t = id ? DOTACION.trabajadores.find(x=>x.id===id) : null;
+  openModal(`<div class="modal" style="max-width:480px">
+    <div class="modal-head"><div><h2>${t?'Editar trabajador':'Nuevo trabajador'}</h2><p>Se guarda en el directorio para futuras entregas.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Nombre completo *</label><input id="tNombre" value="${esc(t?.nombre||'')}" placeholder="Nombres y apellidos"></div>
+      <div class="field"><label>Número de identificación (cédula) *</label><input id="tCedula" value="${esc(t?.identificacion||'')}" placeholder="C.C." inputmode="numeric"></div>
+      <div class="field row2">
+        <div><label>Cargo</label><input id="tCargo" value="${esc(t?.cargo||'')}" placeholder="Cargo"></div>
+        <div><label>Área</label><input id="tArea" value="${esc(t?.area||'')}" placeholder="Área o dependencia"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardarTrab">${I.check} Guardar</button>
+    </div></div>`);
+  document.getElementById('btnGuardarTrab').onclick = ()=> guardarTrabajador(id);
+}
+
+async function guardarTrabajador(id){
+  const nombre = document.getElementById('tNombre').value.trim();
+  const identificacion = document.getElementById('tCedula').value.trim();
+  const cargo = document.getElementById('tCargo').value.trim() || null;
+  const area = document.getElementById('tArea').value.trim() || null;
+  if(!nombre){ toast("Falta el nombre","err"); return; }
+  if(!identificacion){ toast("Falta la identificación","err"); return; }
+  const btn = document.getElementById('btnGuardarTrab'); btn.disabled=true; btn.innerHTML="Guardando…";
+  bloquear("Guardando…");
+  let error;
+  if(id){ ({error} = await sb.from("dot_trabajadores").update({nombre,identificacion,cargo,area}).eq("id",id)); }
+  else { ({error} = await sb.from("dot_trabajadores").insert({nombre,identificacion,cargo,area})); }
+  desbloquear();
+  if(error){
+    btn.disabled=false; btn.innerHTML=`${I.check} Guardar`;
+    const dup = /duplicate|unique/i.test(error.message||"");
+    toast(dup?"Ya existe un trabajador con esa cédula":"No se pudo guardar: "+error.message,"err");
+    return;
+  }
+  await loadDotacionState();
+  closeModal();
+  toast(id?"Trabajador actualizado":"Trabajador creado","ok");
+  const mFicha = location.hash.match(/^#\/dotacion\/trabajador\/(.+)$/);
+  if(mFicha && id && decodeURIComponent(mFicha[1])===id){ renderFichaTrabajador(id); }
+  else { renderDotacionAdmin(); }
+}
+
+function eliminarTrabajador(id){
+  const t = DOTACION.trabajadores.find(x=>x.id===id);
+  openModal(`<div class="modal" style="max-width:460px">
+    <div class="modal-head"><div><h2>Eliminar trabajador</h2><p>Esta acción no se puede deshacer.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminará a <b>${esc(t?.nombre||'este trabajador')}</b> del directorio junto con <b>todo su historial de entregas y firmas</b>. Si solo quieres corregir un dato, usa "Editar" en vez de eliminar.</p></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-danger" id="confDelTrab">${I.trash} Sí, eliminar</button></div></div>`);
+  document.getElementById("confDelTrab").onclick = async ()=>{
+    const btn=document.getElementById("confDelTrab"); btn.disabled=true; btn.innerHTML="Eliminando…";
+    const { error } = await sb.from("dot_trabajadores").delete().eq("id", id);
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`; toast("No se pudo eliminar: "+error.message,"err"); return; }
+    await loadDotacionState();
+    closeModal(); toast("Trabajador eliminado","ok"); renderDotacionAdmin();
+  };
+}
+
+/* ---------- Carga masiva de trabajadores desde Excel ---------- */
+function descargarPlantillaTrabajadoresDot(){
+  if(!window.XLSX){ toast("No se pudo cargar el generador de Excel (revisa tu conexión)","err"); return; }
+  const datos = [
+    ["Nombre completo","Identificación","Cargo","Área"],
+    ["Juan Pérez Gómez","1094567890","Operario","Aseo"],
+    ["María López Ruiz","43567123","Auxiliar","Cocina"]
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(datos);
+  ws["!cols"] = [{wch:28},{wch:16},{wch:20},{wch:20}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Trabajadores");
+  XLSX.writeFile(wb, "Plantilla_trabajadores.xlsx");
+  toast("Plantilla descargada","ok");
+}
+
+async function cargarTrabajadoresExcelDot(file){
+  if(!window.XLSX){ toast("No se pudo cargar el lector de Excel (revisa tu conexión)","err"); return; }
+  bloquear("Leyendo archivo…");
+  try{
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, {type:"array"});
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const filas = XLSX.utils.sheet_to_json(ws, {header:1, defval:"", raw:false});
+    if(!filas.length){ toast("El archivo está vacío","err"); return; }
+    const norm = s => String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").trim();
+    const head = (filas[0]||[]).map(norm);
+    const findCol = (...alts)=> head.findIndex(h => alts.some(a => h.includes(a)));
+    let cNom = findCol("nombre"), cId = findCol("identificacion","cedula","documento","cc"),
+        cCar = findCol("cargo"), cAr = findCol("area","dependencia");
+    let start = 1;
+    if(cNom === -1 && cId === -1){ cNom=0; cId=1; cCar=2; cAr=3; start=0; }
+    const filasValidas = []; let ignoradas = 0;
+    for(let i=start;i<filas.length;i++){
+      const r = filas[i]; if(!r) continue;
+      const nombre = String(cNom>=0?r[cNom]:"").trim();
+      const identificacion = String(cId>=0?r[cId]:"").trim();
+      const cargo = String(cCar>=0?r[cCar]:"").trim();
+      const area = String(cAr>=0?r[cAr]:"").trim();
+      if(!nombre && !identificacion) continue;
+      if(!nombre || !identificacion){ ignoradas++; continue; }
+      filasValidas.push({ nombre, identificacion, cargo:cargo||null, area:area||null });
+    }
+    if(!filasValidas.length){ toast("No se encontraron filas válidas (se requiere nombre e identificación)","err"); return; }
+    const keyOf = s => s.replace(/[^0-9A-Za-z]/g,"").toLowerCase();
+    const existentes = {}; DOTACION.trabajadores.forEach(t=>{ existentes[keyOf(t.identificacion)] = t; });
+    const nuevos = [], actualizaciones = [];
+    const vistosEnArchivo = new Set(); let dup = 0;
+    filasValidas.forEach(f=>{
+      const k = keyOf(f.identificacion);
+      if(vistosEnArchivo.has(k)){ dup++; return; }
+      vistosEnArchivo.add(k);
+      if(existentes[k]){ actualizaciones.push({ id: existentes[k].id, ...f }); }
+      else { nuevos.push(f); }
+    });
+    let errores = 0;
+    if(nuevos.length){
+      const { error } = await sb.from("dot_trabajadores").insert(nuevos);
+      if(error){ errores++; console.error(error); }
+    }
+    for(const a of actualizaciones){
+      const { id, ...datos } = a;
+      const { error } = await sb.from("dot_trabajadores").update(datos).eq("id", id);
+      if(error) errores++;
+    }
+    await loadDotacionState();
+    renderDotTrabajadoresGrid();
+    let msg = `${nuevos.length} nuevo(s), ${actualizaciones.length} actualizado(s)`;
+    if(ignoradas) msg += ` · ${ignoradas} sin nombre/cédula omitida(s)`;
+    if(dup) msg += ` · ${dup} duplicada(s) en el archivo`;
+    if(errores) msg += ` · ${errores} error(es)`;
+    toast(msg, errores?"err":"ok");
+  }catch(e){ console.error(e); toast("No se pudo leer el archivo: "+(e.message||''),"err"); }
+  finally{ desbloquear(); }
+}
+
+/* ---------- Catálogo de ítems (guantes, botas, casco…) ---------- */
+function abrirCatalogoModal(){
+  openModal(`<div class="modal" style="max-width:520px">
+    <div class="modal-head"><div><h2>Catálogo de ítems</h2><p>Lo que se puede entregar como dotación.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="field row2" style="margin-bottom:14px">
+        <div><input id="catNombre" placeholder="Nombre del ítem (ej. Guantes de nitrilo)"></div>
+        <div style="display:flex;gap:8px">
+          <input id="catUnidad" placeholder="Unidad (par, unidad…)" style="flex:1">
+          <button class="btn btn-primary btn-sm" id="btnAddCat">${I.plus} Agregar</button>
+        </div>
+      </div>
+      <div id="catLista"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
+  </div>`);
+  document.getElementById('btnAddCat').onclick = guardarItemCatalogo;
+  renderCatalogoLista();
+}
+
+function renderCatalogoLista(){
+  const host = document.getElementById('catLista'); if(!host) return;
+  const items = DOTACION.catalogo;
+  host.innerHTML = items.length ? items.map(c=>`
+    <div class="cat-row">
+      <span style="flex:1;font-weight:600;font-size:13.5px;${c.activo?'':'opacity:.45;text-decoration:line-through'}">${esc(c.nombre)}</span>
+      <span class="muted-sm" style="width:70px">${esc(c.unidad||'—')}</span>
+      <label class="chk" style="padding:0"><input type="checkbox" data-cat-activo="${c.id}" ${c.activo?'checked':''}> activo</label>
+      <button class="icon-btn danger" title="Eliminar" data-cat-del="${c.id}">${I.trash}</button>
+    </div>`).join('') : '<div class="muted-sm" style="padding:14px 0">Sin ítems todavía. Agrega el primero arriba.</div>';
+  host.querySelectorAll('[data-cat-activo]').forEach(chk=>{
+    chk.onchange = ()=> toggleItemCatalogo(chk.dataset.catActivo, chk.checked);
+  });
+  host.querySelectorAll('[data-cat-del]').forEach(b=>{
+    b.onclick = ()=> eliminarItemCatalogo(b.dataset.catDel);
+  });
+}
+
+async function guardarItemCatalogo(){
+  const nombre = document.getElementById('catNombre').value.trim();
+  const unidad = document.getElementById('catUnidad').value.trim() || null;
+  if(!nombre){ toast("Escribe el nombre del ítem","err"); return; }
+  const btn = document.getElementById('btnAddCat'); btn.disabled=true;
+  const { error } = await sb.from("dot_catalogo").insert({ nombre, unidad });
+  btn.disabled=false;
+  if(error){ toast("No se pudo agregar: "+error.message,"err"); return; }
+  document.getElementById('catNombre').value=''; document.getElementById('catUnidad').value='';
+  await loadDotacionState();
+  renderCatalogoLista();
+  toast("Ítem agregado","ok");
+}
+
+async function toggleItemCatalogo(id, activo){
+  const { error } = await sb.from("dot_catalogo").update({ activo }).eq("id", id);
+  if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
+  await loadDotacionState();
+}
+
+function eliminarItemCatalogo(id){
+  const c = DOTACION.catalogo.find(x=>x.id===id);
+  openSubModal(`<div class="modal" style="max-width:420px">
+    <div class="modal-head"><div><h2>Eliminar ítem</h2><p>No afecta las entregas ya registradas.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">¿Eliminar <b>${esc(c?.nombre||'este ítem')}</b> del catálogo? Ya no aparecerá para elegir en nuevas entregas; las entregas ya registradas conservan su nombre.</p></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-danger" id="confDelCat">${I.trash} Sí, eliminar</button></div></div>`, ()=>abrirCatalogoModal());
+  document.getElementById("confDelCat").onclick = async ()=>{
+    const btn=document.getElementById("confDelCat"); btn.disabled=true; btn.innerHTML="Eliminando…";
+    const { error } = await sb.from("dot_catalogo").delete().eq("id", id);
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`; toast("No se pudo eliminar: "+error.message,"err"); return; }
+    await loadDotacionState();
+    toast("Ítem eliminado","ok");
+    closeModal();
+  };
+}
+
+/* ---------- Nueva entrega (asistente de 3 pasos, en persona / mismo dispositivo) ---------- */
+function abrirNuevaEntrega(trabajadorId){
+  if(!DOTACION.catalogo.some(c=>c.activo)){
+    toast("Primero agrega ítems al catálogo (botón 'Catálogo de ítems')","err");
+    return;
+  }
+  let ultimoResp = {};
+  try{ ultimoResp = JSON.parse(localStorage.getItem('dot_ultimo_responsable')||'{}'); }catch(e){}
+  entregaDraft = {
+    trabajadorId: trabajadorId || null,
+    fecha: hoyLocal(),
+    responsableNombre: ultimoResp.nombre || '',
+    responsableCargo: ultimoResp.cargo || '',
+    observaciones: '',
+    items: [{ catalogoId:'', cantidad:1, talla:'' }],
+    firmaTrabajador: null
+  };
+  renderPasoEntrega1();
+}
+
+function renderPasoEntrega1(){
+  const t = entregaDraft.trabajadorId ? DOTACION.trabajadores.find(x=>x.id===entregaDraft.trabajadorId) : null;
+  const opcionesTrab = DOTACION.trabajadores.map(x=>`<option value="${x.id}" ${x.id===entregaDraft.trabajadorId?'selected':''}>${esc(x.nombre)} — C.C. ${esc(x.identificacion)}</option>`).join('');
+  openModal(`<div class="modal lg">
+    <div class="modal-head"><div><h2>Registrar entrega de dotación</h2><p>Paso 1 de 3 — Ítems a entregar</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      ${t ? `<div class="trab-summary"><div class="tk">Trabajador</div><div class="tv">${esc(t.nombre)} — C.C. ${esc(t.identificacion)}</div></div>`
+          : `<div class="field"><label>Trabajador *</label>
+              <select id="entTrabajador"><option value="">Selecciona…</option>${opcionesTrab}</select>
+              <div class="muted-sm" style="margin-top:6px">¿No aparece? Créalo primero desde "Nuevo trabajador" en el panel.</div>
+            </div>`}
+      <div class="field"><label>Fecha de entrega</label><input type="date" id="entFecha" value="${entregaDraft.fecha}"></div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:16px 0 10px">
+        <label style="font-weight:700;font-size:14px">Ítems entregados *</label>
+        <button class="btn btn-ghost btn-sm" id="btnAddItem">${I.plus} Agregar ítem</button>
+      </div>
+      <div id="itemsList"></div>
+
+      <div class="field row2" style="margin-top:14px">
+        <div><label>Responsable que entrega *</label><input id="entRespNombre" value="${esc(entregaDraft.responsableNombre)}" placeholder="Nombre del supervisor"></div>
+        <div><label>Cargo del responsable</label><input id="entRespCargo" value="${esc(entregaDraft.responsableCargo)}" placeholder="Cargo"></div>
+      </div>
+      <div class="field"><label>Observaciones <span class="opt">(opcional)</span></label><input id="entObs" value="${esc(entregaDraft.observaciones)}" placeholder="Ej. reposición por daño, talla especial…"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnEntContinuar">${I.check} Continuar a firmas</button>
+    </div>
+  </div>`);
+  renderItemsList();
+  document.getElementById('btnAddItem').onclick = ()=>{ entregaDraft.items.push({catalogoId:'',cantidad:1,talla:''}); renderItemsList(); };
+  document.getElementById('btnEntContinuar').onclick = validarYContinuarPaso1;
+}
+
+function renderItemsList(){
+  const host = document.getElementById('itemsList'); if(!host) return;
+  const activos = DOTACION.catalogo.filter(c=>c.activo);
+  host.innerHTML = entregaDraft.items.map((it,i)=>`
+    <div class="item-row" data-i="${i}">
+      <span class="firmante-num">${i+1}</span>
+      <select data-f="catalogoId">
+        <option value="">Elige el ítem…</option>
+        ${activos.map(c=>`<option value="${c.id}" ${c.id===it.catalogoId?'selected':''}>${esc(c.nombre)}</option>`).join('')}
+      </select>
+      <input data-f="cantidad" type="number" min="1" step="1" value="${it.cantidad}" placeholder="Cant.">
+      <input data-f="talla" value="${esc(it.talla||'')}" placeholder="Talla (opc.)">
+      <button class="icon-btn danger" data-del="${i}" title="Quitar" ${entregaDraft.items.length<=1?'disabled':''}>${I.trash}</button>
+    </div>`).join('');
+  host.querySelectorAll('select[data-f], input[data-f]').forEach(el=>{
+    el.oninput = el.onchange = ()=>{
+      const i = +el.closest('.item-row').dataset.i;
+      const val = el.dataset.f==='cantidad' ? (+el.value||0) : el.value;
+      entregaDraft.items[i][el.dataset.f] = val;
+    };
+  });
+  host.querySelectorAll('[data-del]').forEach(b=>{
+    b.onclick = ()=>{ if(entregaDraft.items.length<=1) return; entregaDraft.items.splice(+b.dataset.del,1); renderItemsList(); };
+  });
+}
+
+function validarYContinuarPaso1(){
+  const selTrab = document.getElementById('entTrabajador');
+  if(selTrab){ entregaDraft.trabajadorId = selTrab.value || null; }
+  if(!entregaDraft.trabajadorId){ toast("Selecciona el trabajador","err"); return; }
+  entregaDraft.fecha = document.getElementById('entFecha').value || hoyLocal();
+  entregaDraft.responsableNombre = document.getElementById('entRespNombre').value.trim();
+  entregaDraft.responsableCargo = document.getElementById('entRespCargo').value.trim();
+  entregaDraft.observaciones = document.getElementById('entObs').value.trim();
+  if(!entregaDraft.responsableNombre){ toast("Falta el nombre del responsable que entrega","err"); return; }
+  const validos = entregaDraft.items.filter(it=>it.catalogoId && it.cantidad>0);
+  if(!validos.length){ toast("Agrega al menos un ítem con cantidad","err"); return; }
+  entregaDraft.items = validos;
+  localStorage.setItem('dot_ultimo_responsable', JSON.stringify({ nombre: entregaDraft.responsableNombre, cargo: entregaDraft.responsableCargo }));
+  renderPasoEntregaFirmaTrabajador();
+}
+
+function renderPasoEntregaFirmaTrabajador(){
+  const t = DOTACION.trabajadores.find(x=>x.id===entregaDraft.trabajadorId);
+  const resumen = entregaDraft.items.map(it=>{
+    const c = DOTACION.catalogo.find(x=>x.id===it.catalogoId);
+    return `<span class="entrega-item-tag">${esc(c?c.nombre:'Ítem')} × ${it.cantidad}${it.talla?' · '+esc(it.talla):''}</span>`;
+  }).join('');
+  const guardada = entregaDraft.firmaTrabajador;
+  openModal(`<div class="modal" style="max-width:560px">
+    <div class="modal-head"><div><h2>Firma del trabajador</h2><p>Paso 2 de 3 — ${esc(t?.nombre||'')}</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div style="margin-bottom:14px">${resumen}</div>
+      <p class="muted-sm" style="margin-bottom:10px">Recibí a satisfacción los elementos anteriores. Firma aquí:</p>
+      ${guardada?`<div id="firmaTGuardada" style="text-align:center;margin-bottom:12px"><img src="${guardada}" style="height:80px;max-width:100%;border:1px solid var(--line);border-radius:8px;background:#fff;padding:4px"></div>`:''}
+      <div id="padWrapT" style="${guardada?'display:none':''}">
+        <div class="sig-box" id="sigBox"><canvas id="sigCanvas"></canvas><div class="sig-placeholder" id="sigPh">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div></div>
+        <div class="sig-actions"><button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar</button></div>
+      </div>
+      ${guardada?`<button class="btn btn-ghost btn-sm" id="btnRefirmarT">${I.pen} Firmar de nuevo</button>`:''}
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="renderPasoEntrega1()">${I.back} Atrás</button>
+      <button class="btn btn-green" id="btnFirmaTrabOk">${I.check} ${guardada?'Continuar':'Firmar y continuar'}</button>
+    </div>
+  </div>`);
+  let usarPad = !guardada;
+  if(usarPad){ initSignature(); document.getElementById('sigClear').onclick = ()=> sigPad.clear(); }
+  const reBtn = document.getElementById('btnRefirmarT');
+  if(reBtn) reBtn.onclick = ()=>{
+    document.getElementById('firmaTGuardada').style.display='none';
+    document.getElementById('padWrapT').style.display='block';
+    usarPad = true; reBtn.style.display='none';
+    initSignature(); document.getElementById('sigClear').onclick = ()=> sigPad.clear();
+  };
+  document.getElementById('btnFirmaTrabOk').onclick = ()=>{
+    if(usarPad){
+      if(!sigPad || sigPad.isEmpty()){ toast("El trabajador debe firmar primero","err"); return; }
+      entregaDraft.firmaTrabajador = sigPad.dataURL();
+    }
+    renderPasoEntregaFirmaResponsable();
+  };
+}
+
+function renderPasoEntregaFirmaResponsable(){
+  openModal(`<div class="modal" style="max-width:560px">
+    <div class="modal-head"><div><h2>Firma del responsable</h2><p>Paso 3 de 3 — ${esc(entregaDraft.responsableNombre||'')}</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <p class="muted-sm" style="margin-bottom:10px">Confirma que hiciste la entrega. Firma aquí:</p>
+      <div class="sig-box" id="sigBox"><canvas id="sigCanvas"></canvas><div class="sig-placeholder" id="sigPh">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div></div>
+      <div class="sig-actions"><button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar</button></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="renderPasoEntregaFirmaTrabajador()">${I.back} Atrás</button>
+      <button class="btn btn-green" id="btnFirmaRespOk">${I.check} Guardar entrega</button>
+    </div>
+  </div>`);
+  initSignature();
+  document.getElementById('sigClear').onclick = ()=> sigPad.clear();
+  document.getElementById('btnFirmaRespOk').onclick = async ()=>{
+    if(!sigPad || sigPad.isEmpty()){ toast("Falta la firma del responsable","err"); return; }
+    const btn=document.getElementById('btnFirmaRespOk'); btn.disabled=true; btn.innerHTML="Guardando…";
+    await guardarEntregaFinal(sigPad.dataURL());
+  };
+}
+
+async function guardarEntregaFinal(firmaResponsable){
+  bloquear("Guardando entrega…");
+  try{
+    const { data: entrega, error } = await sb.from("dot_entregas").insert({
+      trabajador_id: entregaDraft.trabajadorId,
+      fecha: entregaDraft.fecha,
+      responsable_nombre: entregaDraft.responsableNombre || null,
+      responsable_cargo: entregaDraft.responsableCargo || null,
+      observaciones: entregaDraft.observaciones || null,
+      firma_trabajador: entregaDraft.firmaTrabajador,
+      firma_responsable: firmaResponsable
+    }).select().single();
+    if(error){ toast("No se pudo guardar la entrega: "+error.message,"err"); return; }
+    const rows = entregaDraft.items.map(it=>{
+      const c = DOTACION.catalogo.find(x=>x.id===it.catalogoId);
+      return { entrega_id: entrega.id, nombre_item: c?c.nombre:'Ítem', cantidad: it.cantidad, talla: it.talla||null };
+    });
+    const { error: e2 } = await sb.from("dot_entrega_items").insert(rows);
+    if(e2) toast("Entrega guardada, pero hubo un error con los ítems: "+e2.message,"err");
+    const trabId = entregaDraft.trabajadorId;
+    const yaEstabaEnFicha = location.hash === "#/dotacion/trabajador/"+trabId;
+    entregaDraft = null;
+    await loadDotacionState();
+    closeModal();
+    toast("Entrega registrada correctamente","ok");
+    if(yaEstabaEnFicha){ await renderFichaTrabajador(trabId); }
+    else { location.hash = "#/dotacion/trabajador/"+trabId; }
+  } finally { desbloquear(); }
+}
+
+/* ---------- Ficha del trabajador: historial completo + kárdex imprimible ---------- */
+async function renderFichaTrabajador(id){
+  bloquear("Cargando ficha…");
+  try{
+    await loadDotacionState();
+    const t = DOTACION.trabajadores.find(x=>x.id===id);
+    if(!t){ toast("Trabajador no encontrado","err"); location.hash="#/dotacion"; return; }
+    const { data: entregas } = await sb.from("dot_entregas")
+      .select("id,fecha,responsable_nombre,responsable_cargo,observaciones")
+      .eq("trabajador_id", id).order("fecha",{ascending:false});
+    const listaEntregas = entregas || [];
+    const idsEnt = listaEntregas.map(e=>e.id);
+    const { data: items } = idsEnt.length
+      ? await sb.from("dot_entrega_items").select("entrega_id,nombre_item,cantidad,talla").in("entrega_id", idsEnt)
+      : { data: [] };
+    const itemsPorEntrega = {};
+    (items||[]).forEach(it=>{ (itemsPorEntrega[it.entrega_id] = itemsPorEntrega[it.entrega_id]||[]).push(it); });
+
+    const filas = listaEntregas.map(e=>{
+      const its = (itemsPorEntrega[e.id]||[]).map(it=>`${esc(it.nombre_item)} × ${it.cantidad}${it.talla?' ('+esc(it.talla)+')':''}`).join(', ');
+      return `<tr>
+        <td>${fmtDate(e.fecha)}</td>
+        <td>${its||'—'}</td>
+        <td>${esc(e.responsable_nombre||'—')}</td>
+        <td><button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntrega('${e.id}','${t.id}')">${I.trash}</button></td>
+      </tr>`;
+    }).join('');
+
+    document.getElementById("app").innerHTML = `
+      ${topbar('dotacion')}
+      <div class="wrap">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" id="btnVolverDot">${I.back} Volver</button>
+        </div>
+        <div class="page-head">
+          <div><h1>${esc(t.nombre)}</h1><p>C.C. ${esc(t.identificacion)}${t.cargo?' · '+esc(t.cargo):''}${t.area?' · '+esc(t.area):''}</p></div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn btn-ghost" id="btnEditarTrab">${I.pen} Editar datos</button>
+            ${listaEntregas.length?`<button class="btn btn-ghost" id="btnKardex">${I.pdf} Imprimir kárdex</button>`:''}
+            <button class="btn btn-primary" id="btnNuevaEntregaFicha">${I.plus} Registrar entrega</button>
+          </div>
+        </div>
+        <div class="sec-bar"><h2>Historial de entregas</h2><span class="muted-sm">${listaEntregas.length} registrada(s)</span></div>
+        ${listaEntregas.length?`<div class="table-wrap"><table class="dt"><thead><tr><th>Fecha</th><th>Ítems entregados</th><th>Responsable</th><th>Acciones</th></tr></thead><tbody>${filas}</tbody></table></div>`
+          :`<div class="empty"><div class="ic">${I.box}</div><h3>Sin entregas todavía</h3><p>Registra la primera entrega de dotación para este trabajador.</p></div>`}
+      </div>`;
+    wireLogout();
+    document.getElementById('btnVolverDot').onclick = ()=> location.hash="#/dotacion";
+    document.getElementById('btnEditarTrab').onclick = ()=> abrirTrabajadorForm(t.id);
+    const bk = document.getElementById('btnKardex'); if(bk) bk.onclick = ()=> generarKardexPDF(t.id);
+    document.getElementById('btnNuevaEntregaFicha').onclick = ()=> abrirNuevaEntrega(t.id);
+  } finally { desbloquear(); }
+}
+
+function eliminarEntrega(entregaId, trabajadorId){
+  openModal(`<div class="modal" style="max-width:440px">
+    <div class="modal-head"><div><h2>Eliminar entrega</h2><p>Esta acción no se puede deshacer.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminará este registro de entrega junto con sus firmas. Úsalo solo si fue un error (ej. se registró a la persona equivocada).</p></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-danger" id="confDelEnt">${I.trash} Sí, eliminar</button></div></div>`);
+  document.getElementById("confDelEnt").onclick = async ()=>{
+    const btn=document.getElementById("confDelEnt"); btn.disabled=true; btn.innerHTML="Eliminando…";
+    const { error } = await sb.from("dot_entregas").delete().eq("id", entregaId);
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`; toast("No se pudo eliminar: "+error.message,"err"); return; }
+    closeModal();
+    toast("Entrega eliminada","ok");
+    renderFichaTrabajador(trabajadorId);
+  };
+}
+
+/* ---------- Kárdex acumulado en PDF (evidencia por si hay un reclamo) ---------- */
+async function generarKardexPDF(trabajadorId){
+  if(!window.jspdf || !window.jspdf.jsPDF){ toast("No se pudo cargar el generador de PDF (revisa tu conexión)","err"); return; }
+  bloquear("Generando PDF…");
+  try{
+    const { data: t } = await sb.from("dot_trabajadores").select("id,nombre,identificacion,cargo,area").eq("id",trabajadorId).maybeSingle();
+    if(!t){ toast("Trabajador no encontrado","err"); return; }
+    const { data: entregas } = await sb.from("dot_entregas")
+      .select("id,fecha,responsable_nombre,responsable_cargo,firma_trabajador,firma_responsable")
+      .eq("trabajador_id", trabajadorId).order("fecha",{ascending:true});
+    const listaEntregas = entregas || [];
+    if(!listaEntregas.length){ toast("Este trabajador no tiene entregas registradas","err"); return; }
+    const ids = listaEntregas.map(e=>e.id);
+    const { data: items } = await sb.from("dot_entrega_items").select("entrega_id,nombre_item,cantidad,talla").in("entrega_id", ids);
+    const itemsPorEntrega = {};
+    (items||[]).forEach(it=>{ (itemsPorEntrega[it.entrega_id] = itemsPorEntrega[it.entrega_id]||[]).push(it); });
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({unit:"mm", format:"a4"});
+    const PW = 210, M = 10, RIGHT = PW - M;
+    const x0=M, x1=M+22, x2=M+94, x3=M+137, x4=RIGHT; // Fecha 22 / Ítems 72 / Firma trab. 43 / Firma resp. 53
+
+    function grayHead(y,h){ doc.setFillColor(238,241,248); doc.rect(M,y,RIGHT-M,h,"F"); }
+
+    function encabezado(){
+      let y=M;
+      const hH=24, logoW=44;
+      doc.setDrawColor(150,160,190); doc.setLineWidth(0.3); doc.rect(M,y,RIGHT-M,hH);
+      doc.line(M+logoW,y,M+logoW,y+hH);
+      try{ doc.addImage(LOGO,"JPEG",M+4,y+2,36,36*315/570); }catch(e){}
+      doc.setTextColor(20,33,90); doc.setFont("helvetica","bold"); doc.setFontSize(14);
+      doc.text("CONTROL DE ENTREGA DE DOTACIÓN Y EPP", M+logoW+(RIGHT-M-logoW)/2, y+13, {align:"center"});
+      doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(90,90,110);
+      doc.text("Kárdex acumulado por trabajador · Don Aseo Ltda.", M+logoW+(RIGHT-M-logoW)/2, y+19, {align:"center"});
+      y += hH;
+
+      const fh=16;
+      doc.setDrawColor(150,160,190); doc.rect(M,y,RIGHT-M,fh);
+      doc.line(M+95,y,M+95,y+fh);
+      doc.setFont("helvetica","bold"); doc.setFontSize(7); doc.setTextColor(90,90,110);
+      doc.text("TRABAJADOR", M+3, y+5);
+      doc.text("CARGO / ÁREA", M+98, y+5);
+      doc.setFont("helvetica","bold"); doc.setFontSize(10.5); doc.setTextColor(20,20,20);
+      doc.text(t.nombre||"", M+3, y+11);
+      doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(60,60,70);
+      doc.text("C.C. "+(t.identificacion||""), M+3, y+15.5);
+      doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor(20,20,20);
+      doc.text(doc.splitTextToSize((t.cargo||"—")+(t.area?(" · "+t.area):""), RIGHT-M-100), M+98, y+11);
+      y += fh + 2;
+      return y;
+    }
+
+    function tablaHead(y){
+      const h=8;
+      grayHead(y,h);
+      doc.setDrawColor(150,160,190);
+      [x0,x1,x2,x3,x4].forEach(x=>doc.line(x,y,x,y+h));
+      doc.rect(M,y,RIGHT-M,h);
+      doc.setFont("helvetica","bold"); doc.setFontSize(7); doc.setTextColor(40,40,60);
+      const ct=(a,b,txt)=>doc.text(txt,(a+b)/2,y+5.2,{align:"center"});
+      ct(x0,x1,"FECHA"); ct(x1,x2,"ÍTEMS ENTREGADOS");
+      ct(x2,x3,"FIRMA TRABAJADOR"); ct(x3,x4,"FIRMA RESPONSABLE");
+      return y+h;
+    }
+
+    const FOOTER_Y = 290;
+    function piePagina(pag){
+      doc.setFontSize(6.6); doc.setTextColor(140,140,160);
+      doc.text("Este documento constituye evidencia de la entrega de dotación, firmada digitalmente por el trabajador y el responsable.", PW/2, FOOTER_Y, {align:"center"});
+      doc.text("Generado el "+fmtDateTime(new Date())+" · Don Aseo Ltda. · Pág. "+pag, PW/2, FOOTER_Y+4, {align:"center"});
+    }
+
+    const FOOTER_TOP = 278;
+    let y = encabezado();
+    y = tablaHead(y);
+    let pag = 1;
+    listaEntregas.forEach(e=>{
+      const its = itemsPorEntrega[e.id]||[];
+      const lineas = its.length ? its.map(it=>"• "+it.nombre_item+" × "+it.cantidad+(it.talla?" ("+it.talla+")":"")) : ["—"];
+      const wrapped = doc.splitTextToSize(lineas.join("\n"), x2-x1-4);
+      const rowH = Math.max(16, wrapped.length*3.6 + 5);
+      if(y + rowH > FOOTER_TOP){
+        piePagina(pag);
+        doc.addPage(); pag++;
+        y = M+2; y = tablaHead(y);
+      }
+      doc.setDrawColor(180,188,210);
+      [x0,x1,x2,x3,x4].forEach(x=>doc.line(x,y,x,y+rowH));
+      doc.line(M,y+rowH,RIGHT,y+rowH);
+      doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(20,20,20);
+      doc.text(fmtDate(e.fecha), (x0+x1)/2, y+rowH/2+1, {align:"center"});
+      doc.setFontSize(7.4);
+      doc.text(wrapped, x1+2, y+5);
+      if(e.firma_trabajador){ try{ doc.addImage(e.firma_trabajador,"PNG",x2+3,y+2,x3-x2-6,rowH-4); }catch(err){} }
+      if(e.firma_responsable){ try{ doc.addImage(e.firma_responsable,"PNG",x3+3,y+2,x4-x3-6,rowH-4); }catch(err){} }
+      doc.setFontSize(6); doc.setTextColor(120,120,140);
+      if(e.responsable_nombre) doc.text(pdfTexto(e.responsable_nombre), x3+3, y+rowH-1.5);
+      y += rowH;
+    });
+    piePagina(pag);
+
+    const safe = (t.nombre||"trabajador").replace(/[^\w\sáéíóúñ-]/gi,"").trim().replace(/\s+/g,"_").slice(0,40);
+    doc.save("Kardex_dotacion_"+safe+".pdf");
+    toast("PDF generado","ok");
+  }catch(e){ console.error(e); toast("No se pudo generar el PDF: "+(e.message||''),"err"); }
+  finally{ desbloquear(); }
+}
+
 /* ---------- Auto-refresh del panel al volver a la pestaña ---------- */
 document.addEventListener("visibilitychange", ()=>{
   // No recargar si está oculta, en una vista pública, o en un formulario (perdería lo escrito)
   if(document.hidden || esRutaPublica() || esRutaEdicion()) return;
-  // Home de documentos: refresco SILENCIOSO (sin reloj de arena) para no molestar
+  // Home de documentos / dotación: refresco SILENCIOSO (sin reloj de arena) para no molestar
   if(location.hash === "#/docs"){ renderDocsAdmin(true); return; }
-  router();   // re-renderiza el módulo activo (asistencia o documentos)
+  if(location.hash === "#/dotacion"){ renderDotacionAdmin(true); return; }
+  router();   // re-renderiza el módulo activo (asistencia, documentos o dotación)
 });
 
 /* ---------- Si la sesión se cierra, volver al login ---------- */
