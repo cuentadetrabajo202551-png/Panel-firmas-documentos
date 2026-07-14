@@ -42,7 +42,7 @@
   --display:"Bricolage Grotesque","Manrope",sans-serif;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%}
+html,body{height:100%;overflow-x:hidden;max-width:100%}
 body{
   font-family:var(--font);
   color:var(--ink);
@@ -67,7 +67,7 @@ input,textarea,select{font-family:inherit;font-size:14px;color:var(--ink)}
 }
 .topbar-inner{
   max-width:1180px;margin:0 auto;padding:14px 26px;
-  display:flex;align-items:center;gap:16px;
+  display:flex;align-items:center;gap:16px;flex-wrap:wrap;
 }
 .brand-logo{height:46px;width:auto;display:block;border-radius:6px}
 .brand-text{display:flex;flex-direction:column;line-height:1.12}
@@ -81,11 +81,19 @@ input,textarea,select{font-family:inherit;font-size:14px;color:var(--ink)}
   background:var(--brand-soft);padding:7px 13px;border-radius:999px;
   border:1px solid var(--brand-soft2);
 }
-.topnav{display:flex;gap:4px;margin-left:10px}
+.topnav{display:flex;gap:4px;margin-left:10px;flex-wrap:wrap}
 .topnav a{padding:8px 14px;border-radius:10px;font-size:13.5px;font-weight:700;color:var(--ink-2);text-decoration:none;transition:.15s;white-space:nowrap}
 .topnav a:hover{background:var(--brand-soft);color:var(--brand-deep)}
 .topnav a.active{background:var(--brand);color:#fff;box-shadow:0 2px 8px rgba(29,51,199,.25)}
 @media(max-width:860px){.topnav a{padding:7px 9px;font-size:12px} .brand-text .t1{font-size:15px}}
+@media(max-width:760px){
+  .topbar-inner{gap:8px 10px}
+  .brand-divider{display:none}
+  .user-chip{display:none}
+  .topnav{margin-left:0;order:3;width:100%;gap:6px}
+  .topbar-spacer{flex:0 0 0;width:0}
+  .btn-pc-only{display:none!important}
+}
 
 /* ---------- Layout ---------- */
 .wrap{max-width:1180px;margin:0 auto;padding:34px 26px 80px}
@@ -549,30 +557,43 @@ if(window.emailjs){ try{ emailjs.init({ publicKey: EMAILJS_KEY }); }catch(e){ tr
 let STATE = { listas: [], userEmail: "" };
 
 /* ---------- Permisos del usuario logueado (roles/módulos/contratos) ---------- */
-let MIPERFIL = { cargado:false, activo:true, esAdmin:false, modulos:[], contratos:[], editarCatalogo:false, nombre:"", uid:null };
+let MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], editarCatalogo:false, nombre:"", uid:null };
+/* Mapa uid -> nombre/correo, para mostrar "Creado por: X" sin exponer toda acc_perfiles */
+let PERFILES_NOMBRE = {};
 
 async function cargarMiPerfil(){
   const { data:{ session } } = await sb.auth.getSession();
-  if(!session){ MIPERFIL = { cargado:false, activo:true, esAdmin:false, modulos:[], contratos:[], editarCatalogo:false, nombre:"", uid:null }; return; }
+  if(!session){ MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], editarCatalogo:false, nombre:"", uid:null }; return; }
   const uid = session.user.id;
-  const [{ data:p }, { data:pm }, { data:pc }] = await Promise.all([
-    sb.from("acc_perfiles").select("es_admin,activo,dotacion_editar_catalogo,nombre").eq("id",uid).maybeSingle(),
+  const [{ data:p }, { data:pm }, { data:pc }, { data:pn }] = await Promise.all([
+    sb.from("acc_perfiles").select("es_admin,activo,dotacion_editar_catalogo,nombre,rol").eq("id",uid).maybeSingle(),
     sb.from("acc_perfil_modulos").select("modulo").eq("perfil_id",uid),
-    sb.from("acc_perfil_contratos").select("contrato_id").eq("perfil_id",uid)
+    sb.from("acc_perfil_contratos").select("contrato_id").eq("perfil_id",uid),
+    sb.rpc("acc_perfiles_nombres")
   ]);
   MIPERFIL = {
     cargado: true,
     activo: p ? p.activo!==false : true,   // si no hay fila todavía (BD sin migrar), no bloquea por defecto
     esAdmin: !!(p && p.es_admin),
+    rol: (p && p.rol) || "editor",
     modulos: (pm||[]).map(x=>x.modulo),
     contratos: (pc||[]).map(x=>x.contrato_id),
     editarCatalogo: !!(p && p.dotacion_editar_catalogo),
     nombre: (p && p.nombre) || session.user.email || "",
     uid
   };
+  PERFILES_NOMBRE = {};
+  (pn||[]).forEach(x=>{ PERFILES_NOMBRE[x.id] = x.nombre || x.email || "—"; });
 }
 function tieneModulo(m){ return MIPERFIL.esAdmin || (MIPERFIL.activo && MIPERFIL.modulos.includes(m)); }
 function tieneContratoDotacion(id){ return MIPERFIL.esAdmin || MIPERFIL.contratos.includes(id); }
+/* ¿Puede crear/editar/eliminar en general? admin o editor; visualizador nunca escribe (refuerzo visual — la RLS es la protección real) */
+function puedeEscribir(){ return MIPERFIL.esAdmin || MIPERFIL.rol==='editor'; }
+/* ¿Puede tocar (editar/eliminar) algo creado por uidCreador? admin siempre; editor solo lo suyo; visualizador nunca */
+function puedoTocar(uidCreador){ return MIPERFIL.esAdmin || (MIPERFIL.rol==='editor' && uidCreador===MIPERFIL.uid); }
+/* Igual, pero además exige que no esté cerrado/finalizado (admin sí puede aunque esté cerrado) */
+function puedoTocarCerrable(uidCreador, cerrado){ return MIPERFIL.esAdmin || (MIPERFIL.rol==='editor' && uidCreador===MIPERFIL.uid && !cerrado); }
+function nombreDe(uid){ return uid ? (PERFILES_NOMBRE[uid] || "—") : "—"; }
 
 /* Pantalla de candado: se usa cuando el usuario no tiene acceso a un módulo o está desactivado */
 function renderSinAcceso(tituloModulo){
@@ -596,7 +617,7 @@ function rowToList(r){
     responsableNombre:r.responsable_nombre, responsableCargo:r.responsable_cargo,
     responsableFirma:r.responsable_firma,
     observaciones:r.observaciones, estado:r.estado,
-    creadaEn:r.creada_en, cerradaEn:r.cerrada_en,
+    creadaEn:r.creada_en, cerradaEn:r.cerrada_en, creadaPor:r.creada_por,
     solicitarDoc:r.solicitar_doc, docPlantillaId:r.doc_plantilla_id, asistentes:[]
   };
 }
@@ -748,7 +769,9 @@ async function router(){
     if(!tieneModulo('documentos')){ renderSinAcceso("Documentos y Firmas"); return; }
     const mPlant = location.hash.match(/^#\/docs\/plantilla\/(.+)$/);
     const mEditDoc = location.hash.match(/^#\/docs\/documento\/(.+)\/editar$/);
-    if(mPlant){ await renderConstructor(mPlant[1]==='nueva' ? null : decodeURIComponent(mPlant[1])); }
+    if(mPlant && mPlant[1]==='nueva' && !puedeEscribir()){ renderSinAcceso("Documentos y Firmas"); }
+    else if(location.hash === "#/docs/documento/nuevo" && !puedeEscribir()){ renderSinAcceso("Documentos y Firmas"); }
+    else if(mPlant){ await renderConstructor(mPlant[1]==='nueva' ? null : decodeURIComponent(mPlant[1])); }
     else if(location.hash === "#/docs/documento/nuevo"){ await renderCrearDocumento(); }
     else if(mEditDoc){ await renderEditarDocumento(decodeURIComponent(mEditDoc[1])); }
     else { await renderDocsAdmin(); }   // MÓDULO: Documentos y Firmas
@@ -836,7 +859,8 @@ function wireLogout(){
   const b = document.getElementById("btnLogout");
   if(b) b.onclick = async ()=>{
     await sb.auth.signOut(); STATE.listas=[]; STATE.userEmail="";
-    MIPERFIL = { cargado:false, activo:true, esAdmin:false, modulos:[], contratos:[], editarCatalogo:false, nombre:"", uid:null };
+    MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], editarCatalogo:false, nombre:"", uid:null };
+    PERFILES_NOMBRE = {};
     location.hash=""; router();
   };
 }
@@ -863,7 +887,7 @@ function renderAdmin(){
           <h1>Listas de asistencia</h1>
           <p>Administra registros de capacitaciones, reuniones, inducciones y actividades SST.</p>
         </div>
-        <button class="btn btn-primary" id="btnNueva">${I.plus} Nueva lista</button>
+        ${puedeEscribir()?`<button class="btn btn-primary" id="btnNueva">${I.plus} Nueva lista</button>`:''}
       </div>
 
       <div class="stats">
@@ -894,7 +918,7 @@ function renderAdmin(){
     </div>
   `;
 
-  document.getElementById("btnNueva").onclick = openCreateModal;
+  const btnNueva = document.getElementById("btnNueva"); if(btnNueva) btnNueva.onclick = openCreateModal;
   document.getElementById("search").oninput = (e)=>{ adminQuery = e.target.value; renderGrid(); };
   document.querySelectorAll(".tab").forEach(t=> t.onclick = ()=>{ adminFilter = t.dataset.f; renderAdmin(); });
   document.getElementById("btnLogout").onclick = async ()=>{ await sb.auth.signOut(); STATE.listas=[]; STATE.userEmail=""; router(); };
@@ -949,9 +973,10 @@ function renderGrid(){
             <button class="icon-btn" title="Copiar enlace" data-act="link" data-id="${l.id}">${I.link}</button>
             <button class="icon-btn" title="Compartir QR" data-act="qr" data-id="${l.id}">${I.qr}</button>
             <button class="icon-btn" title="Generar PDF" data-act="pdf" data-id="${l.id}">${I.pdf}</button>
-            <button class="icon-btn danger" title="Eliminar lista" data-act="del" data-id="${l.id}">${I.trash}</button>
+            ${puedoTocarCerrable(l.creadaPor, l.estado==='cerrada')?`<button class="icon-btn danger" title="Eliminar lista" data-act="del" data-id="${l.id}">${I.trash}</button>`:''}
           </div>
         </div>
+        <p class="muted-sm" style="margin-top:8px">Creado por: ${esc(nombreDe(l.creadaPor))}</p>
       </div>`;
   }).join("") + '</div>';
 
@@ -1120,7 +1145,7 @@ async function openDetail(id){
       <td>${esc(a.area||"—")}</td>
       <td>${esc(a.fecha)} ${esc(a.hora)}</td>
       <td>${a.firma?`<img class="sig-thumb" src="${a.firma}" alt="firma">`:'<span class="muted-sm">—</span>'}</td>
-      <td style="text-align:center"><button class="btn btn-ghost btn-sm" title="Eliminar registro" onclick="eliminarAsistente('${a.id}','${l.id}','${esc(a.nombre).replace(/'/g,"\\'")}')">${I.trash}</button></td>
+      <td style="text-align:center">${puedoTocarCerrable(l.creadaPor,!act)?`<button class="btn btn-ghost btn-sm" title="Eliminar registro" onclick="eliminarAsistente('${a.id}','${l.id}','${esc(a.nombre).replace(/'/g,"\\'")}')">${I.trash}</button>`:''}</td>
     </tr>`).join("");
 
   openModal(`
@@ -1132,7 +1157,7 @@ async function openDetail(id){
             <span class="tipo">${esc(l.tipo||"Actividad")}</span>
           </div>
           <h2>${esc(l.actividad)}</h2>
-          <p>Creada el ${fmtDateTime(l.creadaEn)}</p>
+          <p>Creada el ${fmtDateTime(l.creadaEn)} · Creado por: ${esc(nombreDe(l.creadaPor))}</p>
         </div>
         <button class="close-x" onclick="closeModal()">${I.close}</button>
       </div>
@@ -1177,17 +1202,17 @@ async function openDetail(id){
             <div class="rf-v">${esc(l.responsableNombre||"Responsable")}${l.responsableCargo?` · ${esc(l.responsableCargo)}`:""}</div>
           </div>
           <img class="rf-img" src="${l.responsableFirma}" alt="firma del responsable">
-          <button class="btn btn-ghost btn-sm" title="Eliminar firma del responsable" onclick="eliminarFirmaResponsable('${l.id}')">${I.trash} Eliminar firma</button>
+          ${puedoTocarCerrable(l.creadaPor,!act)?`<button class="btn btn-ghost btn-sm" title="Eliminar firma del responsable" onclick="eliminarFirmaResponsable('${l.id}')">${I.trash} Eliminar firma</button>`:''}
         </div>` : ""}
 
-        ${(l.asistentes||[]).length ? `<div class="doc-cta">
+        ${(l.asistentes||[]).length && puedeEscribir() ? `<div class="doc-cta">
           <div>${l.solicitarDoc?'<span class="chip-sol">Solicitado</span> ':''}<b>¿Necesitas firmas?</b> Genera un documento (acta, compromiso, consentimiento…) con estos ${(l.asistentes||[]).length} asistentes como firmantes.</div>
           <button class="btn btn-primary btn-sm" onclick="generarDocDesdeAsistencia('${l.id}')">${I.doc} Generar documento</button>
         </div>` : ''}
       </div>
       <div class="modal-foot">
-        <button class="btn btn-danger" onclick="eliminarLista('${l.id}')">${I.trash} Eliminar</button>
-        ${act?`<button class="btn btn-danger" onclick="cerrarLista('${l.id}')">${I.lock} Cerrar lista</button>`:""}
+        ${puedoTocarCerrable(l.creadaPor,!act)?`<button class="btn btn-danger" onclick="eliminarLista('${l.id}')">${I.trash} Eliminar</button>`:''}
+        ${act && puedoTocar(l.creadaPor)?`<button class="btn btn-danger" onclick="cerrarLista('${l.id}')">${I.lock} Cerrar lista</button>`:""}
         <button class="btn btn-ghost" onclick="window.open('${linkFor(l.id)}','_blank')">${I.eye} Abrir formulario</button>
         <button class="btn btn-green" onclick="firmarYGenerarPDF('${l.id}')">${I.pdf} Generar PDF</button>
       </div>
@@ -1927,8 +1952,8 @@ let DOCSTATE = { documentos: [], plantillas: [], firmantes: [] };
 
 async function loadDocsState(){
   const [d, p, f] = await Promise.all([
-    sb.from("doc_documentos").select("id,nombre,estado,fecha_limite,creado_en,lista_id,abierto,contenido").order("creado_en",{ascending:false}),
-    sb.from("doc_plantillas").select("id,nombre,categoria,creada_en,contenido").order("creada_en",{ascending:false}),
+    sb.from("doc_documentos").select("id,nombre,estado,fecha_limite,creado_en,lista_id,abierto,contenido,creado_por").order("creado_en",{ascending:false}),
+    sb.from("doc_plantillas").select("id,nombre,categoria,creada_en,contenido,creada_por").order("creada_en",{ascending:false}),
     sb.from("doc_firmantes").select("id,documento_id,estado")
   ]);
   const err = d.error || p.error || f.error;
@@ -1966,8 +1991,8 @@ async function renderDocsAdmin(silent){
           <p>Crea plantillas, genera documentos y recolecta firmas digitales con evidencia.</p>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <button class="btn btn-ghost" id="btnNuevaPlantilla">${I.doc} Nueva plantilla</button>
-          <button class="btn btn-primary" id="btnNuevoDoc">${I.plus} Nuevo documento</button>
+          ${puedeEscribir()?`<button class="btn btn-ghost" id="btnNuevaPlantilla">${I.doc} Nueva plantilla</button>
+          <button class="btn btn-primary" id="btnNuevoDoc">${I.plus} Nuevo documento</button>`:''}
         </div>
       </div>
 
@@ -1991,8 +2016,8 @@ async function renderDocsAdmin(silent){
     </div>`;
 
   wireLogout();
-  document.getElementById("btnNuevaPlantilla").onclick = ()=> location.hash = "#/docs/plantilla/nueva";
-  document.getElementById("btnNuevoDoc").onclick = ()=> location.hash = "#/docs/documento/nuevo";
+  const btnNuevaPlantilla = document.getElementById("btnNuevaPlantilla"); if(btnNuevaPlantilla) btnNuevaPlantilla.onclick = ()=> location.hash = "#/docs/plantilla/nueva";
+  const btnNuevoDoc = document.getElementById("btnNuevoDoc"); if(btnNuevoDoc) btnNuevoDoc.onclick = ()=> location.hash = "#/docs/documento/nuevo";
   document.querySelectorAll("[data-pl]").forEach(b=>{
     b.onclick = ()=>{
       const id=b.dataset.id, act=b.dataset.pl;
@@ -2027,11 +2052,12 @@ function plantillaCard(p){
     <div class="lcard-foot">
       <div class="attn"><span class="num">${nb}</span><span class="lab">campo${nb===1?'':'s'}<br>de firma</span></div>
       <div class="card-actions">
-        <button class="icon-btn" title="Crear documento" data-pl="usar" data-id="${p.id}">${I.plus}</button>
-        <button class="icon-btn" title="Editar" data-pl="edit" data-id="${p.id}">${I.pen}</button>
-        <button class="icon-btn danger" title="Eliminar" data-pl="del" data-id="${p.id}">${I.trash}</button>
+        ${puedeEscribir()?`<button class="icon-btn" title="Crear documento" data-pl="usar" data-id="${p.id}">${I.plus}</button>`:''}
+        ${puedoTocar(p.creada_por)?`<button class="icon-btn" title="Editar" data-pl="edit" data-id="${p.id}">${I.pen}</button>
+        <button class="icon-btn danger" title="Eliminar" data-pl="del" data-id="${p.id}">${I.trash}</button>`:''}
       </div>
     </div>
+    <p class="muted-sm" style="margin-top:8px">Creado por: ${esc(nombreDe(p.creada_por))}</p>
   </div>`;
 }
 
@@ -2081,6 +2107,7 @@ async function renderConstructor(plantillaId){
     const { data, error } = await sb.from("doc_plantillas").select("*").eq("id", plantillaId).maybeSingle();
     desbloquear();
     if(error || !data){ toast("No se pudo cargar la plantilla","err"); location.hash="#/docs"; return; }
+    if(!puedoTocar(data.creada_por)){ toast("No puedes editar una plantilla que no creaste","err"); location.hash="#/docs"; return; }
     nombre = data.nombre||""; categoria = data.categoria||"";
     pdfEditor.pdfData = data.pdf || null;
     pdfEditor.campos = Array.isArray(data.contenido) ? data.contenido : [];
@@ -2752,7 +2779,7 @@ async function abrirDocumento(id){
 
   // Carga LIGERA: sin el PDF ni las imágenes de firma (eso es lo pesado) → abre rápido
   const { data:doc, error } = await sb.from("doc_documentos")
-    .select("id,nombre,estado,fecha_limite,firma_ordenada,config,contenido,creado_en,plantilla_id,lista_id,abierto")
+    .select("id,nombre,estado,fecha_limite,firma_ordenada,config,contenido,creado_en,plantilla_id,lista_id,abierto,creado_por")
     .eq("id",id).maybeSingle();
   if(error||!doc){ closeModal(); toast("Documento no encontrado","err"); return; }
   if((!Array.isArray(doc.contenido) || !doc.contenido.length) && doc.plantilla_id){
@@ -2775,16 +2802,17 @@ async function abrirDocumento(id){
   const rows = fs.map((f,i)=>{
     let acc;
     const nombreEsc = esc(f.nombre||'firmante').replace(/'/g,"\\'");
+    const puedeTocarFirmante = puedoTocarCerrable(doc.creado_por, doc.estado==='finalizado');
     if(f.estado==='firmado'){
       acc = `<button class="icon-btn" title="Ver evidencia" onclick="verEvidencia('${f.id}')">${I.eye}</button>
              <button class="icon-btn" title="Descargar PDF firmado" onclick="descargarPdfFirmante('${f.id}')">${I.pdf}</button>
-             <button class="icon-btn" title="Repetir firma" onclick="repetirFirmaFirmante('${f.id}','${doc.id}','${nombreEsc}')">${I.pen}</button>`;
+             ${puedeTocarFirmante?`<button class="icon-btn" title="Repetir firma" onclick="repetirFirmaFirmante('${f.id}','${doc.id}','${nombreEsc}')">${I.pen}</button>`:''}`;
     } else {
       acc = `<button class="icon-btn" title="Copiar enlace" onclick="copiarTexto('${linkFirma(f.token)}')">${I.link}</button>`;
       acc += `<button class="icon-btn" title="Compartir QR" onclick="mostrarQR('${linkFirma(f.token)}','Firma del documento', ()=>abrirDocumento('${doc.id}'))">${I.qr}</button>`;
       if(f.correo) acc += `<button class="icon-btn" title="Enviar por correo" onclick="enviarPorCorreo('${f.id}')">✉️</button>`;
     }
-    acc += `<button class="icon-btn danger" title="Eliminar firmante" onclick="eliminarFirmanteDoc('${f.id}','${doc.id}','${nombreEsc}')">${I.trash}</button>`;
+    if(puedeTocarFirmante) acc += `<button class="icon-btn danger" title="Eliminar firmante" onclick="eliminarFirmanteDoc('${f.id}','${doc.id}','${nombreEsc}')">${I.trash}</button>`;
     const miniPh = f.estado==='firmado' ? '<span class="muted-sm">…</span>' : '<span class="muted-sm">—</span>';
     return `<tr>
       <td>${i+1}</td>
@@ -2803,7 +2831,7 @@ async function abrirDocumento(id){
           <span class="badge ${estadoBadgeClass(doc.estado)}"><span class="dot"></span>${estadoLabel(doc.estado)}</span>
         </div>
         <h2>${esc(doc.nombre)}</h2>
-        <p>Creado el ${fmtDateTime(doc.creado_en)}</p>
+        <p>Creado el ${fmtDateTime(doc.creado_en)} · Creado por: ${esc(nombreDe(doc.creado_por))}</p>
       </div><button class="close-x" onclick="closeModal()">${I.close}</button></div>
       <div class="modal-body">
         <div class="info-grid">
@@ -2828,13 +2856,13 @@ async function abrirDocumento(id){
         ${eventos.length?`<h3 style="font-family:var(--display);font-size:16px;margin:24px 0 8px">Historial de eventos</h3>${eventoTimelineHTML(eventos)}`:''}
       </div>
       <div class="modal-foot">
-        <button class="btn btn-danger" onclick="eliminarDocumento('${doc.id}')">${I.trash} Eliminar</button>
-        ${doc.estado!=='finalizado'?`<button class="btn btn-ghost" onclick="location.hash='#/docs/documento/${doc.id}/editar'">${I.pen} Editar</button>`:''}
+        ${puedoTocarCerrable(doc.creado_por, doc.estado==='finalizado')?`<button class="btn btn-danger" onclick="eliminarDocumento('${doc.id}')">${I.trash} Eliminar</button>`:''}
+        ${doc.estado!=='finalizado' && puedoTocar(doc.creado_por)?`<button class="btn btn-ghost" onclick="location.hash='#/docs/documento/${doc.id}/editar'">${I.pen} Editar</button>`:''}
         ${!multiCopia?`<button class="btn btn-ghost" onclick="verDocumento()">${I.eye} Ver documento</button>
         <button class="btn btn-green" onclick="generarPDFDocumento()">${I.pdf} PDF completo</button>`:''}
         ${fs.filter(f=>f.estado==='firmado').length?`<button class="btn btn-green" onclick="descargarZipFirmados()">${I.doc} Descargar todos (ZIP)</button>`:''}
-        ${doc.estado==='borrador'?`<button class="btn btn-primary" onclick="enviarDocumento('${doc.id}')">${I.check} Marcar como enviado</button>`:''}
-        ${doc.estado==='enviado'?`<button class="btn btn-danger" onclick="finalizarDocumento('${doc.id}')">${I.lock} Cerrar documento</button>`:''}
+        ${doc.estado==='borrador' && puedoTocar(doc.creado_por)?`<button class="btn btn-primary" onclick="enviarDocumento('${doc.id}')">${I.check} Marcar como enviado</button>`:''}
+        ${doc.estado==='enviado' && puedoTocar(doc.creado_por)?`<button class="btn btn-danger" onclick="finalizarDocumento('${doc.id}')">${I.lock} Cerrar documento</button>`:''}
       </div>
     </div>`;
 
@@ -2942,9 +2970,10 @@ let editDocFirmantes = [];
 
 async function renderEditarDocumento(id){
   bloquear("Cargando…");
-  const { data:doc } = await sb.from("doc_documentos").select("id,nombre,estado,fecha_limite,firma_ordenada,config").eq("id",id).maybeSingle();
+  const { data:doc } = await sb.from("doc_documentos").select("id,nombre,estado,fecha_limite,firma_ordenada,config,creado_por").eq("id",id).maybeSingle();
   if(!doc){ desbloquear(); toast("Documento no encontrado","err"); location.hash="#/docs"; return; }
   if(doc.estado==='finalizado'){ desbloquear(); toast("Un documento finalizado no se puede editar","err"); location.hash="#/docs"; return; }
+  if(!puedoTocar(doc.creado_por)){ desbloquear(); toast("No puedes editar un documento que no creaste","err"); location.hash="#/docs"; return; }
   const { data:fdata } = await sb.from("doc_firmantes").select("id,nombre,correo,identificacion,cargo,orden,estado").eq("documento_id",id).order("orden",{ascending:true});
   desbloquear();
   editDocFirmantes = (fdata||[]).map(f=>({ id:f.id, nombre:f.nombre||'', correo:f.correo||'', identificacion:f.identificacion||'', cargo:f.cargo||'', estado:f.estado }));
@@ -3338,9 +3367,10 @@ function documentoCard(d){
         ${d.estado==='enviado'?`<button class="icon-btn" title="Copiar enlace de firma" data-doc="link" data-id="${d.id}">${I.link}</button>
         <button class="icon-btn" title="Compartir QR de firma" data-doc="qr" data-id="${d.id}">${I.qr}</button>`:''}
         ${!multiCopia?`<button class="icon-btn" title="Generar PDF" data-doc="pdf" data-id="${d.id}">${I.pdf}</button>`:''}
-        <button class="icon-btn danger" title="Eliminar" data-doc="del" data-id="${d.id}">${I.trash}</button>
+        ${puedoTocarCerrable(d.creado_por, d.estado==='finalizado')?`<button class="icon-btn danger" title="Eliminar" data-doc="del" data-id="${d.id}">${I.trash}</button>`:''}
       </div>
     </div>
+    <p class="muted-sm" style="margin-top:8px">Creado por: ${esc(nombreDe(d.creado_por))}</p>
   </div>`;
 }
 
@@ -3950,15 +3980,15 @@ async function renderDotacionAdmin(silent){
               ${DOTACION.contratos.filter(x=>tieneContratoDotacion(x.id)).map(x=>`<option value="${x.id}" ${x.id===contratoActualId?'selected':''}>${esc(x.nombre)}${x.activo?'':' (archivado)'}</option>`).join('')}
               ${MIPERFIL.esAdmin?`<option value="todos" ${enTodos?'selected':''}>— Todos los contratos —</option>`:''}
             </select>
-            ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-sm" id="btnGestionContratos">${I.pen} Gestionar contratos</button>`:''}
+            ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-sm btn-pc-only" id="btnGestionContratos">${I.pen} Gestionar contratos</button>`:''}
           </div>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
           <button class="btn btn-ghost" id="btnCatalogo">${I.box} Catálogo de ítems</button>
-          ${!enTodos?`<button class="btn btn-ghost" id="btnPlantillaTrab">${I.doc} Plantilla Excel</button>
-          <button class="btn btn-ghost" id="btnCargaTrab">${I.plus} Carga masiva</button>`:''}
+          ${!enTodos && puedeEscribir()?`<button class="btn btn-ghost btn-pc-only" id="btnPlantillaTrab">${I.doc} Plantilla Excel</button>
+          <button class="btn btn-ghost btn-pc-only" id="btnCargaTrab">${I.plus} Carga masiva</button>`:''}
           ${totalEntregas?`<button class="btn btn-ghost" id="btnZipKardex">${I.doc} Descargar todos (ZIP)</button>`:''}
-          ${!enTodos?`<button class="btn btn-primary" id="btnNuevoTrab">${I.plus} Nuevo trabajador</button>`:''}
+          ${!enTodos && puedeEscribir()?`<button class="btn btn-primary" id="btnNuevoTrab">${I.plus} Nuevo trabajador</button>`:''}
         </div>
       </div>
 
@@ -4063,9 +4093,9 @@ function trabajadorCard(t){
       <div class="attn"><span class="num">${n}</span><span class="lab">entrega${n===1?'':'s'}<br>registrada${n===1?'':'s'}</span></div>
       <div class="card-actions">
         <button class="icon-btn" title="Ver ficha" data-trab="ver" data-id="${t.id}">${I.eye}</button>
-        <button class="icon-btn" title="Registrar entrega" data-trab="entregar" data-id="${t.id}">${I.plus}</button>
+        ${puedeEscribir()?`<button class="icon-btn" title="Registrar entrega" data-trab="entregar" data-id="${t.id}">${I.plus}</button>
         <button class="icon-btn" title="Editar" data-trab="editar" data-id="${t.id}">${I.pen}</button>
-        <button class="icon-btn danger" title="Eliminar" data-trab="del" data-id="${t.id}">${I.trash}</button>
+        <button class="icon-btn danger" title="Eliminar" data-trab="del" data-id="${t.id}">${I.trash}</button>`:''}
       </div>
     </div>
   </div>`;
@@ -4288,7 +4318,7 @@ async function cargarTrabajadoresExcelDot(file){
 
 /* ---------- Catálogo de ítems (guantes, botas, casco…) ---------- */
 function abrirCatalogoModal(){
-  const puedeEditar = MIPERFIL.esAdmin || MIPERFIL.editarCatalogo;
+  const puedeEditar = MIPERFIL.esAdmin || (MIPERFIL.editarCatalogo && MIPERFIL.rol==='editor');
   openModal(`<div class="modal" style="max-width:560px">
     <div class="modal-head"><div><h2>Catálogo de ítems</h2><p>Lo que se puede entregar como dotación (compartido entre todos los contratos).</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
@@ -4386,7 +4416,7 @@ async function cargarCatalogoExcelDot(file){
 function renderCatalogoLista(){
   const host = document.getElementById('catLista'); if(!host) return;
   const items = DOTACION.catalogo;
-  const puedeEditar = MIPERFIL.esAdmin || MIPERFIL.editarCatalogo;
+  const puedeEditar = MIPERFIL.esAdmin || (MIPERFIL.editarCatalogo && MIPERFIL.rol==='editor');
   host.innerHTML = items.length ? items.map(c=>`
     <div class="cat-row">
       <span style="flex:1;font-weight:600;font-size:13.5px;${c.activo?'':'opacity:.45;text-decoration:line-through'}">${esc(c.nombre)}</span>
@@ -4660,7 +4690,7 @@ async function renderFichaTrabajador(id){
         <td>${fmtDate(e.fecha)}</td>
         <td>${its||'—'}</td>
         <td>${esc(e.responsable_nombre||'—')}</td>
-        <td><button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntrega('${e.id}','${t.id}')">${I.trash}</button></td>
+        <td>${puedeEscribir()?`<button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntrega('${e.id}','${t.id}')">${I.trash}</button>`:''}</td>
       </tr>`;
     }).join('');
 
@@ -4673,9 +4703,9 @@ async function renderFichaTrabajador(id){
         <div class="page-head">
           <div><h1>${esc(t.nombre)}</h1><p>C.C. ${esc(t.identificacion)}${t.cargo?' · '+esc(t.cargo):''}${t.area?' · '+esc(t.area):''} · ${esc(DOTACION.contratos.find(c=>c.id===t.contrato_id)?.nombre||'—')}</p></div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
-            <button class="btn btn-ghost" id="btnEditarTrab">${I.pen} Editar datos</button>
+            ${puedeEscribir()?`<button class="btn btn-ghost" id="btnEditarTrab">${I.pen} Editar datos</button>`:''}
             ${listaEntregas.length?`<button class="btn btn-ghost" id="btnKardex">${I.pdf} Imprimir kárdex</button>`:''}
-            <button class="btn btn-primary" id="btnNuevaEntregaFicha">${I.plus} Registrar entrega</button>
+            ${puedeEscribir()?`<button class="btn btn-primary" id="btnNuevaEntregaFicha">${I.plus} Registrar entrega</button>`:''}
           </div>
         </div>
         <div class="sec-bar"><h2>Historial de entregas</h2><span class="muted-sm">${listaEntregas.length} registrada(s)</span></div>
@@ -4684,9 +4714,9 @@ async function renderFichaTrabajador(id){
       </div>`;
     wireLogout();
     document.getElementById('btnVolverDot').onclick = ()=> location.hash="#/dotacion";
-    document.getElementById('btnEditarTrab').onclick = ()=> abrirTrabajadorForm(t.id);
+    const bet = document.getElementById('btnEditarTrab'); if(bet) bet.onclick = ()=> abrirTrabajadorForm(t.id);
     const bk = document.getElementById('btnKardex'); if(bk) bk.onclick = ()=> generarKardexPDF(t.id);
-    document.getElementById('btnNuevaEntregaFicha').onclick = ()=> abrirNuevaEntrega(t.id);
+    const bnef = document.getElementById('btnNuevaEntregaFicha'); if(bnef) bnef.onclick = ()=> abrirNuevaEntrega(t.id);
   } finally { desbloquear(); }
 }
 
@@ -4924,16 +4954,17 @@ async function renderConfiguracion(){
   let perfiles = [];
   try{
     const { data } = await sb.from("acc_perfiles")
-      .select("id,email,nombre,es_admin,activo,dotacion_editar_catalogo")
+      .select("id,email,nombre,es_admin,activo,dotacion_editar_catalogo,rol")
       .order("email",{ascending:true});
     perfiles = data || [];
   } finally { desbloquear(); }
 
   const filas = perfiles.map(p=>{
     const esUnoMismo = p.id === MIPERFIL.uid;
+    const rolLabel = p.es_admin ? 'Administrador' : (p.rol==='visualizador' ? 'Visualizador' : 'Editor');
     return `<tr>
       <td><b>${esc(p.nombre||p.email||'—')}</b>${esUnoMismo?' <span class="muted-sm">(tú)</span>':''}</td>
-      <td><span class="badge ${p.es_admin?'activa':'cerrada'}"><span class="dot"></span>${p.es_admin?'Administrador':'Usuario'}</span></td>
+      <td><span class="badge ${p.es_admin?'activa':'cerrada'}"><span class="dot"></span>${rolLabel}</span></td>
       <td><label class="chk" style="padding:0"><input type="checkbox" data-perf-activo="${p.id}" ${p.activo?'checked':''} ${esUnoMismo?'disabled':''}> ${p.activo?'Activo':'Inactivo'}</label></td>
       <td><button class="btn btn-ghost btn-sm" data-perf-editar="${p.id}">${I.pen} Permisos</button></td>
     </tr>`;
@@ -4978,7 +5009,7 @@ async function abrirPermisosUsuario(perfilId){
   let perfil, modulos, contratosMarcados, todosLosContratos;
   try{
     const [{ data:p }, { data:pm }, { data:pc }, { data:cs }] = await Promise.all([
-      sb.from("acc_perfiles").select("id,email,nombre,es_admin,activo,dotacion_editar_catalogo").eq("id",perfilId).maybeSingle(),
+      sb.from("acc_perfiles").select("id,email,nombre,es_admin,activo,dotacion_editar_catalogo,rol").eq("id",perfilId).maybeSingle(),
       sb.from("acc_perfil_modulos").select("modulo").eq("perfil_id",perfilId),
       sb.from("acc_perfil_contratos").select("contrato_id").eq("perfil_id",perfilId),
       sb.from("dot_contratos").select("id,nombre").order("nombre",{ascending:true})
@@ -4995,6 +5026,9 @@ async function abrirPermisosUsuario(perfilId){
       <label class="chk"><input type="checkbox" id="pfAdmin" ${perfil.es_admin?'checked':''} ${esUnoMismo?'disabled':''}> Es administrador (acceso total a todo)</label>
       ${esUnoMismo?`<p class="muted-sm" style="margin:-4px 0 10px">No puedes quitarte tu propio acceso de administrador.</p>`:''}
       <div id="permisosDetalle" style="${perfil.es_admin?'display:none':''}">
+        <div class="sec-bar" style="margin-top:14px"><h2 style="font-size:14px">Rol</h2></div>
+        <label class="chk"><input type="radio" name="pfRol" value="editor" ${perfil.rol!=='visualizador'?'checked':''}> <b>Editor</b> — crea y edita solo lo que él mismo creó; no puede tocar nada cerrado/finalizado ni de otra persona</label>
+        <label class="chk"><input type="radio" name="pfRol" value="visualizador" ${perfil.rol==='visualizador'?'checked':''}> <b>Visualizador</b> — solo puede ver lo que sus módulos/contratos le permitan; no crea, edita ni elimina nada</label>
         <div class="sec-bar" style="margin-top:14px"><h2 style="font-size:14px">Módulos</h2></div>
         <label class="chk"><input type="checkbox" data-pf-mod="asistencia" ${modulos.includes('asistencia')?'checked':''}> Asistencia</label>
         <label class="chk"><input type="checkbox" data-pf-mod="documentos" ${modulos.includes('documentos')?'checked':''}> Documentos y Firmas</label>
@@ -5027,11 +5061,13 @@ async function guardarPermisosUsuario(perfilId){
   const contratosMarcados = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-contrato]:checked')).map(el=>el.dataset.pfContrato);
   const chkCat = document.getElementById('pfCatalogo');
   const editarCatalogo = chkCat ? chkCat.checked : false;
+  const rolSeleccionado = document.querySelector('input[name="pfRol"]:checked');
+  const rol = rolSeleccionado ? rolSeleccionado.value : 'editor';
 
   const btn = document.getElementById('btnGuardarPermisos'); btn.disabled=true; btn.innerHTML="Guardando…";
   bloquear("Guardando permisos…");
   try{
-    const { error:e1 } = await sb.from("acc_perfiles").update({ es_admin: esAdmin, dotacion_editar_catalogo: editarCatalogo }).eq("id", perfilId);
+    const { error:e1 } = await sb.from("acc_perfiles").update({ es_admin: esAdmin, dotacion_editar_catalogo: editarCatalogo, rol }).eq("id", perfilId);
     if(e1){ toast("No se pudo guardar: "+e1.message,"err"); return; }
 
     // Reemplazo simple: borra lo que había y vuelve a insertar lo marcado (evita comparar/diferenciar)
