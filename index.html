@@ -387,6 +387,9 @@ table.dt tr:hover td{background:#fafbfe}
 .cat-row input[type="text"]{flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13.5px}
 .cat-row input[type="text"].cat-unidad{flex:0 0 90px}
 .trab-summary{background:#f6f8fd;border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:16px}
+.chip-predet{padding:6px 4px;border:1.5px solid var(--line);border-radius:8px;background:#fff;font-size:12px;font-weight:700;color:var(--ink-2);cursor:pointer;max-width:58px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip-predet:hover{border-color:var(--brand-soft2)}
+.chip-predet.active{background:var(--brand);color:#fff;border-color:var(--brand)}
 .trab-summary .tk{font-size:12px;color:var(--ink-3);font-weight:600;text-transform:uppercase}
 .trab-summary .tv{font-size:15px;font-weight:700;color:var(--ink);margin-top:2px}
 .entrega-item-tag{display:inline-block;background:var(--brand-soft);color:var(--brand-deep);border-radius:7px;padding:2px 9px;font-size:12px;font-weight:600;margin:0 5px 5px 0}
@@ -4287,19 +4290,23 @@ function eliminarItemCatalogo(id){
 }
 
 /* ---------- Predeterminados: plantillas de responsable (nombre + cargo + firma guardada) ---------- */
+const PREDET_MAX = 3;
+
 async function abrirPredeterminadosModal(){
   bloquear("Cargando predeterminados…");
   try{ await loadDotacionState(); } finally{ desbloquear(); }
+  const alTope = DOTACION.predeterminados.length >= PREDET_MAX;
   openModal(`<div class="modal" style="max-width:560px">
-    <div class="modal-head"><div><h2>Predeterminado</h2><p>Guarda el nombre, cargo y firma de quien entrega, para no repetirlos en cada entrega.</p></div>
+    <div class="modal-head"><div><h2>Predeterminado</h2><p>Guarda el nombre, cargo y firma de quien entrega, para no repetirlos en cada entrega. Máximo ${PREDET_MAX} plantillas.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
-      <button class="btn btn-primary btn-sm" id="btnNuevoPredet" style="margin-bottom:14px">${I.plus} Nueva plantilla</button>
+      ${alTope?`<p class="muted-sm" style="margin-bottom:14px">Ya tienes el máximo de ${PREDET_MAX} plantillas. Elimina alguna para crear otra.</p>`
+        :`<button class="btn btn-primary btn-sm" id="btnNuevoPredet" style="margin-bottom:14px">${I.plus} Nueva plantilla</button>`}
       <div id="predetLista"></div>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
   </div>`);
-  document.getElementById('btnNuevoPredet').onclick = ()=> abrirFormPredeterminado(null);
+  const bnp = document.getElementById('btnNuevoPredet'); if(bnp) bnp.onclick = ()=> abrirFormPredeterminado(null);
   renderPredeterminadosLista();
 }
 
@@ -4356,6 +4363,7 @@ function abrirFormPredeterminado(id){
     const respCargo = document.getElementById('pdRespCargo').value.trim() || null;
     if(!nombre){ toast("Ponle un nombre a la plantilla","err"); return; }
     if(!respNombre){ toast("Falta el nombre del responsable","err"); return; }
+    if(!p && DOTACION.predeterminados.length>=PREDET_MAX){ toast(`Ya tienes el máximo de ${PREDET_MAX} plantillas`,"err"); return; }
     let firma = p ? p.firma : null;
     if(usarPad){
       if(!sigPad || sigPad.isEmpty()){ toast("Falta la firma","err"); return; }
@@ -4435,14 +4443,13 @@ function renderPasoEntrega1(){
 
       <div class="field" style="margin-top:14px">
         <label>Responsable que entrega *</label>
-        ${DOTACION.predeterminados.length?`<select id="entPredeterminado" style="margin-bottom:8px">
-          <option value="">— Escribir manualmente —</option>
-          ${DOTACION.predeterminados.map(p=>`<option value="${p.id}" ${p.id===entregaDraft.predeterminadoId?'selected':''}>${esc(p.nombre)} (${esc(p.responsable_nombre)})</option>`).join('')}
-        </select>`:''}
+        ${DOTACION.predeterminados.length?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px" id="predetChips">
+          ${DOTACION.predeterminados.map(p=>`<button type="button" class="chip-predet ${p.id===entregaDraft.predeterminadoId?'active':''}" data-predet-id="${p.id}" title="${esc(p.nombre)}">${esc(p.nombre)}</button>`).join('')}
+        </div>`:''}
       </div>
       <div class="field row2">
-        <div><input id="entRespNombre" value="${esc(entregaDraft.responsableNombre)}" placeholder="Nombre del supervisor"></div>
-        <div><input id="entRespCargo" value="${esc(entregaDraft.responsableCargo)}" placeholder="Cargo"></div>
+        <div><input id="entRespNombre" value="${esc(entregaDraft.responsableNombre)}" placeholder="Nombre del supervisor" ${entregaDraft.predeterminadoId?'readonly':''}></div>
+        <div><input id="entRespCargo" value="${esc(entregaDraft.responsableCargo)}" placeholder="Cargo" ${entregaDraft.predeterminadoId?'readonly':''}></div>
       </div>
       <p class="muted-sm" id="entQuienFirma" style="margin-top:-6px"></p>
       <div class="field"><label>Observaciones <span class="opt">(opcional)</span></label><input id="entObs" value="${esc(entregaDraft.observaciones)}" placeholder="Ej. reposición por daño, talla especial…"></div>
@@ -4455,14 +4462,28 @@ function renderPasoEntrega1(){
   renderItemsList();
   actualizarQuienFirma();
   document.getElementById('btnAddItem').onclick = ()=>{ entregaDraft.items.push({catalogoId:'',cantidad:1,talla:''}); renderItemsList(); };
-  const selPredet = document.getElementById('entPredeterminado');
-  if(selPredet) selPredet.onchange = ()=>{
-    const p = DOTACION.predeterminados.find(x=>x.id===selPredet.value);
-    entregaDraft.predeterminadoId = p ? p.id : null;
-    if(p){ document.getElementById('entRespNombre').value = p.responsable_nombre; document.getElementById('entRespCargo').value = p.responsable_cargo||''; }
-    actualizarQuienFirma();
-  };
+  wireEntPredetChips();
   document.getElementById('btnEntContinuar').onclick = validarYContinuarPaso1;
+}
+
+function wireEntPredetChips(){
+  document.querySelectorAll('#predetChips [data-predet-id]').forEach(chip=>{
+    chip.onclick = ()=>{
+      const id = chip.dataset.predetId;
+      const yaActivo = entregaDraft.predeterminadoId === id;
+      entregaDraft.predeterminadoId = yaActivo ? null : id;
+      document.querySelectorAll('#predetChips [data-predet-id]').forEach(c=> c.classList.toggle('active', c.dataset.predetId===entregaDraft.predeterminadoId));
+      const nombreInput = document.getElementById('entRespNombre'), cargoInput = document.getElementById('entRespCargo');
+      if(entregaDraft.predeterminadoId){
+        const p = DOTACION.predeterminados.find(x=>x.id===entregaDraft.predeterminadoId);
+        nombreInput.value = p.responsable_nombre; cargoInput.value = p.responsable_cargo||'';
+        nombreInput.setAttribute('readonly',''); cargoInput.setAttribute('readonly','');
+      } else {
+        nombreInput.removeAttribute('readonly'); cargoInput.removeAttribute('readonly');
+      }
+      actualizarQuienFirma();
+    };
+  });
 }
 
 function actualizarQuienFirma(){
@@ -4597,7 +4618,7 @@ function renderPasoEntregaFirmaResponsable(){
       <div id="padWrapR" style="${plantilla?'display:none':''}">
         <div class="sig-box" id="sigBox"><canvas id="sigCanvas"></canvas><div class="sig-placeholder" id="sigPh">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div></div>
         <div class="sig-actions"><button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar</button></div>
-        ${!plantilla?`
+        ${!plantilla && DOTACION.predeterminados.length<PREDET_MAX?`
         <label class="chk" style="margin-top:8px" id="chkWrapGuardarPredet"><input type="checkbox" id="chkGuardarPredet" checked> Guardar como plantilla predeterminada (Predeterminado)</label>
         <div class="field" id="nuevaPredetNombreWrap" style="margin-top:6px"><input id="nuevaPredetNombre" placeholder="Nombre de la plantilla, ej. Plantilla1"></div>`:''}
       </div>
