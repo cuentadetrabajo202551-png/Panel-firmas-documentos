@@ -3702,7 +3702,7 @@ function esRutaEdicion(){
    Directorio de trabajadores + catálogo de ítems + entregas
    (firma en persona, mismo dispositivo) + kárdex imprimible.
    ============================================================ */
-let DOTACION = { contratos: [], trabajadores: [], catalogo: [], entregas: [], entregaItems: [] };
+let DOTACION = { contratos: [], trabajadores: [], catalogo: [], entregas: [], entregaItems: [], predeterminados: [] };
 let dotQuery = "";
 let entregaDraft = null;
 let contratoActualId = localStorage.getItem('dot_contrato_actual') || null; // null hasta que se carguen los contratos; "todos" = vista combinada
@@ -3710,12 +3710,13 @@ let dotVista = "trabajadores"; // "trabajadores" | "estadisticas"
 let dotPeriodo = "todo"; // "todo" | "mes" | "anio" (para Estadísticas)
 
 async function loadDotacionState(){
-  const [co, t, c, e, ei] = await Promise.all([
+  const [co, t, c, e, ei, pd] = await Promise.all([
     sb.from("dot_contratos").select("id,nombre,activo,creado_en").order("creado_en",{ascending:true}),
     sb.from("dot_trabajadores").select("id,nombre,identificacion,cargo,area,contrato_id,creado_en").order("nombre",{ascending:true}),
     sb.from("dot_catalogo").select("*").order("nombre",{ascending:true}),
     sb.from("dot_entregas").select("id,trabajador_id,fecha").order("fecha",{ascending:false}),
-    sb.from("dot_entrega_items").select("entrega_id,nombre_item,cantidad")
+    sb.from("dot_entrega_items").select("entrega_id,nombre_item,cantidad"),
+    sb.from("dot_predeterminados").select("id,nombre,responsable_nombre,responsable_cargo,firma").eq("creado_por", MIPERFIL.uid).order("creado_en",{ascending:true})
   ]);
   const err = co.error || t.error || c.error || e.error || ei.error;
   if(err){ console.warn(err); toast("Error cargando dotación: "+err.message,"err"); }
@@ -3724,6 +3725,7 @@ async function loadDotacionState(){
   DOTACION.catalogo = c.data || [];
   DOTACION.entregas = e.data || [];
   DOTACION.entregaItems = ei.data || [];
+  DOTACION.predeterminados = pd.data || [];
   // Si el contrato guardado ya no existe (o nunca se eligió uno), cae al primero activo, o al primero que haya
   const existe = contratoActualId==='todos' || DOTACION.contratos.some(x=>x.id===contratoActualId);
   if(!existe){
@@ -3795,6 +3797,7 @@ async function renderDotacionAdmin(silent){
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
           <button class="btn btn-ghost btn-pc-only" id="btnCatalogo">${I.box} Catálogo de ítems</button>
+          ${puedeEscribir()?`<button class="btn btn-ghost btn-pc-only" id="btnPredeterminados">${I.pen} Predeterminados</button>`:''}
           ${!enTodos && puedeEscribir()?`<button class="btn btn-ghost btn-pc-only" id="btnPlantillaTrab">${I.doc} Plantilla Excel</button>
           <button class="btn btn-ghost btn-pc-only" id="btnCargaTrab">${I.plus} Carga masiva</button>`:''}
           ${totalEntregas?`<button class="btn btn-ghost btn-pc-only" id="btnZipKardex">${I.doc} Descargar todos (ZIP)</button>`:''}
@@ -3826,6 +3829,7 @@ async function renderDotacionAdmin(silent){
   };
   const bgc=document.getElementById("btnGestionContratos"); if(bgc) bgc.onclick = abrirGestionContratos;
   document.getElementById("btnCatalogo").onclick = abrirCatalogoModal;
+  const bpd=document.getElementById("btnPredeterminados"); if(bpd) bpd.onclick = abrirPredeterminadosModal;
   const bpt=document.getElementById("btnPlantillaTrab"); if(bpt) bpt.onclick = descargarPlantillaTrabajadoresDot;
   const bct=document.getElementById("btnCargaTrab"); if(bct) bct.onclick = ()=> document.getElementById("fileTrabajadores").click();
   document.getElementById("fileTrabajadores").onchange = (e)=>{ const f=e.target.files[0]; if(f) cargarTrabajadoresExcelDot(f); e.target.value=""; };
@@ -4282,6 +4286,111 @@ function eliminarItemCatalogo(id){
   };
 }
 
+/* ---------- Predeterminados: plantillas de responsable (nombre + cargo + firma guardada) ---------- */
+async function abrirPredeterminadosModal(){
+  bloquear("Cargando predeterminados…");
+  try{ await loadDotacionState(); } finally{ desbloquear(); }
+  openModal(`<div class="modal" style="max-width:560px">
+    <div class="modal-head"><div><h2>Predeterminado</h2><p>Guarda el nombre, cargo y firma de quien entrega, para no repetirlos en cada entrega.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <button class="btn btn-primary btn-sm" id="btnNuevoPredet" style="margin-bottom:14px">${I.plus} Nueva plantilla</button>
+      <div id="predetLista"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
+  </div>`);
+  document.getElementById('btnNuevoPredet').onclick = ()=> abrirFormPredeterminado(null);
+  renderPredeterminadosLista();
+}
+
+function renderPredeterminadosLista(){
+  const host = document.getElementById('predetLista'); if(!host) return;
+  const items = DOTACION.predeterminados;
+  host.innerHTML = items.length ? items.map(p=>`
+    <div class="cat-row">
+      <img src="${p.firma}" alt="firma" style="height:34px;max-width:70px;border:1px solid var(--line);border-radius:6px;background:#fff;object-fit:contain">
+      <span style="flex:1;font-weight:600;font-size:13.5px">${esc(p.nombre)}<div class="muted-sm" style="font-weight:400">${esc(p.responsable_nombre)}${p.responsable_cargo?' · '+esc(p.responsable_cargo):''}</div></span>
+      <button class="icon-btn" title="Editar" data-predet-edit="${p.id}">${I.pen}</button>
+      <button class="icon-btn danger" title="Eliminar" data-predet-del="${p.id}">${I.trash}</button>
+    </div>`).join('') : `<p class="muted-sm">Aún no has guardado ninguna plantilla.</p>`;
+  host.querySelectorAll('[data-predet-edit]').forEach(b=>{ b.onclick = ()=> abrirFormPredeterminado(b.dataset.predetEdit); });
+  host.querySelectorAll('[data-predet-del]').forEach(b=>{ b.onclick = ()=> eliminarPredeterminado(b.dataset.predetDel); });
+}
+
+function abrirFormPredeterminado(id){
+  const p = id ? DOTACION.predeterminados.find(x=>x.id===id) : null;
+  openSubModal(`<div class="modal" style="max-width:480px">
+    <div class="modal-head"><div><h2>${p?'Editar plantilla':'Nueva plantilla'}</h2><p>Ej. "Plantilla1", "Turno mañana"…</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Nombre de la plantilla *</label><input id="pdNombre" value="${esc(p?.nombre||'')}" placeholder="Ej. Plantilla1"></div>
+      <div class="field row2">
+        <div><label>Nombre del responsable *</label><input id="pdRespNombre" value="${esc(p?.responsable_nombre||'')}" placeholder="Nombre completo"></div>
+        <div><label>Cargo</label><input id="pdRespCargo" value="${esc(p?.responsable_cargo||'')}" placeholder="Cargo"></div>
+      </div>
+      <label style="font-weight:700;font-size:13px;display:block;margin:10px 0 6px">Firma *</label>
+      ${p?`<div id="pdFirmaGuardada" style="text-align:center;margin-bottom:10px"><img src="${p.firma}" style="height:80px;max-width:100%;border:1px solid var(--line);border-radius:8px;background:#fff;padding:4px"></div>
+      <button class="btn btn-ghost btn-sm" id="btnPdRefirmar" style="margin-bottom:10px">${I.pen} Firmar de nuevo</button>`:''}
+      <div id="pdPadWrap" style="${p?'display:none':''}">
+        <div class="sig-box" id="sigBox"><canvas id="sigCanvas"></canvas><div class="sig-placeholder" id="sigPh">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div></div>
+        <div class="sig-actions"><button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar</button></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardarPredet">${I.check} Guardar</button>
+    </div></div>`, ()=>abrirPredeterminadosModal());
+  let usarPad = !p;
+  if(usarPad){ initSignature(); document.getElementById('sigClear').onclick = ()=> sigPad.clear(); }
+  const reBtn = document.getElementById('btnPdRefirmar');
+  if(reBtn) reBtn.onclick = ()=>{
+    document.getElementById('pdFirmaGuardada').style.display='none';
+    reBtn.style.display='none';
+    document.getElementById('pdPadWrap').style.display='block';
+    usarPad = true;
+    initSignature(); document.getElementById('sigClear').onclick = ()=> sigPad.clear();
+  };
+  document.getElementById('btnGuardarPredet').onclick = async ()=>{
+    const nombre = document.getElementById('pdNombre').value.trim();
+    const respNombre = document.getElementById('pdRespNombre').value.trim();
+    const respCargo = document.getElementById('pdRespCargo').value.trim() || null;
+    if(!nombre){ toast("Ponle un nombre a la plantilla","err"); return; }
+    if(!respNombre){ toast("Falta el nombre del responsable","err"); return; }
+    let firma = p ? p.firma : null;
+    if(usarPad){
+      if(!sigPad || sigPad.isEmpty()){ toast("Falta la firma","err"); return; }
+      firma = sigPad.dataURL();
+    }
+    const btn = document.getElementById('btnGuardarPredet'); btn.disabled=true; btn.innerHTML="Guardando…";
+    const payload = { nombre, responsable_nombre: respNombre, responsable_cargo: respCargo, firma };
+    const { error } = p
+      ? await sb.from("dot_predeterminados").update(payload).eq("id", p.id)
+      : await sb.from("dot_predeterminados").insert(payload);
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
+    await loadDotacionState();
+    toast(p?"Plantilla actualizada":"Plantilla creada","ok");
+    closeModal();
+  };
+}
+
+function eliminarPredeterminado(id){
+  const p = DOTACION.predeterminados.find(x=>x.id===id);
+  openSubModal(`<div class="modal" style="max-width:420px">
+    <div class="modal-head"><div><h2>Eliminar plantilla</h2><p>Esta acción no se puede deshacer.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminará la plantilla <b>${esc(p?.nombre||'')}</b>. Las entregas ya registradas con esta firma no se ven afectadas.</p></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-danger" id="confDelPredet">${I.trash} Sí, eliminar</button></div></div>`, ()=>abrirPredeterminadosModal());
+  document.getElementById("confDelPredet").onclick = async ()=>{
+    const btn=document.getElementById("confDelPredet"); btn.disabled=true; btn.innerHTML="Eliminando…";
+    const { error } = await sb.from("dot_predeterminados").delete().eq("id", id);
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`; toast("No se pudo eliminar: "+error.message,"err"); return; }
+    await loadDotacionState();
+    toast("Plantilla eliminada","ok");
+    closeModal();
+  };
+}
+
 /* ---------- Nueva entrega (asistente de 3 pasos, en persona / mismo dispositivo) ---------- */
 function abrirNuevaEntrega(trabajadorId){
   if(!DOTACION.catalogo.some(c=>c.activo)){
@@ -4295,6 +4404,7 @@ function abrirNuevaEntrega(trabajadorId){
     fecha: hoyLocal(),
     responsableNombre: ultimoResp.nombre || '',
     responsableCargo: ultimoResp.cargo || '',
+    predeterminadoId: null,
     observaciones: '',
     items: [{ catalogoId:'', cantidad:1, talla:'' }],
     firmaTrabajador: null,
@@ -4323,10 +4433,18 @@ function renderPasoEntrega1(){
       </div>
       <div id="itemsList"></div>
 
-      <div class="field row2" style="margin-top:14px">
-        <div><label>Responsable que entrega *</label><input id="entRespNombre" value="${esc(entregaDraft.responsableNombre)}" placeholder="Nombre del supervisor"></div>
-        <div><label>Cargo del responsable</label><input id="entRespCargo" value="${esc(entregaDraft.responsableCargo)}" placeholder="Cargo"></div>
+      <div class="field" style="margin-top:14px">
+        <label>Responsable que entrega *</label>
+        ${DOTACION.predeterminados.length?`<select id="entPredeterminado" style="margin-bottom:8px">
+          <option value="">— Escribir manualmente —</option>
+          ${DOTACION.predeterminados.map(p=>`<option value="${p.id}" ${p.id===entregaDraft.predeterminadoId?'selected':''}>${esc(p.nombre)} (${esc(p.responsable_nombre)})</option>`).join('')}
+        </select>`:''}
       </div>
+      <div class="field row2">
+        <div><input id="entRespNombre" value="${esc(entregaDraft.responsableNombre)}" placeholder="Nombre del supervisor"></div>
+        <div><input id="entRespCargo" value="${esc(entregaDraft.responsableCargo)}" placeholder="Cargo"></div>
+      </div>
+      <p class="muted-sm" id="entQuienFirma" style="margin-top:-6px"></p>
       <div class="field"><label>Observaciones <span class="opt">(opcional)</span></label><input id="entObs" value="${esc(entregaDraft.observaciones)}" placeholder="Ej. reposición por daño, talla especial…"></div>
     </div>
     <div class="modal-foot">
@@ -4335,8 +4453,22 @@ function renderPasoEntrega1(){
     </div>
   </div>`);
   renderItemsList();
+  actualizarQuienFirma();
   document.getElementById('btnAddItem').onclick = ()=>{ entregaDraft.items.push({catalogoId:'',cantidad:1,talla:''}); renderItemsList(); };
+  const selPredet = document.getElementById('entPredeterminado');
+  if(selPredet) selPredet.onchange = ()=>{
+    const p = DOTACION.predeterminados.find(x=>x.id===selPredet.value);
+    entregaDraft.predeterminadoId = p ? p.id : null;
+    if(p){ document.getElementById('entRespNombre').value = p.responsable_nombre; document.getElementById('entRespCargo').value = p.responsable_cargo||''; }
+    actualizarQuienFirma();
+  };
   document.getElementById('btnEntContinuar').onclick = validarYContinuarPaso1;
+}
+
+function actualizarQuienFirma(){
+  const el = document.getElementById('entQuienFirma'); if(!el) return;
+  const p = entregaDraft.predeterminadoId ? DOTACION.predeterminados.find(x=>x.id===entregaDraft.predeterminadoId) : null;
+  el.textContent = p ? `Firmará: ${p.responsable_nombre} — usando la firma guardada de "${p.nombre}", no se pedirá de nuevo.` : '';
 }
 
 function renderItemsList(){
@@ -4449,25 +4581,25 @@ function wireFotoTrabPreview(){
   const bc = document.getElementById('btnCambiarFotoTrab'); if(bc) bc.onclick = ()=> inp.click();
 }
 
-const FIRMA_RESP_KEY = 'dot_firma_responsable_default';
-
 function renderPasoEntregaFirmaResponsable(){
-  const firmaGuardada = localStorage.getItem(FIRMA_RESP_KEY);
+  const plantilla = entregaDraft.predeterminadoId ? DOTACION.predeterminados.find(x=>x.id===entregaDraft.predeterminadoId) : null;
   openModal(`<div class="modal" style="max-width:560px">
     <div class="modal-head"><div><h2>Firma del responsable</h2><p>Paso 3 de 3 — ${esc(entregaDraft.responsableNombre||'')}</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
       <p class="muted-sm" style="margin-bottom:10px">Confirma que hiciste la entrega.</p>
-      ${firmaGuardada?`
-      <div id="firmaRGuardada" style="text-align:center;margin-bottom:12px"><img src="${firmaGuardada}" style="height:80px;max-width:100%;border:1px solid var(--line);border-radius:8px;background:#fff;padding:4px"></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">
-        <button class="btn btn-ghost btn-sm" id="btnRefirmarR">${I.pen} Firmar de nuevo</button>
-        <button class="btn btn-ghost btn-sm" id="btnOlvidarFirmaR">${I.trash} Olvidar firma guardada</button>
+      ${plantilla?`
+      <div id="firmaRGuardada" style="text-align:center;margin-bottom:12px"><img src="${plantilla.firma}" style="height:80px;max-width:100%;border:1px solid var(--line);border-radius:8px;background:#fff;padding:4px"></div>
+      <p class="muted-sm" style="text-align:center;margin-bottom:10px">Firma guardada en "${esc(plantilla.nombre)}"</p>
+      <div style="display:flex;justify-content:center;margin-bottom:6px">
+        <button class="btn btn-ghost btn-sm" id="btnRefirmarR">${I.pen} Firmar de nuevo (solo para esta entrega)</button>
       </div>`:''}
-      <div id="padWrapR" style="${firmaGuardada?'display:none':''}">
+      <div id="padWrapR" style="${plantilla?'display:none':''}">
         <div class="sig-box" id="sigBox"><canvas id="sigCanvas"></canvas><div class="sig-placeholder" id="sigPh">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div></div>
         <div class="sig-actions"><button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar</button></div>
-        <label class="chk" style="margin-top:8px"><input type="checkbox" id="chkGuardarFirmaR" ${firmaGuardada?'':'checked'}> Guardar esta firma para no repetirla en cada entrega</label>
+        ${!plantilla?`
+        <label class="chk" style="margin-top:8px" id="chkWrapGuardarPredet"><input type="checkbox" id="chkGuardarPredet" checked> Guardar como plantilla predeterminada (Predeterminado)</label>
+        <div class="field" id="nuevaPredetNombreWrap" style="margin-top:6px"><input id="nuevaPredetNombre" placeholder="Nombre de la plantilla, ej. Plantilla1"></div>`:''}
       </div>
     </div>
     <div class="modal-foot">
@@ -4475,8 +4607,12 @@ function renderPasoEntregaFirmaResponsable(){
       <button class="btn btn-green" id="btnFirmaRespOk">${I.check} Guardar entrega</button>
     </div>
   </div>`);
-  let usarGuardada = !!firmaGuardada;
+  let usarGuardada = !!plantilla;
   if(!usarGuardada){ initSignature(); document.getElementById('sigClear').onclick = ()=> sigPad.clear(); }
+  const chkGuardarPredet = document.getElementById('chkGuardarPredet');
+  if(chkGuardarPredet) chkGuardarPredet.onchange = ()=>{
+    document.getElementById('nuevaPredetNombreWrap').style.display = chkGuardarPredet.checked ? 'block' : 'none';
+  };
   const reBtn = document.getElementById('btnRefirmarR');
   if(reBtn) reBtn.onclick = ()=>{
     document.getElementById('firmaRGuardada').style.display='none';
@@ -4485,19 +4621,25 @@ function renderPasoEntregaFirmaResponsable(){
     usarGuardada = false;
     initSignature(); document.getElementById('sigClear').onclick = ()=> sigPad.clear();
   };
-  const olvidarBtn = document.getElementById('btnOlvidarFirmaR');
-  if(olvidarBtn) olvidarBtn.onclick = ()=>{
-    localStorage.removeItem(FIRMA_RESP_KEY);
-    renderPasoEntregaFirmaResponsable();
-  };
   document.getElementById('btnFirmaRespOk').onclick = async ()=>{
     let firma;
     if(usarGuardada){
-      firma = firmaGuardada;
+      firma = plantilla.firma;
     } else {
       if(!sigPad || sigPad.isEmpty()){ toast("Falta la firma del responsable","err"); return; }
       firma = sigPad.dataURL();
-      if(document.getElementById('chkGuardarFirmaR')?.checked){ localStorage.setItem(FIRMA_RESP_KEY, firma); }
+      const chk = document.getElementById('chkGuardarPredet');
+      if(chk && chk.checked){
+        const nombrePlantilla = document.getElementById('nuevaPredetNombre').value.trim() || ('Plantilla '+(DOTACION.predeterminados.length+1));
+        const { error } = await sb.from("dot_predeterminados").insert({
+          nombre: nombrePlantilla,
+          responsable_nombre: entregaDraft.responsableNombre || '',
+          responsable_cargo: entregaDraft.responsableCargo || null,
+          firma
+        });
+        if(error) toast("La entrega se va a guardar, pero no se pudo guardar la plantilla: "+error.message,"err");
+        else await loadDotacionState();
+      }
     }
     const btn=document.getElementById('btnFirmaRespOk'); btn.disabled=true; btn.innerHTML="Guardando…";
     await guardarEntregaFinal(firma);
@@ -4606,6 +4748,17 @@ function eliminarEntrega(entregaId, trabajadorId){
   };
 }
 
+/* Dimensiones naturales (px) de una imagen data-URL, para no distorsionar su proporción al estamparla en el PDF */
+function getImageSize(dataUrl){
+  return new Promise(res=>{
+    if(!dataUrl){ res(null); return; }
+    const img = new Image();
+    img.onload = ()=> res({ w:img.naturalWidth, h:img.naturalHeight });
+    img.onerror = ()=> res(null);
+    img.src = dataUrl;
+  });
+}
+
 /* ---------- Kárdex acumulado en PDF (evidencia por si hay un reclamo) ---------- */
 /* Arma el PDF del kárdex de UN trabajador. Devuelve {doc, nombreBase} o null si no tiene entregas.
    No guarda el archivo — lo reutilizan tanto la descarga individual como el ZIP masivo. */
@@ -4679,14 +4832,19 @@ async function construirKardexPDF(trabajadorId){
   }
 
   const FOOTER_TOP = 278;
+  const colFotoW = x2f-x2-4;
   let y = encabezado();
   y = tablaHead(y);
   let pag = 1;
-  listaEntregas.forEach(e=>{
+  for(const e of listaEntregas){
     const its = itemsPorEntrega[e.id]||[];
     const lineas = its.length ? its.map(it=>"• "+it.nombre_item+" × "+it.cantidad+(it.talla?" ("+it.talla+")":"")) : ["—"];
     const wrapped = doc.splitTextToSize(pdfTexto(lineas.join("\n")), x2-x1-4);
-    const rowH = Math.max(16, wrapped.length*3.6 + 5);
+    let rowH = Math.max(16, wrapped.length*3.6 + 5);
+    // Si hay foto, la fila crece para respetar su proporción original (nunca se estira/deforma la foto)
+    let fotoH = 0;
+    const dims = e.foto_trabajador ? await getImageSize(e.foto_trabajador) : null;
+    if(dims && dims.w>0){ fotoH = Math.min(90, colFotoW * (dims.h/dims.w)); rowH = Math.max(rowH, fotoH+4); }
     if(y + rowH > FOOTER_TOP){
       piePagina(pag);
       doc.addPage(); pag++;
@@ -4699,13 +4857,18 @@ async function construirKardexPDF(trabajadorId){
     doc.text(fmtDate(e.fecha), (x0+x1)/2, y+rowH/2+1, {align:"center"});
     doc.setFontSize(7.4);
     doc.text(wrapped, x1+2, y+5);
-    if(e.foto_trabajador){ try{ doc.addImage(e.foto_trabajador,"JPEG",x2+2,y+2,x2f-x2-4,rowH-4); }catch(err){} }
+    if(e.foto_trabajador){
+      try{
+        if(dims && dims.w>0) doc.addImage(e.foto_trabajador,"JPEG",x2+2,y+2,colFotoW,fotoH);
+        else doc.addImage(e.foto_trabajador,"JPEG",x2+2,y+2,colFotoW,rowH-4); // sin dimensiones (raro): antiguo comportamiento de respaldo
+      }catch(err){}
+    }
     if(e.firma_trabajador){ try{ doc.addImage(e.firma_trabajador,"PNG",x2f+3,y+2,x3-x2f-6,rowH-4); }catch(err){} }
     if(e.firma_responsable){ try{ doc.addImage(e.firma_responsable,"PNG",x3+3,y+2,x4-x3-6,rowH-4); }catch(err){} }
     doc.setFontSize(6); doc.setTextColor(120,120,140);
     if(e.responsable_nombre) doc.text(pdfTexto(e.responsable_nombre), x3+3, y+rowH-1.5);
     y += rowH;
-  });
+  }
   piePagina(pag);
 
   const safe = (t.nombre||"trabajador").replace(/[^\w\sáéíóúñ-]/gi,"").trim().replace(/\s+/g,"_").slice(0,40);
