@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Sistema de Asistencia Digital · Don Aseo Ltda.</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -94,6 +94,9 @@ input,textarea,select{font-family:inherit;font-size:14px;color:var(--ink)}
   .topbar-spacer{flex:0 0 0;width:0}
   .btn-pc-only{display:none!important}
   .dot-pc-only{display:none!important}
+  /* iOS hace zoom automático al enfocar un campo con font-size menor a 16px, y el zoom no siempre
+     se restablece al cerrar el teclado — subir el tamaño de letra en los campos evita el zoom. */
+  input,textarea,select{font-size:16px!important}
 }
 
 /* ---------- Layout ---------- */
@@ -574,12 +577,13 @@ function nombreDe(uid){ return uid ? (PERFILES_NOMBRE[uid] || "—") : "—"; }
 /* Pantalla de candado: se usa cuando el usuario no tiene acceso a un módulo o está desactivado */
 function renderSinAcceso(tituloModulo){
   const desactivado = MIPERFIL.cargado && !MIPERFIL.activo;
+  const sinModulos = !desactivado && !tituloModulo;
   document.getElementById("app").innerHTML = `
     ${topbar('')}
     <div class="wrap"><div class="empty">
       <div class="ic">${I.lockBig}</div>
-      <h3>${desactivado?'Tu acceso fue desactivado':'No tienes acceso a '+esc(tituloModulo)}</h3>
-      <p>${desactivado?'Contacta al administrador del sistema para más información.':'Contacta al administrador si crees que deberías tener acceso a este módulo.'}</p>
+      <h3>${desactivado?'Tu acceso fue desactivado':sinModulos?'Aún no tienes acceso a ningún módulo':'No tienes acceso a '+esc(tituloModulo)}</h3>
+      <p>${desactivado||sinModulos?'Contacta al administrador del sistema para más información.':'Contacta al administrador si crees que deberías tener acceso a este módulo.'}</p>
     </div></div>`;
   wireLogout();
 }
@@ -757,7 +761,15 @@ async function router(){
     if(mFicha){ await renderFichaTrabajador(decodeURIComponent(mFicha[1])); }
     else { await renderDotacionAdmin(); }   // MÓDULO: Dotación
   } else {
-    if(!tieneModulo('asistencia')){ renderSinAcceso("Asistencia"); return; }
+    // Ruta por defecto (recién logueado, o cualquier hash no reconocido). Si no tiene Asistencia,
+    // en vez de mostrar "sin acceso" de una, lo mandamos al primer módulo que sí tenga habilitado
+    // — solo si no tiene NINGUNO de los tres se muestra el candado.
+    if(!tieneModulo('asistencia')){
+      if(tieneModulo('documentos')){ location.hash = "#/docs"; return; }
+      if(tieneModulo('dotacion')){ location.hash = "#/dotacion"; return; }
+      renderSinAcceso();
+      return;
+    }
     bloquear("Cargando…");
     try{ await loadState(); } finally{ desbloquear(); }
     renderAdmin();                    // MÓDULO: Asistencia (existente, intacto)
@@ -4787,7 +4799,7 @@ async function construirKardexPDF(trabajadorId){
   const { data: t } = await sb.from("dot_trabajadores").select("id,nombre,identificacion,cargo,area,contrato_id").eq("id",trabajadorId).maybeSingle();
   if(!t) return null;
   const { data: entregas } = await sb.from("dot_entregas")
-    .select("id,fecha,responsable_nombre,responsable_cargo,firma_trabajador,firma_responsable,foto_trabajador")
+    .select("id,fecha,responsable_nombre,responsable_cargo,firma_trabajador,firma_responsable,foto_trabajador,creado_en")
     .eq("trabajador_id", trabajadorId).order("fecha",{ascending:true});
   const listaEntregas = entregas || [];
   if(!listaEntregas.length) return null;
@@ -4875,8 +4887,13 @@ async function construirKardexPDF(trabajadorId){
     [x0,x1,x2,x2f,x3,x4].forEach(x=>doc.line(x,y,x,y+rowH));
     doc.line(M,y+rowH,RIGHT,y+rowH);
     doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(20,20,20);
-    doc.text(fmtDate(e.fecha), (x0+x1)/2, y+rowH/2+1, {align:"center"});
-    doc.setFontSize(7.4);
+    doc.text(fmtDate(e.fecha), (x0+x1)/2, y+rowH/2-0.5, {align:"center"});
+    if(e.creado_en){
+      const horaFirma = new Date(e.creado_en).toLocaleTimeString("es-CO",{hour:'2-digit',minute:'2-digit'});
+      doc.setFontSize(6.5); doc.setTextColor(120,120,140);
+      doc.text(horaFirma, (x0+x1)/2, y+rowH/2+4, {align:"center"});
+    }
+    doc.setFontSize(7.4); doc.setTextColor(20,20,20);
     doc.text(wrapped, x1+2, y+5);
     if(e.foto_trabajador){
       try{
