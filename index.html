@@ -5421,15 +5421,22 @@ function descargarPlantillaTrabajadoresDtl(){
   toast("Plantilla descargada","ok");
 }
 /* Intenta interpretar una fecha de Excel en varios formatos comunes → YYYY-MM-DD, o null si no se pudo */
+/* Solo acepta AAAA-MM-DD o DD/MM/AAAA con año de EXACTAMENTE 4 dígitos (1900-2100) — si no calza,
+   devuelve null en vez de arriesgar una interpretación rara de new Date() (ej. un año mal tecleado
+   como "20255" en vez de "2025" podía producir una fecha absurda que rompía TODA la carga). */
 function parseFechaExcelDtl(v){
   const s = String(v||"").trim();
   if(!s) return null;
-  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-  if(m){ return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`; }
-  const d = new Date(s);
-  if(!isNaN(d.getTime())) return d.toISOString().slice(0,10);
-  return null;
+  let anio, mes, dia;
+  const mIso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(mIso){ anio=+mIso[1]; mes=+mIso[2]; dia=+mIso[3]; }
+  else {
+    const mDmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    if(!mDmy) return null;
+    dia=+mDmy[1]; mes=+mDmy[2]; anio=+mDmy[3];
+  }
+  if(anio<1900 || anio>2100 || mes<1 || mes>12 || dia<1 || dia>31) return null;
+  return `${String(anio).padStart(4,'0')}-${String(mes).padStart(2,'0')}-${String(dia).padStart(2,'0')}`;
 }
 async function cargarTrabajadoresExcelDtl(file){
   if(!window.XLSX){ toast("No se pudo cargar el lector de Excel (revisa tu conexión)","err"); return; }
