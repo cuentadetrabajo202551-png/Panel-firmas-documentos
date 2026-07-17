@@ -536,18 +536,19 @@ if(window.emailjs){ try{ emailjs.init({ publicKey: EMAILJS_KEY }); }catch(e){ tr
 let STATE = { listas: [], userEmail: "" };
 
 /* ---------- Permisos del usuario logueado (roles/módulos/contratos) ---------- */
-let MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], editarCatalogo:false, nombre:"", uid:null };
+let MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], editarCatalogo:false, nombre:"", uid:null };
 /* Mapa uid -> nombre/correo, para mostrar "Creado por: X" sin exponer toda acc_perfiles */
 let PERFILES_NOMBRE = {};
 
 async function cargarMiPerfil(){
   const { data:{ session } } = await sb.auth.getSession();
-  if(!session){ MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], editarCatalogo:false, nombre:"", uid:null }; return; }
+  if(!session){ MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], editarCatalogo:false, nombre:"", uid:null }; return; }
   const uid = session.user.id;
-  const [{ data:p }, { data:pm }, { data:pc }, { data:pn }] = await Promise.all([
+  const [{ data:p }, { data:pm }, { data:pc }, { data:pe }, { data:pn }] = await Promise.all([
     sb.from("acc_perfiles").select("es_admin,activo,dotacion_editar_catalogo,nombre,rol").eq("id",uid).maybeSingle(),
     sb.from("acc_perfil_modulos").select("modulo").eq("perfil_id",uid),
     sb.from("acc_perfil_contratos").select("contrato_id").eq("perfil_id",uid),
+    sb.from("acc_perfil_entidades").select("entidad_id").eq("perfil_id",uid),
     sb.rpc("acc_perfiles_nombres")
   ]);
   MIPERFIL = {
@@ -557,6 +558,7 @@ async function cargarMiPerfil(){
     rol: (p && p.rol) || "editor",
     modulos: (pm||[]).map(x=>x.modulo),
     contratos: (pc||[]).map(x=>x.contrato_id),
+    entidadesDtl: (pe||[]).map(x=>x.entidad_id),
     editarCatalogo: !!(p && p.dotacion_editar_catalogo),
     nombre: (p && p.nombre) || session.user.email || "",
     uid
@@ -566,6 +568,7 @@ async function cargarMiPerfil(){
 }
 function tieneModulo(m){ return MIPERFIL.esAdmin || (MIPERFIL.activo && MIPERFIL.modulos.includes(m)); }
 function tieneContratoDotacion(id){ return MIPERFIL.esAdmin || MIPERFIL.contratos.includes(id); }
+function tieneEntidadDtl(id){ return MIPERFIL.esAdmin || MIPERFIL.entidadesDtl.includes(id); }
 /* ¿Puede crear/editar/eliminar en general? admin o editor; visualizador nunca escribe (refuerzo visual — la RLS es la protección real) */
 function puedeEscribir(){ return MIPERFIL.esAdmin || MIPERFIL.rol==='editor'; }
 /* ¿Puede tocar (editar/eliminar) algo creado por uidCreador? admin siempre; editor solo lo suyo; visualizador nunca */
@@ -722,7 +725,7 @@ document.getElementById("overlay").addEventListener("mousedown", e=>{
    ROUTER
    ============================================================ */
 function esRutaPublica(){
-  return location.hash.startsWith("#/lista/") || location.hash.startsWith("#/firmar/") || location.hash.startsWith("#/responsable/") || location.hash.startsWith("#/firmadoc/");
+  return location.hash.startsWith("#/lista/") || location.hash.startsWith("#/firmar/") || location.hash.startsWith("#/responsable/") || location.hash.startsWith("#/firmadoc/") || location.hash.startsWith("#/dotacionlegal/entrega");
 }
 
 async function router(){
@@ -735,6 +738,7 @@ async function router(){
   if(mResp){ await renderFirmaResponsable(decodeURIComponent(mResp[1])); return; }
   const mFdoc = location.hash.match(/^#\/firmadoc\/(.+)$/);
   if(mFdoc){ await renderFirmaDoc(decodeURIComponent(mFdoc[1])); return; }
+  if(location.hash.startsWith("#/dotacionlegal/entrega")){ await renderDtlPublico(); return; }
   // ----- Rutas de ADMINISTRACIÓN (requieren sesión) -----
   const { data:{ session } } = await sb.auth.getSession();
   if(!session){ renderLogin(); return; }
@@ -755,18 +759,24 @@ async function router(){
     else if(location.hash === "#/docs/documento/nuevo"){ await renderCrearDocumento(); }
     else if(mEditDoc){ await renderEditarDocumento(decodeURIComponent(mEditDoc[1])); }
     else { await renderDocsAdmin(); }   // MÓDULO: Documentos y Firmas
-  } else if(location.hash.startsWith("#/dotacion")){
-    if(!tieneModulo('dotacion')){ renderSinAcceso("Dotación"); return; }
+  } else if(location.hash === "#/dotacionlegal" || location.hash.startsWith("#/dotacionlegal/")){
+    if(!tieneModulo('dotacionlegal')){ renderSinAcceso("Dotación"); return; }
+    const mFichaDtl = location.hash.match(/^#\/dotacionlegal\/trabajador\/(.+)$/);
+    if(mFichaDtl){ await renderFichaTrabajadorDtl(decodeURIComponent(mFichaDtl[1])); }
+    else { await renderDtlAdmin(); }   // MÓDULO: Dotación (legal)
+  } else if(location.hash === "#/dotacion" || location.hash.startsWith("#/dotacion/")){
+    if(!tieneModulo('dotacion')){ renderSinAcceso("Entrega de EPP"); return; }
     const mFicha = location.hash.match(/^#\/dotacion\/trabajador\/(.+)$/);
     if(mFicha){ await renderFichaTrabajador(decodeURIComponent(mFicha[1])); }
-    else { await renderDotacionAdmin(); }   // MÓDULO: Dotación
+    else { await renderDotacionAdmin(); }   // MÓDULO: EPP
   } else {
     // Ruta por defecto (recién logueado, o cualquier hash no reconocido). Si no tiene Asistencia,
     // en vez de mostrar "sin acceso" de una, lo mandamos al primer módulo que sí tenga habilitado
-    // — solo si no tiene NINGUNO de los tres se muestra el candado.
+    // — solo si no tiene NINGUNO de los cuatro se muestra el candado.
     if(!tieneModulo('asistencia')){
       if(tieneModulo('documentos')){ location.hash = "#/docs"; return; }
       if(tieneModulo('dotacion')){ location.hash = "#/dotacion"; return; }
+      if(tieneModulo('dotacionlegal')){ location.hash = "#/dotacionlegal"; return; }
       renderSinAcceso();
       return;
     }
@@ -835,7 +845,8 @@ function topbar(active){
       <nav class="topnav">
         ${tieneModulo('asistencia')?`<a href="#/" class="${active==='asistencia'?'active':''}">Asistencia</a>`:''}
         ${tieneModulo('documentos')?`<a href="#/docs" class="${active==='docs'?'active':''}">📄 Documentos y Firmas</a>`:''}
-        ${tieneModulo('dotacion')?`<a href="#/dotacion" class="${active==='dotacion'?'active':''}">🦺 Dotación</a>`:''}
+        ${tieneModulo('dotacion')?`<a href="#/dotacion" class="${active==='dotacion'?'active':''}">🦺 EPP</a>`:''}
+        ${tieneModulo('dotacionlegal')?`<a href="#/dotacionlegal" class="${active==='dotacionlegal'?'active':''}">📦 Dotación</a>`:''}
         ${MIPERFIL.esAdmin?`<a href="#/configuracion" class="${active==='configuracion'?'active':''}">⚙️ Configuración</a>`:''}
       </nav>
       <div class="topbar-spacer"></div>
@@ -847,7 +858,7 @@ function wireLogout(){
   const b = document.getElementById("btnLogout");
   if(b) b.onclick = async ()=>{
     await sb.auth.signOut(); STATE.listas=[]; STATE.userEmail="";
-    MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], editarCatalogo:false, nombre:"", uid:null };
+    MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], editarCatalogo:false, nombre:"", uid:null };
     PERFILES_NOMBRE = {};
     location.hash=""; router();
   };
@@ -2688,6 +2699,7 @@ async function abrirDocumento(id){
       acc += `<button class="icon-btn" title="Compartir QR" onclick="mostrarQR('${linkFirma(f.token)}','Firma del documento', ()=>abrirDocumento('${doc.id}'))">${I.qr}</button>`;
       if(f.correo) acc += `<button class="icon-btn" title="Enviar por correo" onclick="enviarPorCorreo('${f.id}')">✉️</button>`;
     }
+    if(puedeTocarFirmante) acc += `<button class="icon-btn" title="Editar nombre/cédula" onclick="abrirEditarFirmante('${f.id}','${doc.id}')">${I.pen}</button>`;
     if(puedeTocarFirmante) acc += `<button class="icon-btn danger" title="Eliminar firmante" onclick="eliminarFirmanteDoc('${f.id}','${doc.id}','${nombreEsc}')">${I.trash}</button>`;
     const miniPh = f.estado==='firmado' ? '<span class="muted-sm">…</span>' : '<span class="muted-sm">—</span>';
     return `<tr>
@@ -3192,6 +3204,34 @@ function repetirFirmaFirmante(firmanteId, docId, nombre){
     await sb.from("doc_eventos").insert({ documento_id:docId, firmante_id:firmanteId, tipo:'editado', detalle:{accion:'repetir_firma', nombre} });
     closeModal(); toast("Firma restablecida — el firmante puede firmar de nuevo","ok");
     abrirDocumento(docId);
+  };
+}
+
+/* ---------- Editar nombre/cédula de un firmante, aunque ya haya firmado (corregir errores de tipeo) ---------- */
+function abrirEditarFirmante(firmanteId, docId){
+  const f = (docDetalleFirmantes||[]).find(x=>x.id===firmanteId);
+  if(!f){ toast("Firmante no encontrado","err"); return; }
+  openSubModal(`<div class="modal" style="max-width:440px">
+    <div class="modal-head"><div><h2>Editar datos del firmante</h2><p>${f.estado==='firmado'?'Ya firmó — esto solo corrige nombre/cédula, no toca su firma.':'Datos con los que se generó su enlace.'}</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Nombre completo *</label><input id="efNombre" value="${esc(f.nombre||'')}" placeholder="Nombre completo"></div>
+      <div class="field"><label>Número de identificación (cédula)</label><input id="efCedula" value="${esc(f.identificacion||'')}" placeholder="C.C. / documento" inputmode="numeric"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardarEditFirm">${I.check} Guardar</button>
+    </div></div>`, ()=>abrirDocumento(docId));
+  document.getElementById('btnGuardarEditFirm').onclick = async ()=>{
+    const nombre = document.getElementById('efNombre').value.trim();
+    if(!nombre){ toast("Falta el nombre","err"); return; }
+    const identificacion = document.getElementById('efCedula').value.trim() || null;
+    const btn = document.getElementById('btnGuardarEditFirm'); btn.disabled=true; btn.innerHTML="Guardando…";
+    const { error } = await sb.from("doc_firmantes").update({ nombre, identificacion }).eq("id", firmanteId);
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
+    await sb.from("doc_eventos").insert({ documento_id:docId, firmante_id:firmanteId, tipo:'editado', detalle:{accion:'editar_datos', nombre} });
+    toast("Datos actualizados","ok");
+    closeModal();
   };
 }
 
@@ -3725,20 +3765,18 @@ let dotVista = "trabajadores"; // "trabajadores" | "estadisticas"
 let dotPeriodo = "todo"; // "todo" | "mes" | "anio" (para Estadísticas)
 
 async function loadDotacionState(){
-  const [co, t, e, ei, pd] = await Promise.all([
+  const [co, t, e, ei] = await Promise.all([
     sb.from("dot_contratos").select("id,nombre,activo,creado_en").order("creado_en",{ascending:true}),
     sb.from("dot_trabajadores").select("id,nombre,identificacion,cargo,area,contrato_id,creado_en").order("nombre",{ascending:true}),
     sb.from("dot_entregas").select("id,trabajador_id,fecha").order("fecha",{ascending:false}),
-    sb.from("dot_entrega_items").select("entrega_id,nombre_item,cantidad"),
-    sb.from("dot_predeterminados").select("id,nombre,responsable_nombre,responsable_cargo,firma").eq("creado_por", MIPERFIL.uid).order("creado_en",{ascending:true})
+    sb.from("dot_entrega_items").select("entrega_id,nombre_item,cantidad")
   ]);
   const err = co.error || t.error || e.error || ei.error;
-  if(err){ console.warn(err); toast("Error cargando dotación: "+err.message,"err"); }
+  if(err){ console.warn(err); toast("Error cargando EPP: "+err.message,"err"); }
   DOTACION.contratos = co.data || [];
   DOTACION.trabajadores = t.data || [];
   DOTACION.entregas = e.data || [];
   DOTACION.entregaItems = ei.data || [];
-  DOTACION.predeterminados = pd.data || [];
   // Si el contrato guardado ya no existe (o nunca se eligió uno), cae al primero activo, o al primero que haya
   const existe = contratoActualId==='todos' || DOTACION.contratos.some(x=>x.id===contratoActualId);
   if(!existe){
@@ -3746,14 +3784,20 @@ async function loadDotacionState(){
     contratoActualId = primero ? primero.id : null;
     if(contratoActualId) localStorage.setItem('dot_contrato_actual', contratoActualId);
   }
-  // El catálogo es POR CONTRATO — se carga después de tener contratoActualId ya resuelto.
-  // En modo "todos" (o sin contrato) no hay un catálogo único que mostrar: queda vacío.
+  // El catálogo y los predeterminados son POR CONTRATO — se cargan después de tener
+  // contratoActualId ya resuelto. En modo "todos" (o sin contrato) quedan vacíos.
   if(contratoActualId && contratoActualId!=='todos'){
-    const { data:c, error:ec } = await sb.from("dot_catalogo").select("*").eq("contrato_id", contratoActualId).order("nombre",{ascending:true});
+    const [{ data:c, error:ec }, { data:pd, error:epd }] = await Promise.all([
+      sb.from("dot_catalogo").select("*").eq("contrato_id", contratoActualId).order("nombre",{ascending:true}),
+      sb.from("dot_predeterminados").select("id,nombre,responsable_nombre,responsable_cargo,firma").eq("contrato_id", contratoActualId).order("creado_en",{ascending:true})
+    ]);
     if(ec) console.warn(ec);
+    if(epd) console.warn(epd);
     DOTACION.catalogo = c || [];
+    DOTACION.predeterminados = pd || [];
   } else {
     DOTACION.catalogo = [];
+    DOTACION.predeterminados = [];
   }
 }
 
@@ -3773,7 +3817,7 @@ function entregasDelContrato(){
 async function renderDotacionAdmin(silent){
   const scrollY = window.scrollY;
   if(silent){ await loadDotacionState(); }
-  else { bloquear("Cargando dotación…"); try{ await loadDotacionState(); } finally{ desbloquear(); } }
+  else { bloquear("Cargando EPP…"); try{ await loadDotacionState(); } finally{ desbloquear(); } }
 
   if(!DOTACION.contratos.length){
     document.getElementById("app").innerHTML = MIPERFIL.esAdmin ? `${topbar('dotacion')}
@@ -3807,8 +3851,8 @@ async function renderDotacionAdmin(silent){
     <div class="wrap">
       <div class="page-head">
         <div>
-          <h1>Dotación y Entrega de EPP</h1>
-          <p>Registra la entrega de elementos de protección personal y uniformes, con firma digital en el momento.</p>
+          <h1>Entrega de EPP</h1>
+          <p>Registra la entrega de elementos de protección personal, con firma digital en el momento.</p>
           <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
             <select id="selContrato" style="font-weight:700;font-size:13.5px;padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--brand-deep)">
               ${DOTACION.contratos.filter(x=>tieneContratoDotacion(x.id)).map(x=>`<option value="${x.id}" ${x.id===contratoActualId?'selected':''}>${esc(x.nombre)}${x.activo?'':' (archivado)'}</option>`).join('')}
@@ -4157,7 +4201,7 @@ function abrirCatalogoModal(){
   const puedeEditar = MIPERFIL.esAdmin || (MIPERFIL.editarCatalogo && MIPERFIL.rol==='editor');
   const c = contratoActual();
   openModal(`<div class="modal" style="max-width:560px">
-    <div class="modal-head"><div><h2>Catálogo de ítems</h2><p>Lo que se puede entregar como dotación en ${esc(c?.nombre||'este contrato')}. Cada contrato tiene su propio catálogo.</p></div>
+    <div class="modal-head"><div><h2>Catálogo de ítems</h2><p>Lo que se puede entregar como EPP en ${esc(c?.nombre||'este contrato')}. Cada contrato tiene su propio catálogo.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
       ${!puedeEditar?`<p class="muted-sm" style="margin-bottom:12px">Solo puedes ver el catálogo. Si necesitas agregar o editar ítems, pídele al administrador que te dé ese permiso.</p>`:''}
@@ -4393,7 +4437,7 @@ function abrirFormPredeterminado(id){
     const payload = { nombre, responsable_nombre: respNombre, responsable_cargo: respCargo, firma };
     const { error } = p
       ? await sb.from("dot_predeterminados").update(payload).eq("id", p.id)
-      : await sb.from("dot_predeterminados").insert(payload);
+      : await sb.from("dot_predeterminados").insert({ ...payload, contrato_id: contratoActualId });
     if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
     await loadDotacionState();
     toast(p?"Plantilla actualizada":"Plantilla creada","ok");
@@ -4445,7 +4489,7 @@ function renderPasoEntrega1(){
   const t = entregaDraft.trabajadorId ? DOTACION.trabajadores.find(x=>x.id===entregaDraft.trabajadorId) : null;
   const opcionesTrab = trabajadoresDelContrato().map(x=>`<option value="${x.id}" ${x.id===entregaDraft.trabajadorId?'selected':''}>${esc(x.nombre)} — C.C. ${esc(x.identificacion)}</option>`).join('');
   openModal(`<div class="modal lg">
-    <div class="modal-head"><div><h2>Registrar entrega de dotación</h2><p>Paso 1 de 3 — Ítems a entregar</p></div>
+    <div class="modal-head"><div><h2>Registrar entrega de EPP</h2><p>Paso 1 de 3 — Ítems a entregar</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
       ${t ? `<div class="trab-summary"><div class="tk">Trabajador</div><div class="tv">${esc(t.nombre)} — C.C. ${esc(t.identificacion)}</div></div>`
@@ -4676,7 +4720,8 @@ function renderPasoEntregaFirmaResponsable(){
           nombre: nombrePlantilla,
           responsable_nombre: entregaDraft.responsableNombre || '',
           responsable_cargo: entregaDraft.responsableCargo || null,
-          firma
+          firma,
+          contrato_id: contratoActualId
         });
         if(error) toast("La entrega se va a guardar, pero no se pudo guardar la plantilla: "+error.message,"err");
         else await loadDotacionState();
@@ -4762,7 +4807,7 @@ async function renderFichaTrabajador(id){
         </div>
         <div class="sec-bar"><h2>Historial de entregas</h2><span class="muted-sm">${listaEntregas.length} registrada(s)</span></div>
         ${listaEntregas.length?`<div class="table-wrap"><table class="dt"><thead><tr><th>Fecha</th><th>Ítems entregados</th><th>Responsable</th><th>Acciones</th></tr></thead><tbody>${filas}</tbody></table></div>`
-          :`<div class="empty"><div class="ic">${I.box}</div><h3>Sin entregas todavía</h3><p>Registra la primera entrega de dotación para este trabajador.</p></div>`}
+          :`<div class="empty"><div class="ic">${I.box}</div><h3>Sin entregas todavía</h3><p>Registra la primera entrega de EPP para este trabajador.</p></div>`}
       </div>`;
     wireLogout();
     document.getElementById('btnVolverDot').onclick = ()=> location.hash="#/dotacion";
@@ -4831,7 +4876,7 @@ async function construirKardexPDF(trabajadorId){
     doc.line(M+logoW,y,M+logoW,y+hH);
     try{ doc.addImage(LOGO,"JPEG",M+4,y+2,36,36*315/570); }catch(e){}
     doc.setTextColor(20,33,90); doc.setFont("helvetica","bold"); doc.setFontSize(14);
-    doc.text("CONTROL DE ENTREGA DE DOTACIÓN Y EPP", M+logoW+(RIGHT-M-logoW)/2, y+13, {align:"center"});
+    doc.text("CONTROL DE ENTREGA DE EPP", M+logoW+(RIGHT-M-logoW)/2, y+13, {align:"center"});
     doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(90,90,110);
     doc.text(pdfTexto("Kárdex acumulado por trabajador"+(nombreContrato?" · "+nombreContrato:"")+" · Don Aseo Ltda."), M+logoW+(RIGHT-M-logoW)/2, y+19, {align:"center"});
     y += hH;
@@ -4868,7 +4913,7 @@ async function construirKardexPDF(trabajadorId){
   const FOOTER_Y = 290;
   function piePagina(pag){
     doc.setFontSize(6.6); doc.setTextColor(140,140,160);
-    doc.text("Este documento constituye evidencia de la entrega de dotación, firmada digitalmente por el trabajador y el responsable.", PW/2, FOOTER_Y, {align:"center"});
+    doc.text("Este documento constituye evidencia de la entrega de EPP, firmada digitalmente por el trabajador y el responsable.", PW/2, FOOTER_Y, {align:"center"});
     doc.text("Generado el "+fmtDateTime(new Date())+" · Don Aseo Ltda. · Pág. "+pag, PW/2, FOOTER_Y+4, {align:"center"});
   }
 
@@ -5023,6 +5068,1150 @@ function renderDotEstadisticas(){
 }
 
 /* ============================================================
+   MÓDULO DOTACIÓN · Elementos de dotación legal (2 pantalones,
+   2 camisas, 1 par de botas + adicional libre). Directorio propio
+   de entidades/trabajadores, SEPARADO del módulo EPP. Dos vías:
+   presencial (supervisor logueado) y remota (enlace único para
+   toda la empresa, por cédula, sin login).
+   ============================================================ */
+let DTL = { entidades: [], trabajadores: [], entregas: [], predeterminados: [] };
+let dtlQuery = "";
+let dtlEntregaDraft = null;
+let dtlEntidadActualId = localStorage.getItem('dtl_entidad_actual') || null;
+const DTL_DECLARACION = "Declaro haber recibido a satisfacción los elementos de dotación relacionados en este documento, en buen estado y de acuerdo con mi talla. Me comprometo a utilizarlos durante el desarrollo de mis labores y a darles el cuidado adecuado.";
+
+async function loadDtlState(){
+  const [en, t, e] = await Promise.all([
+    sb.from("dtl_entidades").select("id,nombre,activo,creado_en").order("creado_en",{ascending:true}),
+    sb.from("dtl_trabajadores").select("id,nombre,identificacion,cargo,area,entidad_id,creado_en").order("nombre",{ascending:true}),
+    sb.from("dtl_entregas").select("id,trabajador_id,fecha").order("fecha",{ascending:false})
+  ]);
+  const err = en.error || t.error || e.error;
+  if(err){ console.warn(err); toast("Error cargando Dotación: "+err.message,"err"); }
+  DTL.entidades = en.data || [];
+  DTL.trabajadores = t.data || [];
+  DTL.entregas = e.data || [];
+  const existe = DTL.entidades.some(x=>x.id===dtlEntidadActualId);
+  if(!existe){
+    const primero = DTL.entidades.find(x=>x.activo) || DTL.entidades[0];
+    dtlEntidadActualId = primero ? primero.id : null;
+    if(dtlEntidadActualId) localStorage.setItem('dtl_entidad_actual', dtlEntidadActualId);
+  }
+  if(dtlEntidadActualId){
+    const { data:pd, error:epd } = await sb.from("dtl_predeterminados").select("id,nombre,responsable_nombre,responsable_cargo,firma").eq("entidad_id", dtlEntidadActualId).order("creado_en",{ascending:true});
+    if(epd) console.warn(epd);
+    DTL.predeterminados = pd || [];
+  } else {
+    DTL.predeterminados = [];
+  }
+}
+
+function entidadDtlActual(){ return DTL.entidades.find(x=>x.id===dtlEntidadActualId) || null; }
+function trabajadoresDeEntidad(){ return DTL.trabajadores.filter(t=>t.entidad_id===dtlEntidadActualId); }
+function entregasDeEntidad(){
+  const ids = new Set(trabajadoresDeEntidad().map(t=>t.id));
+  return DTL.entregas.filter(e=>ids.has(e.trabajador_id));
+}
+
+/* ---------- Panel principal ---------- */
+async function renderDtlAdmin(silent){
+  const scrollY = window.scrollY;
+  if(silent){ await loadDtlState(); }
+  else { bloquear("Cargando Dotación…"); try{ await loadDtlState(); } finally{ desbloquear(); } }
+
+  if(!DTL.entidades.length){
+    document.getElementById("app").innerHTML = MIPERFIL.esAdmin ? `${topbar('dotacionlegal')}
+      <div class="wrap"><div class="empty"><div class="ic">${I.box}</div>
+        <h3>Crea tu primera entidad</h3>
+        <p>Cada entidad/contrato (ej. "Sede Bogotá") tiene su propio directorio de trabajadores y entregas.</p>
+        <div style="margin-top:18px"><button class="btn btn-primary" id="btnPrimeraEntidad">${I.plus} Crear entidad</button></div>
+      </div></div>` : `${topbar('dotacionlegal')}
+      <div class="wrap"><div class="empty"><div class="ic">${I.box}</div>
+        <h3>Aún no tienes ninguna entidad asignada</h3>
+        <p>Pídele al administrador que te dé acceso a una entidad desde Configuración.</p>
+      </div></div>`;
+    wireLogout();
+    const bpe=document.getElementById("btnPrimeraEntidad"); if(bpe) bpe.onclick = ()=> abrirFormEntidadDtl(null, ()=> renderDtlAdmin());
+    return;
+  }
+
+  const trabs = trabajadoresDeEntidad();
+  const entregasE = entregasDeEntidad();
+  const totalTrab = trabs.length;
+  const totalEntregas = entregasE.length;
+  const mesActual = hoyLocal().slice(0,7);
+  const entregasMes = entregasE.filter(e=>(e.fecha||"").startsWith(mesActual)).length;
+  const conEntrega = new Set(entregasE.map(e=>e.trabajador_id));
+  const sinEntregas = trabs.filter(t=>!conEntrega.has(t.id)).length;
+
+  document.getElementById("app").innerHTML = `
+    ${topbar('dotacionlegal')}
+    <div class="wrap">
+      <div class="page-head">
+        <div>
+          <h1>Dotación</h1>
+          <p>Entrega de dotación legal (pantalones, camisas y botas), con firma digital.</p>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
+            <select id="selEntidad" style="font-weight:700;font-size:13.5px;padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--brand-deep)">
+              ${DTL.entidades.filter(x=>tieneEntidadDtl(x.id)).map(x=>`<option value="${x.id}" ${x.id===dtlEntidadActualId?'selected':''}>${esc(x.nombre)}${x.activo?'':' (archivada)'}</option>`).join('')}
+            </select>
+            ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-sm btn-pc-only" id="btnGestionEntidades">${I.pen} Gestionar entidades</button>`:''}
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          ${puedeEscribir()?`<button class="btn btn-ghost btn-pc-only" id="btnPredeterminadosDtl">${I.pen} Predeterminados</button>`:''}
+          ${puedeEscribir()?`<button class="btn btn-ghost btn-pc-only" id="btnPlantillaTrabDtl">${I.doc} Plantilla Excel</button>
+          <button class="btn btn-ghost btn-pc-only" id="btnCargaTrabDtl">${I.plus} Carga masiva</button>`:''}
+          ${totalEntregas?`<button class="btn btn-ghost btn-pc-only" id="btnZipKardexDtl">${I.doc} Descargar todos (ZIP)</button>`:''}
+          ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-pc-only" id="btnCopiarEnlacePublico">${I.link} Copiar enlace de entrega remota</button>`:''}
+          ${puedeEscribir()?`<button class="btn btn-primary" id="btnNuevoTrabDtl">${I.plus} Nuevo trabajador</button>`:''}
+        </div>
+      </div>
+
+      <div class="stats dot-pc-only">
+        <div class="stat s-total"><div class="label">Trabajadores</div><div class="value">${totalTrab}</div></div>
+        <div class="stat s-act"><div class="label">Entregas registradas</div><div class="value">${totalEntregas}</div></div>
+        <div class="stat s-asi"><div class="label">Entregas este mes</div><div class="value">${entregasMes}</div></div>
+        <div class="stat s-clo"><div class="label">Sin entregas aún</div><div class="value">${sinEntregas}</div></div>
+      </div>
+
+      <div class="toolbar">
+        <div class="search">
+          ${I.search}
+          <input type="text" id="dtlSearch" placeholder="Buscar por nombre, cédula, cargo o área…" value="${esc(dtlQuery)}">
+        </div>
+      </div>
+      <div id="dtlGrid"></div>
+      <input type="file" id="fileTrabajadoresDtl" accept=".xlsx,.xls,.csv" style="display:none">
+    </div>`;
+
+  wireLogout();
+  document.getElementById("selEntidad").onchange = (e)=>{
+    dtlEntidadActualId = e.target.value;
+    localStorage.setItem('dtl_entidad_actual', dtlEntidadActualId);
+    renderDtlAdmin();
+  };
+  const bge=document.getElementById("btnGestionEntidades"); if(bge) bge.onclick = abrirGestionEntidadesDtl;
+  const bpd=document.getElementById("btnPredeterminadosDtl"); if(bpd) bpd.onclick = abrirPredeterminadosDtlModal;
+  const bpt=document.getElementById("btnPlantillaTrabDtl"); if(bpt) bpt.onclick = descargarPlantillaTrabajadoresDtl;
+  const bct=document.getElementById("btnCargaTrabDtl"); if(bct) bct.onclick = ()=> document.getElementById("fileTrabajadoresDtl").click();
+  document.getElementById("fileTrabajadoresDtl").onchange = (e)=>{ const f=e.target.files[0]; if(f) cargarTrabajadoresExcelDtl(f); e.target.value=""; };
+  const bnt=document.getElementById("btnNuevoTrabDtl"); if(bnt) bnt.onclick = ()=> abrirTrabajadorDtlForm(null);
+  const bzk=document.getElementById("btnZipKardexDtl"); if(bzk) bzk.onclick = descargarZipKardexDtlTodos;
+  const bce=document.getElementById("btnCopiarEnlacePublico"); if(bce) bce.onclick = ()=> copyText(location.href.split("#")[0]+"#/dotacionlegal/entrega", "Enlace de entrega remota copiado");
+  document.getElementById("dtlSearch").oninput = (e)=>{ dtlQuery = e.target.value; renderDtlGrid(); };
+  renderDtlGrid();
+  if(silent) window.scrollTo(0, scrollY);
+}
+
+function renderDtlGrid(){
+  const host = document.getElementById("dtlGrid");
+  if(!host) return;
+  let db = trabajadoresDeEntidad();
+  const q = dtlQuery.trim().toLowerCase();
+  if(q) db = db.filter(t=>
+    (t.nombre||"").toLowerCase().includes(q) ||
+    (t.identificacion||"").toLowerCase().includes(q) ||
+    (t.cargo||"").toLowerCase().includes(q) ||
+    (t.area||"").toLowerCase().includes(q)
+  );
+  if(!db.length){
+    host.innerHTML = `<div class="empty"><div class="ic">${I.box}</div><h3>${trabajadoresDeEntidad().length?'Sin resultados':'Sin trabajadores todavía'}</h3>
+      <p>${trabajadoresDeEntidad().length?'Prueba con otro término de búsqueda.':'Agrega trabajadores uno por uno o con carga masiva desde Excel.'}</p></div>`;
+    return;
+  }
+  host.innerHTML = `<div class="grid">${db.map(trabajadorDtlCard).join("")}</div>`;
+  host.querySelectorAll("[data-trabdtl]").forEach(b=>{
+    b.onclick = ()=>{
+      const id=b.dataset.id, act=b.dataset.trabdtl;
+      if(act==="ver") location.hash = "#/dotacionlegal/trabajador/"+id;
+      else if(act==="entregar") abrirNuevaEntregaDtl(id);
+      else if(act==="editar") abrirTrabajadorDtlForm(id);
+      else if(act==="del") eliminarTrabajadorDtl(id);
+    };
+  });
+}
+
+function trabajadorDtlCard(t){
+  const entregasT = DTL.entregas.filter(e=>e.trabajador_id===t.id);
+  const n = entregasT.length;
+  const ultima = n ? entregasT.reduce((a,b)=> (a.fecha>b.fecha?a:b)).fecha : null;
+  return `<div class="lcard">
+    <div class="lcard-top">
+      <span class="tipo">${esc(t.cargo||'Trabajador')}</span>
+      ${n===0?'<span class="badge cerrada"><span class="dot"></span>Sin entregas</span>':''}
+    </div>
+    <h3>${esc(t.nombre)}</h3>
+    <div class="meta">
+      <div>${I.user}<span>C.C. ${esc(t.identificacion)}</span></div>
+      <div>${I.pin}<span>${esc(t.area||'—')}</span></div>
+      ${ultima?`<div>${I.cal}<span>Última entrega: ${fmtDate(ultima)}</span></div>`:''}
+    </div>
+    <div class="lcard-foot">
+      <div class="attn"><span class="num">${n}</span><span class="lab">entrega${n===1?'':'s'}<br>registrada${n===1?'':'s'}</span></div>
+      <div class="card-actions">
+        <button class="icon-btn" title="Ver ficha" data-trabdtl="ver" data-id="${t.id}">${I.eye}</button>
+        ${puedeEscribir()?`<button class="icon-btn" title="Registrar entrega" data-trabdtl="entregar" data-id="${t.id}">${I.plus}</button>
+        <button class="icon-btn" title="Editar" data-trabdtl="editar" data-id="${t.id}">${I.pen}</button>
+        <button class="icon-btn danger" title="Eliminar" data-trabdtl="del" data-id="${t.id}">${I.trash}</button>`:''}
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ---------- Entidades ---------- */
+function abrirGestionEntidadesDtl(){
+  openModal(`<div class="modal" style="max-width:480px">
+    <div class="modal-head"><div><h2>Entidades / contratos</h2><p>Cada una tiene su propio directorio de trabajadores.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <button class="btn btn-primary btn-sm" id="btnNuevaEntidad" style="margin-bottom:14px">${I.plus} Nueva entidad</button>
+      <div id="entidadesLista"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
+  </div>`);
+  document.getElementById('btnNuevaEntidad').onclick = ()=> abrirFormEntidadDtl(null);
+  renderEntidadesDtlLista();
+}
+function renderEntidadesDtlLista(){
+  const host = document.getElementById('entidadesLista'); if(!host) return;
+  host.innerHTML = DTL.entidades.map(x=>`
+    <div class="cat-row">
+      <span style="flex:1;font-weight:600;font-size:13.5px;${x.activo?'':'opacity:.45'}">${esc(x.nombre)}${x.activo?'':' (archivada)'}</span>
+      <button class="icon-btn" title="Renombrar" data-ent-edit="${x.id}">${I.pen}</button>
+      <button class="icon-btn ${x.activo?'danger':''}" title="${x.activo?'Archivar':'Reactivar'}" data-ent-toggle="${x.id}">${x.activo?I.lock:I.check}</button>
+    </div>`).join('') || '<p class="muted-sm">Sin entidades todavía.</p>';
+  host.querySelectorAll('[data-ent-edit]').forEach(b=>{ b.onclick = ()=> abrirFormEntidadDtl(b.dataset.entEdit); });
+  host.querySelectorAll('[data-ent-toggle]').forEach(b=>{
+    b.onclick = async ()=>{
+      const x = DTL.entidades.find(e=>e.id===b.dataset.entToggle);
+      const { error } = await sb.from("dtl_entidades").update({ activo: !x.activo }).eq("id", x.id);
+      if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
+      await loadDtlState(); renderEntidadesDtlLista();
+      toast(x.activo?"Entidad archivada":"Entidad reactivada","ok");
+    };
+  });
+}
+function abrirFormEntidadDtl(id, alGuardar){
+  const x = id ? DTL.entidades.find(e=>e.id===id) : null;
+  openSubModal(`<div class="modal" style="max-width:440px">
+    <div class="modal-head"><div><h2>${x?'Renombrar entidad':'Nueva entidad'}</h2><p>Ej. "Sede Bogotá", "Hospital San Rafael"…</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Nombre *</label><input id="entNombre" value="${esc(x?.nombre||'')}" placeholder="Nombre de la entidad"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardarEntidad">${I.check} Guardar</button>
+    </div></div>`, ()=> alGuardar ? alGuardar() : abrirGestionEntidadesDtl());
+  document.getElementById('btnGuardarEntidad').onclick = async ()=>{
+    const nombre = document.getElementById('entNombre').value.trim();
+    if(!nombre){ toast("Ponle un nombre","err"); return; }
+    const btn = document.getElementById('btnGuardarEntidad'); btn.disabled=true; btn.innerHTML="Guardando…";
+    const { error } = x
+      ? await sb.from("dtl_entidades").update({ nombre }).eq("id", x.id)
+      : await sb.from("dtl_entidades").insert({ nombre });
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
+    await loadDtlState();
+    toast(x?"Entidad actualizada":"Entidad creada","ok");
+    closeModal();
+    if(alGuardar) alGuardar();
+  };
+}
+
+/* ---------- Trabajadores ---------- */
+function abrirTrabajadorDtlForm(id){
+  const t = id ? DTL.trabajadores.find(x=>x.id===id) : null;
+  const entidadDefault = t ? t.entidad_id : dtlEntidadActualId;
+  openModal(`<div class="modal" style="max-width:480px">
+    <div class="modal-head"><div><h2>${t?'Editar trabajador':'Nuevo trabajador'}</h2><p>Se guarda en el directorio para futuras entregas.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Entidad *</label>
+        <select id="tdEntidad">${DTL.entidades.map(x=>`<option value="${x.id}" ${x.id===entidadDefault?'selected':''}>${esc(x.nombre)}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Nombre completo *</label><input id="tdNombre" value="${esc(t?.nombre||'')}" placeholder="Nombres y apellidos"></div>
+      <div class="field"><label>Número de identificación (cédula) *</label><input id="tdCedula" value="${esc(t?.identificacion||'')}" placeholder="C.C." inputmode="numeric"></div>
+      <div class="field row2">
+        <div><label>Cargo</label><input id="tdCargo" value="${esc(t?.cargo||'')}" placeholder="Cargo"></div>
+        <div><label>Área</label><input id="tdArea" value="${esc(t?.area||'')}" placeholder="Área o dependencia"></div>
+      </div>
+      <p class="muted-sm">La cédula es única en toda la empresa (para que el enlace de entrega remota la encuentre sin importar la entidad).</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardarTrabDtl">${I.check} Guardar</button>
+    </div></div>`);
+  document.getElementById('btnGuardarTrabDtl').onclick = ()=> guardarTrabajadorDtl(id);
+}
+async function guardarTrabajadorDtl(id){
+  const entidad_id = document.getElementById('tdEntidad').value;
+  const nombre = document.getElementById('tdNombre').value.trim();
+  const identificacion = document.getElementById('tdCedula').value.trim();
+  const cargo = document.getElementById('tdCargo').value.trim() || null;
+  const area = document.getElementById('tdArea').value.trim() || null;
+  if(!entidad_id){ toast("Selecciona la entidad","err"); return; }
+  if(!nombre){ toast("Falta el nombre","err"); return; }
+  if(!identificacion){ toast("Falta la identificación","err"); return; }
+  const btn = document.getElementById('btnGuardarTrabDtl'); btn.disabled=true; btn.innerHTML="Guardando…";
+  bloquear("Guardando…");
+  let error;
+  if(id){ ({error} = await sb.from("dtl_trabajadores").update({nombre,identificacion,cargo,area,entidad_id}).eq("id",id)); }
+  else { ({error} = await sb.from("dtl_trabajadores").insert({nombre,identificacion,cargo,area,entidad_id})); }
+  desbloquear();
+  if(error){
+    btn.disabled=false; btn.innerHTML=`${I.check} Guardar`;
+    const dup = /duplicate|unique/i.test(error.message||"");
+    toast(dup?"Ya existe un trabajador con esa cédula (recuerda: es única en toda la empresa)":"No se pudo guardar: "+error.message,"err");
+    return;
+  }
+  await loadDtlState();
+  closeModal();
+  toast(id?"Trabajador actualizado":"Trabajador creado","ok");
+  const mFicha = location.hash.match(/^#\/dotacionlegal\/trabajador\/(.+)$/);
+  if(mFicha && id && decodeURIComponent(mFicha[1])===id){ renderFichaTrabajadorDtl(id); }
+  else { renderDtlAdmin(); }
+}
+function eliminarTrabajadorDtl(id){
+  const t = DTL.trabajadores.find(x=>x.id===id);
+  openModal(`<div class="modal" style="max-width:440px">
+    <div class="modal-head"><div><h2>Eliminar trabajador</h2><p>Esta acción no se puede deshacer.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminará a <b>${esc(t?.nombre||'')}</b> junto con todo su historial de entregas de dotación.</p></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-danger" id="confDelTrabDtl">${I.trash} Sí, eliminar</button></div></div>`);
+  document.getElementById("confDelTrabDtl").onclick = async ()=>{
+    const btn=document.getElementById("confDelTrabDtl"); btn.disabled=true; btn.innerHTML="Eliminando…";
+    const { error } = await sb.from("dtl_trabajadores").delete().eq("id", id);
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`; toast("No se pudo eliminar: "+error.message,"err"); return; }
+    await loadDtlState();
+    closeModal(); toast("Trabajador eliminado","ok");
+    renderDtlAdmin();
+  };
+}
+
+function descargarPlantillaTrabajadoresDtl(){
+  if(!window.XLSX){ toast("No se pudo cargar el generador de Excel (revisa tu conexión)","err"); return; }
+  const datos = [["Nombre completo","Cédula","Cargo","Área"],["Juan Pérez","1234567890","Operario","Producción"]];
+  const ws = XLSX.utils.aoa_to_sheet(datos);
+  ws["!cols"] = [{wch:28},{wch:16},{wch:20},{wch:20}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Trabajadores");
+  XLSX.writeFile(wb, "Plantilla_trabajadores_dotacion.xlsx");
+  toast("Plantilla descargada","ok");
+}
+async function cargarTrabajadoresExcelDtl(file){
+  if(!window.XLSX){ toast("No se pudo cargar el lector de Excel (revisa tu conexión)","err"); return; }
+  bloquear("Leyendo archivo…");
+  try{
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, {type:"array"});
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const filas = XLSX.utils.sheet_to_json(ws, {header:1, defval:"", raw:false});
+    if(!filas.length){ toast("El archivo está vacío","err"); return; }
+    const norm = s => String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").trim();
+    const head = (filas[0]||[]).map(norm);
+    const findCol = (...alts)=> head.findIndex(h => alts.some(a => h.includes(a)));
+    let cNom = findCol("nombre"), cCed = findCol("cedula","cédula","identificacion","documento"), cCargo = findCol("cargo"), cArea = findCol("area","área");
+    let start = 1;
+    if(cNom === -1){ cNom=0; cCed=1; cCargo=2; cArea=3; start=0; }
+    const validos = []; let ignoradas = 0;
+    for(let i=start;i<filas.length;i++){
+      const r = filas[i]; if(!r) continue;
+      const nombre = String(cNom>=0?r[cNom]:"").trim();
+      const identificacion = String(cCed>=0?r[cCed]:"").trim();
+      if(!nombre || !identificacion){ if(r.some(v=>String(v||"").trim())) ignoradas++; continue; }
+      validos.push({ nombre, identificacion, cargo: cCargo>=0?(String(r[cCargo]||"").trim()||null):null, area: cArea>=0?(String(r[cArea]||"").trim()||null):null, entidad_id: dtlEntidadActualId });
+    }
+    if(!validos.length){ toast("No se encontraron filas válidas (se requiere nombre y cédula)","err"); return; }
+    const keyOf = s => s.trim().toLowerCase();
+    const existentes = new Set(DTL.trabajadores.map(t=>keyOf(t.identificacion)));
+    const vistos = new Set(); let dup = 0, yaExistian = 0;
+    const nuevos = [];
+    validos.forEach(it=>{
+      const k = keyOf(it.identificacion);
+      if(vistos.has(k)){ dup++; return; }
+      vistos.add(k);
+      if(existentes.has(k)){ yaExistian++; return; }
+      nuevos.push(it);
+    });
+    if(nuevos.length){
+      const { error } = await sb.from("dtl_trabajadores").insert(nuevos);
+      if(error){ toast("No se pudo cargar: "+error.message,"err"); return; }
+    }
+    await loadDtlState();
+    renderDtlGrid();
+    let msg = `${nuevos.length} trabajador(es) nuevo(s) agregado(s)`;
+    if(yaExistian) msg += ` · ${yaExistian} ya existían (cédula repetida, sin cambios)`;
+    if(ignoradas) msg += ` · ${ignoradas} fila(s) incompleta(s) omitida(s)`;
+    if(dup) msg += ` · ${dup} duplicada(s) en el archivo`;
+    toast(msg,"ok");
+  }catch(e){ console.error(e); toast("No se pudo leer el archivo: "+(e.message||''),"err"); }
+  finally{ desbloquear(); }
+}
+
+/* ---------- Predeterminados (firma del responsable, por entidad) ---------- */
+const PREDET_DTL_MAX = 3;
+async function abrirPredeterminadosDtlModal(){
+  bloquear("Cargando predeterminados…");
+  try{ await loadDtlState(); } finally{ desbloquear(); }
+  const alTope = DTL.predeterminados.length >= PREDET_DTL_MAX;
+  openModal(`<div class="modal" style="max-width:560px">
+    <div class="modal-head"><div><h2>Predeterminado</h2><p>Guarda el nombre, cargo y firma de quien entrega, para no repetirlos en cada entrega. Máximo ${PREDET_DTL_MAX} plantillas.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      ${alTope?`<p class="muted-sm" style="margin-bottom:14px">Ya tienes el máximo de ${PREDET_DTL_MAX} plantillas. Elimina alguna para crear otra.</p>`
+        :`<button class="btn btn-primary btn-sm" id="btnNuevoPredetDtl" style="margin-bottom:14px">${I.plus} Nueva plantilla</button>`}
+      <div id="predetDtlLista"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
+  </div>`);
+  const bnp = document.getElementById('btnNuevoPredetDtl'); if(bnp) bnp.onclick = ()=> abrirFormPredeterminadoDtl(null);
+  renderPredeterminadosDtlLista();
+}
+function renderPredeterminadosDtlLista(){
+  const host = document.getElementById('predetDtlLista'); if(!host) return;
+  const items = DTL.predeterminados;
+  host.innerHTML = items.length ? items.map(p=>`
+    <div class="cat-row">
+      <img src="${p.firma}" alt="firma" style="height:34px;max-width:70px;border:1px solid var(--line);border-radius:6px;background:#fff;object-fit:contain">
+      <span style="flex:1;font-weight:600;font-size:13.5px">${esc(p.nombre)}<div class="muted-sm" style="font-weight:400">${esc(p.responsable_nombre)}${p.responsable_cargo?' · '+esc(p.responsable_cargo):''}</div></span>
+      <button class="icon-btn" title="Editar" data-predetdtl-edit="${p.id}">${I.pen}</button>
+      <button class="icon-btn danger" title="Eliminar" data-predetdtl-del="${p.id}">${I.trash}</button>
+    </div>`).join('') : `<p class="muted-sm">Aún no has guardado ninguna plantilla.</p>`;
+  host.querySelectorAll('[data-predetdtl-edit]').forEach(b=>{ b.onclick = ()=> abrirFormPredeterminadoDtl(b.dataset.predetdtlEdit); });
+  host.querySelectorAll('[data-predetdtl-del]').forEach(b=>{ b.onclick = ()=> eliminarPredeterminadoDtl(b.dataset.predetdtlDel); });
+}
+function abrirFormPredeterminadoDtl(id){
+  const p = id ? DTL.predeterminados.find(x=>x.id===id) : null;
+  openSubModal(`<div class="modal" style="max-width:480px">
+    <div class="modal-head"><div><h2>${p?'Editar plantilla':'Nueva plantilla'}</h2><p>Ej. "Plantilla1", "Turno mañana"…</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Nombre de la plantilla *</label><input id="pdlNombre" value="${esc(p?.nombre||'')}" placeholder="Ej. Plantilla1"></div>
+      <div class="field row2">
+        <div><label>Nombre del responsable *</label><input id="pdlRespNombre" value="${esc(p?.responsable_nombre||'')}" placeholder="Nombre completo"></div>
+        <div><label>Cargo</label><input id="pdlRespCargo" value="${esc(p?.responsable_cargo||'')}" placeholder="Cargo"></div>
+      </div>
+      <label style="font-weight:700;font-size:13px;display:block;margin:10px 0 6px">Firma *</label>
+      ${p?`<div id="pdlFirmaGuardada" style="text-align:center;margin-bottom:10px"><img src="${p.firma}" style="height:80px;max-width:100%;border:1px solid var(--line);border-radius:8px;background:#fff;padding:4px"></div>
+      <button class="btn btn-ghost btn-sm" id="btnPdlRefirmar" style="margin-bottom:10px">${I.pen} Firmar de nuevo</button>`:''}
+      <div id="pdlPadWrap" style="${p?'display:none':''}">
+        <div class="sig-box" id="sigBox"><canvas id="sigCanvas"></canvas><div class="sig-placeholder" id="sigPh">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div></div>
+        <div class="sig-actions"><button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar</button></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardarPredetDtl">${I.check} Guardar</button>
+    </div></div>`, ()=>abrirPredeterminadosDtlModal());
+  let usarPad = !p;
+  if(usarPad){ initSignature(); document.getElementById('sigClear').onclick = ()=> sigPad.clear(); }
+  const reBtn = document.getElementById('btnPdlRefirmar');
+  if(reBtn) reBtn.onclick = ()=>{
+    document.getElementById('pdlFirmaGuardada').style.display='none';
+    reBtn.style.display='none';
+    document.getElementById('pdlPadWrap').style.display='block';
+    usarPad = true;
+    initSignature(); document.getElementById('sigClear').onclick = ()=> sigPad.clear();
+  };
+  document.getElementById('btnGuardarPredetDtl').onclick = async ()=>{
+    const nombre = document.getElementById('pdlNombre').value.trim();
+    const respNombre = document.getElementById('pdlRespNombre').value.trim();
+    const respCargo = document.getElementById('pdlRespCargo').value.trim() || null;
+    if(!nombre){ toast("Ponle un nombre a la plantilla","err"); return; }
+    if(!respNombre){ toast("Falta el nombre del responsable","err"); return; }
+    if(!p && DTL.predeterminados.length>=PREDET_DTL_MAX){ toast(`Ya tienes el máximo de ${PREDET_DTL_MAX} plantillas`,"err"); return; }
+    let firma = p ? p.firma : null;
+    if(usarPad){
+      if(!sigPad || sigPad.isEmpty()){ toast("Falta la firma","err"); return; }
+      firma = sigPad.dataURL();
+    }
+    const btn = document.getElementById('btnGuardarPredetDtl'); btn.disabled=true; btn.innerHTML="Guardando…";
+    const payload = { nombre, responsable_nombre: respNombre, responsable_cargo: respCargo, firma };
+    const { error } = p
+      ? await sb.from("dtl_predeterminados").update(payload).eq("id", p.id)
+      : await sb.from("dtl_predeterminados").insert({ ...payload, entidad_id: dtlEntidadActualId });
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
+    await loadDtlState();
+    toast(p?"Plantilla actualizada":"Plantilla creada","ok");
+    closeModal();
+  };
+}
+function eliminarPredeterminadoDtl(id){
+  const p = DTL.predeterminados.find(x=>x.id===id);
+  openSubModal(`<div class="modal" style="max-width:420px">
+    <div class="modal-head"><div><h2>Eliminar plantilla</h2><p>Esta acción no se puede deshacer.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminará la plantilla <b>${esc(p?.nombre||'')}</b>. Las entregas ya registradas con esta firma no se ven afectadas.</p></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-danger" id="confDelPredetDtl">${I.trash} Sí, eliminar</button></div></div>`, ()=>abrirPredeterminadosDtlModal());
+  document.getElementById("confDelPredetDtl").onclick = async ()=>{
+    const btn=document.getElementById("confDelPredetDtl"); btn.disabled=true; btn.innerHTML="Eliminando…";
+    const { error } = await sb.from("dtl_predeterminados").delete().eq("id", id);
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`; toast("No se pudo eliminar: "+error.message,"err"); return; }
+    await loadDtlState();
+    toast("Plantilla eliminada","ok");
+    closeModal();
+  };
+}
+
+/* ---------- Nueva entrega presencial (asistente de 3 pasos) ---------- */
+function abrirNuevaEntregaDtl(trabajadorId){
+  let ultimoResp = {};
+  try{ ultimoResp = JSON.parse(localStorage.getItem('dtl_ultimo_responsable')||'{}'); }catch(e){}
+  dtlEntregaDraft = {
+    trabajadorId: trabajadorId || null,
+    fecha: hoyLocal(),
+    pantalonCantidad: 2, pantalonTalla: '',
+    camisaCantidad: 2, camisaTalla: '',
+    botasCantidad: 1, botasTalla: '',
+    adicional: '',
+    responsableNombre: ultimoResp.nombre || '',
+    responsableCargo: ultimoResp.cargo || '',
+    predeterminadoId: null,
+    firmaTrabajador: null,
+    fotoTrabajador: null
+  };
+  renderPasoDtl1();
+}
+
+function renderPasoDtl1(){
+  const t = dtlEntregaDraft.trabajadorId ? DTL.trabajadores.find(x=>x.id===dtlEntregaDraft.trabajadorId) : null;
+  const opcionesTrab = trabajadoresDeEntidad().map(x=>`<option value="${x.id}" ${x.id===dtlEntregaDraft.trabajadorId?'selected':''}>${esc(x.nombre)} — C.C. ${esc(x.identificacion)}</option>`).join('');
+  openModal(`<div class="modal lg">
+    <div class="modal-head"><div><h2>Registrar entrega de dotación</h2><p>Paso 1 de 3 — Elementos a entregar</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      ${t ? `<div class="trab-summary"><div class="tk">Trabajador</div><div class="tv">${esc(t.nombre)} — C.C. ${esc(t.identificacion)}</div></div>`
+          : `<div class="field"><label>Trabajador *</label>
+              <select id="dtlTrabajador"><option value="">Selecciona…</option>${opcionesTrab}</select>
+              <div class="muted-sm" style="margin-top:6px">¿No aparece? Créalo primero desde "Nuevo trabajador" en el panel.</div>
+            </div>`}
+      <div class="field"><label>Fecha de entrega</label><input type="date" id="dtlFecha" value="${dtlEntregaDraft.fecha}"></div>
+
+      <label style="font-weight:700;font-size:14px;display:block;margin:16px 0 10px">Elementos entregados</label>
+      <div class="field row2">
+        <div><label>Pantalones — cantidad</label><input type="number" min="0" id="dtlPantalonCant" value="${dtlEntregaDraft.pantalonCantidad}"></div>
+        <div><label>Talla</label><input id="dtlPantalonTalla" value="${esc(dtlEntregaDraft.pantalonTalla)}" placeholder="Ej. 34"></div>
+      </div>
+      <div class="field row2">
+        <div><label>Camisas — cantidad</label><input type="number" min="0" id="dtlCamisaCant" value="${dtlEntregaDraft.camisaCantidad}"></div>
+        <div><label>Talla</label><input id="dtlCamisaTalla" value="${esc(dtlEntregaDraft.camisaTalla)}" placeholder="Ej. M"></div>
+      </div>
+      <div class="field row2">
+        <div><label>Botas — cantidad</label><input type="number" min="0" id="dtlBotasCant" value="${dtlEntregaDraft.botasCantidad}"></div>
+        <div><label>Talla</label><input id="dtlBotasTalla" value="${esc(dtlEntregaDraft.botasTalla)}" placeholder="Ej. 40"></div>
+      </div>
+      <div class="field"><label>Adicional <span class="opt">(opcional — algo más que se entregue)</span></label><textarea id="dtlAdicional" placeholder="Ej. 1 chaqueta impermeable">${esc(dtlEntregaDraft.adicional)}</textarea></div>
+
+      <div class="field" style="margin-top:14px">
+        <label>Responsable que entrega *</label>
+        ${DTL.predeterminados.length?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px" id="predetDtlChips">
+          ${DTL.predeterminados.map(p=>`<button type="button" class="chip-predet ${p.id===dtlEntregaDraft.predeterminadoId?'active':''}" data-predetdtl-id="${p.id}" title="${esc(p.nombre)}">${esc(p.nombre)}</button>`).join('')}
+        </div>`:''}
+      </div>
+      <div class="field row2">
+        <div><input id="dtlRespNombre" value="${esc(dtlEntregaDraft.responsableNombre)}" placeholder="Nombre del responsable" ${dtlEntregaDraft.predeterminadoId?'readonly':''}></div>
+        <div><input id="dtlRespCargo" value="${esc(dtlEntregaDraft.responsableCargo)}" placeholder="Cargo" ${dtlEntregaDraft.predeterminadoId?'readonly':''}></div>
+      </div>
+      <p class="muted-sm" id="dtlQuienFirma" style="margin-top:-6px"></p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnDtlContinuar">${I.check} Continuar a firmas</button>
+    </div>
+  </div>`);
+  actualizarQuienFirmaDtl();
+  wireDtlPredetChips();
+  document.getElementById('btnDtlContinuar').onclick = validarYContinuarPasoDtl1;
+}
+
+function wireDtlPredetChips(){
+  document.querySelectorAll('#predetDtlChips [data-predetdtl-id]').forEach(chip=>{
+    chip.onclick = ()=>{
+      const id = chip.dataset.predetdtlId;
+      const yaActivo = dtlEntregaDraft.predeterminadoId === id;
+      dtlEntregaDraft.predeterminadoId = yaActivo ? null : id;
+      document.querySelectorAll('#predetDtlChips [data-predetdtl-id]').forEach(c=> c.classList.toggle('active', c.dataset.predetdtlId===dtlEntregaDraft.predeterminadoId));
+      const nombreInput = document.getElementById('dtlRespNombre'), cargoInput = document.getElementById('dtlRespCargo');
+      if(dtlEntregaDraft.predeterminadoId){
+        const p = DTL.predeterminados.find(x=>x.id===dtlEntregaDraft.predeterminadoId);
+        nombreInput.value = p.responsable_nombre; cargoInput.value = p.responsable_cargo||'';
+        nombreInput.setAttribute('readonly',''); cargoInput.setAttribute('readonly','');
+      } else {
+        nombreInput.removeAttribute('readonly'); cargoInput.removeAttribute('readonly');
+      }
+      actualizarQuienFirmaDtl();
+    };
+  });
+}
+function actualizarQuienFirmaDtl(){
+  const el = document.getElementById('dtlQuienFirma'); if(!el) return;
+  const p = dtlEntregaDraft.predeterminadoId ? DTL.predeterminados.find(x=>x.id===dtlEntregaDraft.predeterminadoId) : null;
+  el.textContent = p ? `Firmará: ${p.responsable_nombre} — usando la firma guardada de "${p.nombre}", no se pedirá de nuevo.` : '';
+}
+
+function validarYContinuarPasoDtl1(){
+  const selTrab = document.getElementById('dtlTrabajador');
+  if(selTrab){ dtlEntregaDraft.trabajadorId = selTrab.value || null; }
+  if(!dtlEntregaDraft.trabajadorId){ toast("Selecciona el trabajador","err"); return; }
+  dtlEntregaDraft.fecha = document.getElementById('dtlFecha').value || hoyLocal();
+  dtlEntregaDraft.pantalonCantidad = +document.getElementById('dtlPantalonCant').value || 0;
+  dtlEntregaDraft.pantalonTalla = document.getElementById('dtlPantalonTalla').value.trim();
+  dtlEntregaDraft.camisaCantidad = +document.getElementById('dtlCamisaCant').value || 0;
+  dtlEntregaDraft.camisaTalla = document.getElementById('dtlCamisaTalla').value.trim();
+  dtlEntregaDraft.botasCantidad = +document.getElementById('dtlBotasCant').value || 0;
+  dtlEntregaDraft.botasTalla = document.getElementById('dtlBotasTalla').value.trim();
+  dtlEntregaDraft.adicional = document.getElementById('dtlAdicional').value.trim();
+  dtlEntregaDraft.responsableNombre = document.getElementById('dtlRespNombre').value.trim();
+  dtlEntregaDraft.responsableCargo = document.getElementById('dtlRespCargo').value.trim();
+  if(!dtlEntregaDraft.responsableNombre){ toast("Falta el nombre del responsable que entrega","err"); return; }
+  if(dtlEntregaDraft.pantalonCantidad<=0 && dtlEntregaDraft.camisaCantidad<=0 && dtlEntregaDraft.botasCantidad<=0 && !dtlEntregaDraft.adicional){
+    toast("Agrega al menos un elemento a entregar","err"); return;
+  }
+  localStorage.setItem('dtl_ultimo_responsable', JSON.stringify({ nombre: dtlEntregaDraft.responsableNombre, cargo: dtlEntregaDraft.responsableCargo }));
+  renderPasoDtl2();
+}
+
+function renderPasoDtl2(){
+  const t = DTL.trabajadores.find(x=>x.id===dtlEntregaDraft.trabajadorId);
+  const resumen = [];
+  if(dtlEntregaDraft.pantalonCantidad>0) resumen.push(`<span class="entrega-item-tag">Pantalón × ${dtlEntregaDraft.pantalonCantidad}${dtlEntregaDraft.pantalonTalla?' · '+esc(dtlEntregaDraft.pantalonTalla):''}</span>`);
+  if(dtlEntregaDraft.camisaCantidad>0) resumen.push(`<span class="entrega-item-tag">Camisa × ${dtlEntregaDraft.camisaCantidad}${dtlEntregaDraft.camisaTalla?' · '+esc(dtlEntregaDraft.camisaTalla):''}</span>`);
+  if(dtlEntregaDraft.botasCantidad>0) resumen.push(`<span class="entrega-item-tag">Botas × ${dtlEntregaDraft.botasCantidad}${dtlEntregaDraft.botasTalla?' · '+esc(dtlEntregaDraft.botasTalla):''}</span>`);
+  if(dtlEntregaDraft.adicional) resumen.push(`<span class="entrega-item-tag">${esc(dtlEntregaDraft.adicional)}</span>`);
+  const guardada = dtlEntregaDraft.firmaTrabajador;
+  openModal(`<div class="modal" style="max-width:560px">
+    <div class="modal-head"><div><h2>Firma del trabajador</h2><p>Paso 2 de 3 — ${esc(t?.nombre||'')}</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div style="margin-bottom:14px">${resumen.join('')}</div>
+      <div style="margin-bottom:14px">
+        <p class="muted-sm" style="margin-bottom:6px">Foto del trabajador recibiendo <span class="opt">(opcional)</span></p>
+        <div id="fotoTrabDtlPreview">${fotoTrabDtlPreviewHTML()}</div>
+        <input type="file" id="fileFotoTrabDtl" accept="image/*" capture="user" style="display:none">
+      </div>
+      <div class="firma-legal" style="margin-bottom:14px">
+        <p>${esc(DTL_DECLARACION)}</p>
+      </div>
+      ${guardada?`<div id="firmaTGuardadaDtl" style="text-align:center;margin-bottom:12px"><img src="${guardada}" style="height:80px;max-width:100%;border:1px solid var(--line);border-radius:8px;background:#fff;padding:4px"></div>`:''}
+      <div id="padWrapTDtl" style="${guardada?'display:none':''}">
+        <div class="sig-box" id="sigBox"><canvas id="sigCanvas"></canvas><div class="sig-placeholder" id="sigPh">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div></div>
+        <div class="sig-actions"><button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar</button></div>
+      </div>
+      ${guardada?`<button class="btn btn-ghost btn-sm" id="btnRefirmarTDtl">${I.pen} Firmar de nuevo</button>`:''}
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="renderPasoDtl1()">${I.back} Atrás</button>
+      <button class="btn btn-green" id="btnFirmaTrabOkDtl">${I.check} ${guardada?'Continuar':'Firmar y continuar'}</button>
+    </div>
+  </div>`);
+  wireFotoTrabDtlPreview();
+  let usarPad = !guardada;
+  if(usarPad){ initSignature(); document.getElementById('sigClear').onclick = ()=> sigPad.clear(); }
+  const reBtn = document.getElementById('btnRefirmarTDtl');
+  if(reBtn) reBtn.onclick = ()=>{
+    document.getElementById('firmaTGuardadaDtl').style.display='none';
+    document.getElementById('padWrapTDtl').style.display='block';
+    usarPad = true; reBtn.style.display='none';
+    initSignature(); document.getElementById('sigClear').onclick = ()=> sigPad.clear();
+  };
+  document.getElementById('btnFirmaTrabOkDtl').onclick = ()=>{
+    if(usarPad){
+      if(!sigPad || sigPad.isEmpty()){ toast("El trabajador debe firmar primero","err"); return; }
+      dtlEntregaDraft.firmaTrabajador = sigPad.dataURL();
+    }
+    renderPasoDtl3();
+  };
+}
+
+/* Foto opcional del trabajador (paso 2 del asistente de entrega presencial) */
+function fotoTrabDtlPreviewHTML(){
+  return dtlEntregaDraft.fotoTrabajador
+    ? `<div class="cap-prev"><img src="${dtlEntregaDraft.fotoTrabajador}"><button class="btn btn-ghost btn-sm" id="btnCambiarFotoTrabDtl">${I.pen} Cambiar foto</button></div>`
+    : `<button class="btn btn-ghost btn-sm" id="btnTomarFotoTrabDtl">${I.user} Tomar foto</button>`;
+}
+function wireFotoTrabDtlPreview(){
+  const inp = document.getElementById('fileFotoTrabDtl');
+  inp.onchange = async ()=>{
+    const f = inp.files[0]; if(!f) return;
+    dtlEntregaDraft.fotoTrabajador = await comprimirImagen(f, 700);
+    inp.value = '';
+    document.getElementById('fotoTrabDtlPreview').innerHTML = fotoTrabDtlPreviewHTML();
+    wireFotoTrabDtlPreview();
+  };
+  const bt = document.getElementById('btnTomarFotoTrabDtl'); if(bt) bt.onclick = ()=> inp.click();
+  const bc = document.getElementById('btnCambiarFotoTrabDtl'); if(bc) bc.onclick = ()=> inp.click();
+}
+
+function renderPasoDtl3(){
+  const plantilla = dtlEntregaDraft.predeterminadoId ? DTL.predeterminados.find(x=>x.id===dtlEntregaDraft.predeterminadoId) : null;
+  openModal(`<div class="modal" style="max-width:560px">
+    <div class="modal-head"><div><h2>Firma del responsable</h2><p>Paso 3 de 3 — ${esc(dtlEntregaDraft.responsableNombre||'')}</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <p class="muted-sm" style="margin-bottom:10px">Confirma que hiciste la entrega.</p>
+      ${plantilla?`
+      <div id="firmaRGuardadaDtl" style="text-align:center;margin-bottom:12px"><img src="${plantilla.firma}" style="height:80px;max-width:100%;border:1px solid var(--line);border-radius:8px;background:#fff;padding:4px"></div>
+      <p class="muted-sm" style="text-align:center;margin-bottom:10px">Firma guardada en "${esc(plantilla.nombre)}"</p>
+      <div style="display:flex;justify-content:center;margin-bottom:6px">
+        <button class="btn btn-ghost btn-sm" id="btnRefirmarRDtl">${I.pen} Firmar de nuevo (solo para esta entrega)</button>
+      </div>`:''}
+      <div id="padWrapRDtl" style="${plantilla?'display:none':''}">
+        <div class="sig-box" id="sigBox"><canvas id="sigCanvas"></canvas><div class="sig-placeholder" id="sigPh">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div></div>
+        <div class="sig-actions"><button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar</button></div>
+        ${!plantilla && DTL.predeterminados.length<PREDET_DTL_MAX?`
+        <label class="chk" style="margin-top:8px" id="chkWrapGuardarPredetDtl"><input type="checkbox" id="chkGuardarPredetDtl" checked> Guardar como plantilla predeterminada (Predeterminado)</label>
+        <div class="field" id="nuevaPredetDtlNombreWrap" style="margin-top:6px"><input id="nuevaPredetDtlNombre" placeholder="Nombre de la plantilla, ej. Plantilla1"></div>`:''}
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="renderPasoDtl2()">${I.back} Atrás</button>
+      <button class="btn btn-green" id="btnFirmaRespOkDtl">${I.check} Guardar entrega</button>
+    </div>
+  </div>`);
+  let usarGuardada = !!plantilla;
+  if(!usarGuardada){ initSignature(); document.getElementById('sigClear').onclick = ()=> sigPad.clear(); }
+  const chkGuardarPredet = document.getElementById('chkGuardarPredetDtl');
+  if(chkGuardarPredet) chkGuardarPredet.onchange = ()=>{
+    document.getElementById('nuevaPredetDtlNombreWrap').style.display = chkGuardarPredet.checked ? 'block' : 'none';
+  };
+  const reBtn = document.getElementById('btnRefirmarRDtl');
+  if(reBtn) reBtn.onclick = ()=>{
+    document.getElementById('firmaRGuardadaDtl').style.display='none';
+    reBtn.parentElement.style.display='none';
+    document.getElementById('padWrapRDtl').style.display='block';
+    usarGuardada = false;
+    initSignature(); document.getElementById('sigClear').onclick = ()=> sigPad.clear();
+  };
+  document.getElementById('btnFirmaRespOkDtl').onclick = async ()=>{
+    let firma;
+    if(usarGuardada){
+      firma = plantilla.firma;
+    } else {
+      if(!sigPad || sigPad.isEmpty()){ toast("Falta la firma del responsable","err"); return; }
+      firma = sigPad.dataURL();
+      const chk = document.getElementById('chkGuardarPredetDtl');
+      if(chk && chk.checked){
+        const nombrePlantilla = document.getElementById('nuevaPredetDtlNombre').value.trim() || ('Plantilla '+(DTL.predeterminados.length+1));
+        const { error } = await sb.from("dtl_predeterminados").insert({
+          nombre: nombrePlantilla,
+          responsable_nombre: dtlEntregaDraft.responsableNombre || '',
+          responsable_cargo: dtlEntregaDraft.responsableCargo || null,
+          firma,
+          entidad_id: dtlEntidadActualId
+        });
+        if(error) toast("La entrega se va a guardar, pero no se pudo guardar la plantilla: "+error.message,"err");
+        else await loadDtlState();
+      }
+    }
+    const btn=document.getElementById('btnFirmaRespOkDtl'); btn.disabled=true; btn.innerHTML="Guardando…";
+    await guardarEntregaDtlFinal(firma);
+  };
+}
+
+async function guardarEntregaDtlFinal(firmaResponsable){
+  bloquear("Guardando entrega…");
+  try{
+    const { error } = await sb.from("dtl_entregas").insert({
+      trabajador_id: dtlEntregaDraft.trabajadorId,
+      fecha: dtlEntregaDraft.fecha,
+      pantalon_cantidad: dtlEntregaDraft.pantalonCantidad, pantalon_talla: dtlEntregaDraft.pantalonTalla || null,
+      camisa_cantidad: dtlEntregaDraft.camisaCantidad, camisa_talla: dtlEntregaDraft.camisaTalla || null,
+      botas_cantidad: dtlEntregaDraft.botasCantidad, botas_talla: dtlEntregaDraft.botasTalla || null,
+      adicional: dtlEntregaDraft.adicional || null,
+      responsable_nombre: dtlEntregaDraft.responsableNombre || null,
+      responsable_cargo: dtlEntregaDraft.responsableCargo || null,
+      firma_trabajador: dtlEntregaDraft.firmaTrabajador,
+      firma_responsable: firmaResponsable,
+      foto_trabajador: dtlEntregaDraft.fotoTrabajador,
+      via: 'presencial'
+    });
+    if(error){ toast("No se pudo guardar la entrega: "+error.message,"err"); return; }
+    const trabId = dtlEntregaDraft.trabajadorId;
+    const yaEstabaEnFicha = location.hash === "#/dotacionlegal/trabajador/"+trabId;
+    dtlEntregaDraft = null;
+    await loadDtlState();
+    closeModal();
+    toast("Entrega registrada correctamente","ok");
+    if(yaEstabaEnFicha){ await renderFichaTrabajadorDtl(trabId); }
+    else { location.hash = "#/dotacionlegal/trabajador/"+trabId; }
+  } finally { desbloquear(); }
+}
+
+/* ---------- Ficha del trabajador: historial completo + kárdex imprimible ---------- */
+async function renderFichaTrabajadorDtl(id){
+  bloquear("Cargando ficha…");
+  try{
+    await loadDtlState();
+    const t = DTL.trabajadores.find(x=>x.id===id);
+    if(!t){ toast("Trabajador no encontrado","err"); location.hash="#/dotacionlegal"; return; }
+    const { data: entregas } = await sb.from("dtl_entregas")
+      .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,via")
+      .eq("trabajador_id", id).order("fecha",{ascending:false});
+    const listaEntregas = entregas || [];
+
+    const filas = listaEntregas.map(e=>{
+      const partes = [];
+      if(e.pantalon_cantidad>0) partes.push(`Pantalón × ${e.pantalon_cantidad}${e.pantalon_talla?' ('+esc(e.pantalon_talla)+')':''}`);
+      if(e.camisa_cantidad>0) partes.push(`Camisa × ${e.camisa_cantidad}${e.camisa_talla?' ('+esc(e.camisa_talla)+')':''}`);
+      if(e.botas_cantidad>0) partes.push(`Botas × ${e.botas_cantidad}${e.botas_talla?' ('+esc(e.botas_talla)+')':''}`);
+      if(e.adicional) partes.push(esc(e.adicional));
+      return `<tr>
+        <td>${fmtDate(e.fecha)}</td>
+        <td>${partes.join(', ')||'—'}</td>
+        <td>${esc(e.responsable_nombre||(e.via==='remoto'?'(entrega remota)':'—'))}</td>
+        <td>${puedeEscribir()?`<button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntregaDtl('${e.id}','${t.id}')">${I.trash}</button>`:''}</td>
+      </tr>`;
+    }).join('');
+
+    document.getElementById("app").innerHTML = `
+      ${topbar('dotacionlegal')}
+      <div class="wrap">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" id="btnVolverDtl">${I.back} Volver</button>
+        </div>
+        <div class="page-head">
+          <div><h1>${esc(t.nombre)}</h1><p>C.C. ${esc(t.identificacion)}${t.cargo?' · '+esc(t.cargo):''}${t.area?' · '+esc(t.area):''} · ${esc(DTL.entidades.find(x=>x.id===t.entidad_id)?.nombre||'—')}</p></div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            ${puedeEscribir()?`<button class="btn btn-ghost" id="btnEditarTrabDtl">${I.pen} Editar datos</button>`:''}
+            ${listaEntregas.length?`<button class="btn btn-ghost" id="btnKardexDtl">${I.pdf} Imprimir kárdex</button>`:''}
+            ${puedeEscribir()?`<button class="btn btn-primary" id="btnNuevaEntregaFichaDtl">${I.plus} Registrar entrega</button>`:''}
+          </div>
+        </div>
+        <div class="sec-bar"><h2>Historial de entregas</h2><span class="muted-sm">${listaEntregas.length} registrada(s)</span></div>
+        ${listaEntregas.length?`<div class="table-wrap"><table class="dt"><thead><tr><th>Fecha</th><th>Elementos entregados</th><th>Responsable</th><th>Acciones</th></tr></thead><tbody>${filas}</tbody></table></div>`
+          :`<div class="empty"><div class="ic">${I.box}</div><h3>Sin entregas todavía</h3><p>Registra la primera entrega de dotación para este trabajador.</p></div>`}
+      </div>`;
+    wireLogout();
+    document.getElementById('btnVolverDtl').onclick = ()=> location.hash="#/dotacionlegal";
+    const bet = document.getElementById('btnEditarTrabDtl'); if(bet) bet.onclick = ()=> abrirTrabajadorDtlForm(t.id);
+    const bk = document.getElementById('btnKardexDtl'); if(bk) bk.onclick = ()=> generarKardexDtlPDF(t.id);
+    const bnef = document.getElementById('btnNuevaEntregaFichaDtl'); if(bnef) bnef.onclick = ()=> abrirNuevaEntregaDtl(t.id);
+  } finally { desbloquear(); }
+}
+
+function eliminarEntregaDtl(entregaId, trabajadorId){
+  openModal(`<div class="modal" style="max-width:440px">
+    <div class="modal-head"><div><h2>Eliminar entrega</h2><p>Esta acción no se puede deshacer.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminará este registro de entrega junto con sus firmas. Úsalo solo si fue un error.</p></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-danger" id="confDelEntDtl">${I.trash} Sí, eliminar</button></div></div>`);
+  document.getElementById("confDelEntDtl").onclick = async ()=>{
+    const btn=document.getElementById("confDelEntDtl"); btn.disabled=true; btn.innerHTML="Eliminando…";
+    const { error } = await sb.from("dtl_entregas").delete().eq("id", entregaId);
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`; toast("No se pudo eliminar: "+error.message,"err"); return; }
+    closeModal();
+    toast("Entrega eliminada","ok");
+    renderFichaTrabajadorDtl(trabajadorId);
+  };
+}
+
+/* ---------- Kárdex acumulado en PDF ---------- */
+async function construirKardexDtlPDF(trabajadorId){
+  const { data: t } = await sb.from("dtl_trabajadores").select("id,nombre,identificacion,cargo,area,entidad_id").eq("id",trabajadorId).maybeSingle();
+  if(!t) return null;
+  const { data: entregas } = await sb.from("dtl_entregas")
+    .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,firma_trabajador,firma_responsable,foto_trabajador,creado_en")
+    .eq("trabajador_id", trabajadorId).order("fecha",{ascending:true});
+  const listaEntregas = entregas || [];
+  if(!listaEntregas.length) return null;
+  const nombreEntidad = (DTL.entidades.find(x=>x.id===t.entidad_id)||{}).nombre || "";
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:"mm", format:"a4"});
+  const PW = 210, M = 10, RIGHT = PW - M;
+  const x0=M, x1=M+18, x2=M+78, x2f=M+104, x3=M+139, x4=RIGHT;
+
+  function grayHead(y,h){ doc.setFillColor(238,241,248); doc.rect(M,y,RIGHT-M,h,"F"); }
+
+  function encabezado(){
+    let y=M;
+    const hH=24, logoW=44;
+    doc.setDrawColor(150,160,190); doc.setLineWidth(0.3); doc.rect(M,y,RIGHT-M,hH);
+    doc.line(M+logoW,y,M+logoW,y+hH);
+    try{ doc.addImage(LOGO,"JPEG",M+4,y+2,36,36*315/570); }catch(e){}
+    doc.setTextColor(20,33,90); doc.setFont("helvetica","bold"); doc.setFontSize(14);
+    doc.text("CONTROL DE ENTREGA DE DOTACIÓN", M+logoW+(RIGHT-M-logoW)/2, y+13, {align:"center"});
+    doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(90,90,110);
+    doc.text(pdfTexto("Kárdex acumulado por trabajador"+(nombreEntidad?" · "+nombreEntidad:"")+" · Don Aseo Ltda."), M+logoW+(RIGHT-M-logoW)/2, y+19, {align:"center"});
+    y += hH;
+
+    const fh=16;
+    doc.setDrawColor(150,160,190); doc.rect(M,y,RIGHT-M,fh);
+    doc.line(M+95,y,M+95,y+fh);
+    doc.setFont("helvetica","bold"); doc.setFontSize(7); doc.setTextColor(90,90,110);
+    doc.text("TRABAJADOR", M+3, y+5);
+    doc.text("CARGO / ÁREA", M+98, y+5);
+    doc.setFont("helvetica","bold"); doc.setFontSize(10.5); doc.setTextColor(20,20,20);
+    doc.text(pdfTexto(t.nombre||""), M+3, y+11);
+    doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(60,60,70);
+    doc.text("C.C. "+(t.identificacion||""), M+3, y+15.5);
+    doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor(20,20,20);
+    doc.text(doc.splitTextToSize(pdfTexto((t.cargo||"—")+(t.area?(" · "+t.area):"")), RIGHT-M-100), M+98, y+11);
+    y += fh + 2;
+    return y;
+  }
+
+  function tablaHead(y){
+    const h=8;
+    grayHead(y,h);
+    doc.setDrawColor(150,160,190);
+    [x0,x1,x2,x2f,x3,x4].forEach(x=>doc.line(x,y,x,y+h));
+    doc.rect(M,y,RIGHT-M,h);
+    doc.setFont("helvetica","bold"); doc.setFontSize(7); doc.setTextColor(40,40,60);
+    const ct=(a,b,txt)=>doc.text(txt,(a+b)/2,y+5.2,{align:"center"});
+    ct(x0,x1,"FECHA"); ct(x1,x2,"ELEMENTOS ENTREGADOS");
+    ct(x2,x2f,"FOTO"); ct(x2f,x3,"FIRMA TRABAJADOR"); ct(x3,x4,"FIRMA RESPONSABLE");
+    return y+h;
+  }
+
+  const FOOTER_Y = 282;
+  function piePagina(pag){
+    doc.setFontSize(5.8); doc.setTextColor(140,140,160);
+    doc.text(doc.splitTextToSize(pdfTexto(DTL_DECLARACION), RIGHT-M), PW/2, FOOTER_Y-4, {align:"center"});
+    doc.text("Generado el "+fmtDateTime(new Date())+" · Don Aseo Ltda. · Pág. "+pag, PW/2, FOOTER_Y+8, {align:"center"});
+  }
+
+  const FOOTER_TOP = 265;
+  let y = encabezado();
+  y = tablaHead(y);
+  let pag = 1;
+  const colFotoW = x2f-x2-4;
+  for(const e of listaEntregas){
+    const partes = [];
+    if(e.pantalon_cantidad>0) partes.push("• Pantalón × "+e.pantalon_cantidad+(e.pantalon_talla?" ("+e.pantalon_talla+")":""));
+    if(e.camisa_cantidad>0) partes.push("• Camisa × "+e.camisa_cantidad+(e.camisa_talla?" ("+e.camisa_talla+")":""));
+    if(e.botas_cantidad>0) partes.push("• Botas × "+e.botas_cantidad+(e.botas_talla?" ("+e.botas_talla+")":""));
+    if(e.adicional) partes.push("• "+e.adicional);
+    const lineas = partes.length ? partes : ["—"];
+    const wrapped = doc.splitTextToSize(pdfTexto(lineas.join("\n")), x2-x1-4);
+    let rowH = Math.max(16, wrapped.length*3.6 + 5);
+    let fotoH = 0;
+    const dims = e.foto_trabajador ? await getImageSize(e.foto_trabajador) : null;
+    if(dims && dims.w>0){ fotoH = Math.min(90, colFotoW * (dims.h/dims.w)); rowH = Math.max(rowH, fotoH+4); }
+    if(y + rowH > FOOTER_TOP){
+      piePagina(pag);
+      doc.addPage(); pag++;
+      y = M+2; y = tablaHead(y);
+    }
+    doc.setDrawColor(180,188,210);
+    [x0,x1,x2,x2f,x3,x4].forEach(x=>doc.line(x,y,x,y+rowH));
+    doc.line(M,y+rowH,RIGHT,y+rowH);
+    doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(20,20,20);
+    doc.text(fmtDate(e.fecha), (x0+x1)/2, y+rowH/2-0.5, {align:"center"});
+    if(e.creado_en){
+      const horaFirma = new Date(e.creado_en).toLocaleTimeString("es-CO",{hour:'2-digit',minute:'2-digit'});
+      doc.setFontSize(6.5); doc.setTextColor(120,120,140);
+      doc.text(horaFirma, (x0+x1)/2, y+rowH/2+4, {align:"center"});
+    }
+    doc.setFontSize(7.4); doc.setTextColor(20,20,20);
+    doc.text(wrapped, x1+2, y+5);
+    if(e.foto_trabajador){
+      try{
+        if(dims && dims.w>0) doc.addImage(e.foto_trabajador,"JPEG",x2+2,y+2,colFotoW,fotoH);
+        else doc.addImage(e.foto_trabajador,"JPEG",x2+2,y+2,colFotoW,rowH-4);
+      }catch(err){}
+    }
+    if(e.firma_trabajador){ try{ doc.addImage(e.firma_trabajador,"PNG",x2f+3,y+2,x3-x2f-6,rowH-4); }catch(err){} }
+    if(e.firma_responsable){ try{ doc.addImage(e.firma_responsable,"PNG",x3+3,y+2,x4-x3-6,rowH-4); }catch(err){} }
+    doc.setFontSize(6); doc.setTextColor(120,120,140);
+    if(e.responsable_nombre) doc.text(pdfTexto(e.responsable_nombre), x3+3, y+rowH-1.5);
+    y += rowH;
+  }
+  piePagina(pag);
+
+  const safe = (t.nombre||"trabajador").replace(/[^\w\sáéíóúñ-]/gi,"").trim().replace(/\s+/g,"_").slice(0,40);
+  return { doc, nombreBase: safe };
+}
+
+async function generarKardexDtlPDF(trabajadorId){
+  if(!window.jspdf || !window.jspdf.jsPDF){ toast("No se pudo cargar el generador de PDF (revisa tu conexión)","err"); return; }
+  bloquear("Generando PDF…");
+  try{
+    const r = await construirKardexDtlPDF(trabajadorId);
+    if(!r){ toast("Este trabajador no tiene entregas registradas","err"); return; }
+    r.doc.save("Kardex_dotacion_"+r.nombreBase+".pdf");
+    toast("PDF generado","ok");
+  }catch(e){ console.error(e); toast("No se pudo generar el PDF: "+(e.message||''),"err"); }
+  finally{ desbloquear(); }
+}
+
+async function descargarZipKardexDtlTodos(){
+  if(!window.jspdf || !window.jspdf.jsPDF){ toast("No se pudo cargar el generador de PDF (revisa tu conexión)","err"); return; }
+  if(!window.JSZip){ toast("No se pudo cargar el compresor ZIP (revisa tu conexión)","err"); return; }
+  const lista = trabajadoresDeEntidad();
+  if(!lista.length){ toast("No hay trabajadores para exportar","err"); return; }
+  bloquear("Preparando ZIP…");
+  try{
+    const zip = new JSZip();
+    const usados = {};
+    let incluidos = 0, sinEntregas = 0;
+    for(let i=0;i<lista.length;i++){
+      const t = lista[i];
+      bloquearMsg(`Generando kárdex ${i+1} de ${lista.length}…`);
+      try{
+        const r = await construirKardexDtlPDF(t.id);
+        if(!r){ sinEntregas++; continue; }
+        let base = r.nombreBase || ('trabajador_'+(i+1));
+        if(usados[base]!=null){ usados[base]++; base = base+'_'+usados[base]; } else usados[base]=0;
+        zip.file(base+'.pdf', r.doc.output('arraybuffer'));
+        incluidos++;
+      }catch(e){ console.warn('kardex zip', t.id, e); }
+    }
+    if(!incluidos){ toast("Ningún trabajador tiene entregas registradas todavía","err"); return; }
+    bloquearMsg("Comprimiendo ZIP…");
+    const blob = await zip.generateAsync({ type:'blob', compression:'DEFLATE' });
+    const url = URL.createObjectURL(blob);
+    const nombreEntidad = entidadDtlActual()?.nombre || 'entidad';
+    const safeEntidad = String(nombreEntidad).replace(/[^\w\sáéíóúñ-]/gi,'').trim().replace(/\s+/g,'_').slice(0,40);
+    const a = document.createElement('a'); a.href=url;
+    a.download = 'Kardex_dotacion_'+safeEntidad+'.zip';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 6000);
+    let msg = `ZIP generado con ${incluidos} kárdex`;
+    if(sinEntregas) msg += ` (${sinEntregas} trabajador(es) sin entregas, omitido(s))`;
+    toast(msg,"ok");
+  }catch(e){ console.error(e); toast("No se pudo generar el ZIP: "+(e.message||''),"err"); }
+  finally{ desbloquear(); }
+}
+
+/* ============================================================
+   Flujo público — enlace ÚNICO para toda la empresa (#/dotacionlegal/entrega)
+   Sin login. La persona escribe su cédula; si está en el directorio
+   (de cualquier entidad), puede registrar su propia entrega remota.
+   ============================================================ */
+let dtlPublicoState = { trabajador:null, foto:null };
+
+async function renderDtlPublico(){
+  dtlPublicoState = { trabajador:null, foto:null };
+  renderDtlPublicoCedula();
+}
+
+function renderDtlPublicoCedula(){
+  document.getElementById("app").innerHTML = `
+    <div class="pub-wrap"><div class="pub-card"><div class="pub-body">
+      <img src="${LOGO}" alt="Don Aseo Ltda." style="height:48px;display:block;margin:0 auto 18px">
+      <h2 style="text-align:center;margin-bottom:6px">Entrega de dotación</h2>
+      <p class="muted-sm" style="text-align:center;margin-bottom:20px">Escribe tu número de cédula para continuar.</p>
+      <div class="field"><label>Número de identificación (cédula) *</label><input id="dpCedula" inputmode="numeric" placeholder="C.C."></div>
+      <div id="dpError" class="login-err"></div>
+      <button class="btn btn-primary" id="dpBuscarBtn" style="width:100%;padding:13px;margin-top:6px">${I.check} Continuar</button>
+    </div></div></div>`;
+  document.getElementById('dpBuscarBtn').onclick = async ()=>{
+    const cedula = document.getElementById('dpCedula').value.trim();
+    const err = document.getElementById('dpError');
+    err.textContent = '';
+    if(!cedula){ err.textContent = 'Escribe tu cédula.'; return; }
+    const btn = document.getElementById('dpBuscarBtn'); btn.disabled=true; btn.innerHTML='Buscando…';
+    const { data, error } = await sb.rpc('dtl_publico_buscar', { p_cedula: cedula });
+    btn.disabled=false; btn.innerHTML=`${I.check} Continuar`;
+    if(error || !data || !data.ok){
+      err.textContent = 'No encontramos tu cédula en el sistema. Contacta a Recursos Humanos.';
+      return;
+    }
+    dtlPublicoState.trabajador = data.trabajador;
+    renderDtlPublicoFormulario();
+  };
+}
+
+function renderDtlPublicoFormulario(){
+  const t = dtlPublicoState.trabajador;
+  document.getElementById("app").innerHTML = `
+    <div class="pub-wrap"><div class="pub-card"><div class="pub-body">
+      <img src="${LOGO}" alt="Don Aseo Ltda." style="height:40px;display:block;margin:0 auto 14px">
+      <div class="trab-summary" style="margin-bottom:16px">
+        <div class="tk">Recibe</div>
+        <div class="tv">${esc(t.nombre)} — C.C. ${esc(t.identificacion)}</div>
+        ${t.entidad_nombre?`<div class="muted-sm" style="margin-top:2px">${esc(t.entidad_nombre)}</div>`:''}
+      </div>
+      <label style="font-weight:700;font-size:14px;display:block;margin-bottom:10px">Elementos que estás recibiendo</label>
+      <div class="field row2">
+        <div><label>Pantalones — cantidad</label><input type="number" min="0" id="dpPantalonCant" value="2"></div>
+        <div><label>Talla</label><input id="dpPantalonTalla" placeholder="Ej. 34"></div>
+      </div>
+      <div class="field row2">
+        <div><label>Camisas — cantidad</label><input type="number" min="0" id="dpCamisaCant" value="2"></div>
+        <div><label>Talla</label><input id="dpCamisaTalla" placeholder="Ej. M"></div>
+      </div>
+      <div class="field row2">
+        <div><label>Botas — cantidad</label><input type="number" min="0" id="dpBotasCant" value="1"></div>
+        <div><label>Talla</label><input id="dpBotasTalla" placeholder="Ej. 40"></div>
+      </div>
+      <div class="field"><label>Adicional <span class="opt">(opcional)</span></label><textarea id="dpAdicional" placeholder="Algo más que estés recibiendo…"></textarea></div>
+
+      <div style="margin-bottom:14px">
+        <p class="muted-sm" style="margin-bottom:6px">Tu foto <span class="opt">(opcional)</span></p>
+        <div id="dpFotoPreview">${dpFotoPreviewHTML()}</div>
+        <input type="file" id="dpFileFoto" accept="image/*" capture="user" style="display:none">
+      </div>
+
+      <div class="firma-legal" style="margin-bottom:14px">
+        <p>${esc(DTL_DECLARACION)}</p>
+      </div>
+
+      <div class="sig-box" id="sigBox"><canvas id="sigCanvas"></canvas><div class="sig-placeholder" id="sigPh">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div></div>
+      <div class="sig-actions"><button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar</button></div>
+
+      <div id="dpError" class="login-err" style="margin-top:10px"></div>
+      <button class="btn btn-primary" id="dpConfirmarBtn" style="width:100%;padding:13px;margin-top:14px">${I.check} Confirmar entrega</button>
+    </div></div></div>`;
+  initSignature();
+  document.getElementById('sigClear').onclick = ()=> sigPad.clear();
+  wireDpFotoPreview();
+  document.getElementById('dpConfirmarBtn').onclick = confirmarEntregaDtlPublica;
+}
+
+function dpFotoPreviewHTML(){
+  return dtlPublicoState.foto
+    ? `<div class="cap-prev"><img src="${dtlPublicoState.foto}"><button class="btn btn-ghost btn-sm" id="dpBtnCambiarFoto">${I.pen} Cambiar foto</button></div>`
+    : `<button class="btn btn-ghost btn-sm" id="dpBtnTomarFoto">${I.user} Tomar foto</button>`;
+}
+function wireDpFotoPreview(){
+  const inp = document.getElementById('dpFileFoto');
+  inp.onchange = async ()=>{
+    const f = inp.files[0]; if(!f) return;
+    dtlPublicoState.foto = await comprimirImagen(f, 700);
+    inp.value = '';
+    document.getElementById('dpFotoPreview').innerHTML = dpFotoPreviewHTML();
+    wireDpFotoPreview();
+  };
+  const bt = document.getElementById('dpBtnTomarFoto'); if(bt) bt.onclick = ()=> inp.click();
+  const bc = document.getElementById('dpBtnCambiarFoto'); if(bc) bc.onclick = ()=> inp.click();
+}
+
+async function confirmarEntregaDtlPublica(){
+  const err = document.getElementById('dpError'); err.textContent = '';
+  if(!sigPad || sigPad.isEmpty()){ err.textContent = 'Falta tu firma.'; return; }
+  const btn = document.getElementById('dpConfirmarBtn'); btn.disabled=true; btn.innerHTML='Guardando…';
+  const firma = sigPad.dataURL();
+  const { data, error } = await sb.rpc('dtl_publico_registrar', {
+    p_trabajador_id: dtlPublicoState.trabajador.id,
+    p_pantalon_cantidad: +document.getElementById('dpPantalonCant').value || 0,
+    p_pantalon_talla: document.getElementById('dpPantalonTalla').value.trim() || null,
+    p_camisa_cantidad: +document.getElementById('dpCamisaCant').value || 0,
+    p_camisa_talla: document.getElementById('dpCamisaTalla').value.trim() || null,
+    p_botas_cantidad: +document.getElementById('dpBotasCant').value || 0,
+    p_botas_talla: document.getElementById('dpBotasTalla').value.trim() || null,
+    p_adicional: document.getElementById('dpAdicional').value.trim() || null,
+    p_firma_trabajador: firma,
+    p_foto_trabajador: dtlPublicoState.foto
+  });
+  if(error || !data || !data.ok){
+    btn.disabled=false; btn.innerHTML=`${I.check} Confirmar entrega`;
+    err.textContent = 'No se pudo registrar la entrega. Intenta de nuevo.';
+    return;
+  }
+  renderDtlPublicoExito();
+}
+
+function renderDtlPublicoExito(){
+  document.getElementById("app").innerHTML = pantallaFirmaOk("¡Listo!", "Tu entrega de dotación quedó registrada correctamente.");
+}
+
+/* ============================================================
    MÓDULO CONFIGURACIÓN · Usuarios y permisos (solo administradores)
    Crear/desactivar el LOGIN (correo+contraseña) se sigue haciendo desde
    el panel de Supabase (Authentication → Users) — aquí solo se asigna
@@ -5085,15 +6274,18 @@ async function toggleActivoPerfil(id, activo){
 
 async function abrirPermisosUsuario(perfilId){
   bloquear("Cargando permisos…");
-  let perfil, modulos, contratosMarcados, todosLosContratos;
+  let perfil, modulos, contratosMarcados, todosLosContratos, entidadesMarcadas, todasLasEntidades;
   try{
-    const [{ data:p }, { data:pm }, { data:pc }, { data:cs }] = await Promise.all([
+    const [{ data:p }, { data:pm }, { data:pc }, { data:cs }, { data:pe }, { data:es }] = await Promise.all([
       sb.from("acc_perfiles").select("id,email,nombre,es_admin,activo,dotacion_editar_catalogo,rol").eq("id",perfilId).maybeSingle(),
       sb.from("acc_perfil_modulos").select("modulo").eq("perfil_id",perfilId),
       sb.from("acc_perfil_contratos").select("contrato_id").eq("perfil_id",perfilId),
-      sb.from("dot_contratos").select("id,nombre").order("nombre",{ascending:true})
+      sb.from("dot_contratos").select("id,nombre").order("nombre",{ascending:true}),
+      sb.from("acc_perfil_entidades").select("entidad_id").eq("perfil_id",perfilId),
+      sb.from("dtl_entidades").select("id,nombre").order("nombre",{ascending:true})
     ]);
     perfil = p; modulos = (pm||[]).map(x=>x.modulo); contratosMarcados = (pc||[]).map(x=>x.contrato_id); todosLosContratos = cs||[];
+    entidadesMarcadas = (pe||[]).map(x=>x.entidad_id); todasLasEntidades = es||[];
   } finally { desbloquear(); }
   if(!perfil){ toast("Usuario no encontrado","err"); return; }
 
@@ -5111,13 +6303,20 @@ async function abrirPermisosUsuario(perfilId){
         <div class="sec-bar" style="margin-top:14px"><h2 style="font-size:14px">Módulos</h2></div>
         <label class="chk"><input type="checkbox" data-pf-mod="asistencia" ${modulos.includes('asistencia')?'checked':''}> Asistencia</label>
         <label class="chk"><input type="checkbox" data-pf-mod="documentos" ${modulos.includes('documentos')?'checked':''}> Documentos y Firmas</label>
-        <label class="chk"><input type="checkbox" data-pf-mod="dotacion" ${modulos.includes('dotacion')?'checked':''}> Dotación</label>
+        <label class="chk"><input type="checkbox" data-pf-mod="dotacion" ${modulos.includes('dotacion')?'checked':''}> Entrega de EPP</label>
         <div id="permisosDotacion" style="margin-top:10px;padding:12px 14px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;${modulos.includes('dotacion')?'':'display:none'}">
           <div class="sec-bar" style="margin:0 0 8px"><h2 style="font-size:13px">Contratos permitidos</h2></div>
           ${todosLosContratos.length
             ? todosLosContratos.map(c=>`<label class="chk" style="padding:3px 0"><input type="checkbox" data-pf-contrato="${c.id}" ${contratosMarcados.includes(c.id)?'checked':''}> ${esc(c.nombre)}</label>`).join('')
             : '<p class="muted-sm">Aún no hay contratos creados.</p>'}
           <label class="chk" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line)"><input type="checkbox" id="pfCatalogo" ${perfil.dotacion_editar_catalogo?'checked':''}> Puede editar el catálogo de ítems</label>
+        </div>
+        <label class="chk" style="margin-top:8px"><input type="checkbox" data-pf-mod="dotacionlegal" ${modulos.includes('dotacionlegal')?'checked':''}> Dotación</label>
+        <div id="permisosDotacionLegal" style="margin-top:10px;padding:12px 14px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;${modulos.includes('dotacionlegal')?'':'display:none'}">
+          <div class="sec-bar" style="margin:0 0 8px"><h2 style="font-size:13px">Entidades permitidas (Dotación)</h2></div>
+          ${todasLasEntidades.length
+            ? todasLasEntidades.map(en=>`<label class="chk" style="padding:3px 0"><input type="checkbox" data-pf-entidad="${en.id}" ${entidadesMarcadas.includes(en.id)?'checked':''}> ${esc(en.nombre)}</label>`).join('')
+            : '<p class="muted-sm">Aún no hay entidades creadas.</p>'}
         </div>
       </div>
     </div>
@@ -5131,6 +6330,8 @@ async function abrirPermisosUsuario(perfilId){
   };
   const chkDot = document.querySelector('[data-pf-mod="dotacion"]');
   if(chkDot) chkDot.onchange = (e)=>{ document.getElementById('permisosDotacion').style.display = e.target.checked ? 'block' : 'none'; };
+  const chkDtl = document.querySelector('[data-pf-mod="dotacionlegal"]');
+  if(chkDtl) chkDtl.onchange = (e)=>{ document.getElementById('permisosDotacionLegal').style.display = e.target.checked ? 'block' : 'none'; };
   document.getElementById('btnGuardarPermisos').onclick = ()=> guardarPermisosUsuario(perfilId);
 }
 
@@ -5138,6 +6339,7 @@ async function guardarPermisosUsuario(perfilId){
   const esAdmin = document.getElementById('pfAdmin').checked;
   const modulosMarcados = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-mod]:checked')).map(el=>el.dataset.pfMod);
   const contratosMarcados = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-contrato]:checked')).map(el=>el.dataset.pfContrato);
+  const entidadesMarcadas = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-entidad]:checked')).map(el=>el.dataset.pfEntidad);
   const chkCat = document.getElementById('pfCatalogo');
   const editarCatalogo = chkCat ? chkCat.checked : false;
   const rolSeleccionado = document.querySelector('input[name="pfRol"]:checked');
@@ -5159,6 +6361,11 @@ async function guardarPermisosUsuario(perfilId){
     if(contratosMarcados.length){
       const { error:e3 } = await sb.from("acc_perfil_contratos").insert(contratosMarcados.map(c=>({perfil_id:perfilId, contrato_id:c})));
       if(e3){ toast("Se guardó parcialmente, error en contratos: "+e3.message,"err"); }
+    }
+    await sb.from("acc_perfil_entidades").delete().eq("perfil_id", perfilId);
+    if(entidadesMarcadas.length){
+      const { error:e4 } = await sb.from("acc_perfil_entidades").insert(entidadesMarcadas.map(en=>({perfil_id:perfilId, entidad_id:en})));
+      if(e4){ toast("Se guardó parcialmente, error en entidades: "+e4.message,"err"); }
     }
     toast("Permisos actualizados","ok");
     closeModal();
