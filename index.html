@@ -4010,17 +4010,21 @@ function abrirFormContrato(id, alGuardar){
 }
 
 function abrirGestionContratos(){
-  openSubModal(`<div class="modal" style="max-width:520px">
+  openModal(`<div class="modal" style="max-width:520px">
     <div class="modal-head"><div><h2>Gestionar contratos</h2><p>Cada contrato tiene su propio directorio y sus entregas.</p></div>
-      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+      <button class="close-x" onclick="cerrarGestionContratos()">${I.close}</button></div>
     <div class="modal-body">
       <button class="btn btn-primary btn-sm" id="btnNuevoContrato" style="margin-bottom:14px">${I.plus} Nuevo contrato</button>
       <div id="contratosLista"></div>
     </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
-  </div>`, ()=>renderDotacionAdmin());
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="cerrarGestionContratos()">Cerrar</button></div>
+  </div>`);
   document.getElementById('btnNuevoContrato').onclick = ()=> abrirFormContrato(null, ()=>abrirGestionContratos());
   renderContratosLista();
+}
+function cerrarGestionContratos(){
+  closeModal();
+  renderDotacionAdmin();
 }
 
 function renderContratosLista(){
@@ -5077,13 +5081,15 @@ function renderDotEstadisticas(){
 let DTL = { entidades: [], trabajadores: [], entregas: [], predeterminados: [] };
 let dtlQuery = "";
 let dtlEntregaDraft = null;
-let dtlEntidadActualId = localStorage.getItem('dtl_entidad_actual') || null;
+/* Filtro de la grilla de trabajadores — "todas" muestra a todos los que la cuenta pueda ver
+   (RLS ya limita a las entidades con acceso), sin necesidad de elegir una entidad primero. */
+let dtlFiltroEntidad = localStorage.getItem('dtl_filtro_entidad') || 'todas';
 const DTL_DECLARACION = "Declaro haber recibido a satisfacción los elementos de dotación relacionados en este documento, en buen estado y de acuerdo con mi talla. Me comprometo a utilizarlos durante el desarrollo de mis labores y a darles el cuidado adecuado.";
 
 async function loadDtlState(){
   const [en, t, e] = await Promise.all([
     sb.from("dtl_entidades").select("id,nombre,activo,creado_en").order("creado_en",{ascending:true}),
-    sb.from("dtl_trabajadores").select("id,nombre,identificacion,cargo,area,entidad_id,creado_en").order("nombre",{ascending:true}),
+    sb.from("dtl_trabajadores").select("id,nombre,identificacion,cargo,area,entidad_id,fecha_ingreso,correo,creado_en").order("nombre",{ascending:true}),
     sb.from("dtl_entregas").select("id,trabajador_id,fecha").order("fecha",{ascending:false})
   ]);
   const err = en.error || t.error || e.error;
@@ -5091,26 +5097,29 @@ async function loadDtlState(){
   DTL.entidades = en.data || [];
   DTL.trabajadores = t.data || [];
   DTL.entregas = e.data || [];
-  const existe = DTL.entidades.some(x=>x.id===dtlEntidadActualId);
-  if(!existe){
-    const primero = DTL.entidades.find(x=>x.activo) || DTL.entidades[0];
-    dtlEntidadActualId = primero ? primero.id : null;
-    if(dtlEntidadActualId) localStorage.setItem('dtl_entidad_actual', dtlEntidadActualId);
-  }
-  if(dtlEntidadActualId){
-    const { data:pd, error:epd } = await sb.from("dtl_predeterminados").select("id,nombre,responsable_nombre,responsable_cargo,firma").eq("entidad_id", dtlEntidadActualId).order("creado_en",{ascending:true});
-    if(epd) console.warn(epd);
-    DTL.predeterminados = pd || [];
-  } else {
-    DTL.predeterminados = [];
+  // Si el filtro guardado ya no corresponde a una entidad que exista/tengas acceso, vuelve a "todas"
+  if(dtlFiltroEntidad!=='todas' && !DTL.entidades.some(x=>x.id===dtlFiltroEntidad)){
+    dtlFiltroEntidad = 'todas';
+    localStorage.setItem('dtl_filtro_entidad', 'todas');
   }
 }
 
-function entidadDtlActual(){ return DTL.entidades.find(x=>x.id===dtlEntidadActualId) || null; }
-function trabajadoresDeEntidad(){ return DTL.trabajadores.filter(t=>t.entidad_id===dtlEntidadActualId); }
+function nombreEntidadDtl(id){ const x = DTL.entidades.find(e=>e.id===id); return x ? x.nombre : '—'; }
+/* Trabajadores visibles en la grilla según el filtro ("todas" = todos los accesibles) */
+function trabajadoresDeEntidad(){
+  return dtlFiltroEntidad==='todas' ? DTL.trabajadores : DTL.trabajadores.filter(t=>t.entidad_id===dtlFiltroEntidad);
+}
 function entregasDeEntidad(){
   const ids = new Set(trabajadoresDeEntidad().map(t=>t.id));
   return DTL.entregas.filter(e=>ids.has(e.trabajador_id));
+}
+/* Predeterminados de UNA entidad específica, cargados bajo demanda (ya no hay una sola
+   "entidad actual" global — cada acción resuelve la entidad que le corresponde) */
+async function cargarPredeterminadosDtl(entidadId){
+  if(!entidadId) return [];
+  const { data, error } = await sb.from("dtl_predeterminados").select("id,nombre,responsable_nombre,responsable_cargo,firma").eq("entidad_id", entidadId).order("creado_en",{ascending:true});
+  if(error){ console.warn(error); return []; }
+  return data || [];
 }
 
 /* ---------- Panel principal ---------- */
@@ -5144,21 +5153,18 @@ async function renderDtlAdmin(silent){
   const conEntrega = new Set(entregasE.map(e=>e.trabajador_id));
   const sinEntregas = trabs.filter(t=>!conEntrega.has(t.id)).length;
 
+  const entidadesAcc = DTL.entidades.filter(x=>tieneEntidadDtl(x.id));
+
   document.getElementById("app").innerHTML = `
     ${topbar('dotacionlegal')}
     <div class="wrap">
       <div class="page-head">
         <div>
           <h1>Dotación</h1>
-          <p>Entrega de dotación legal (pantalones, camisas y botas), con firma digital.</p>
-          <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
-            <select id="selEntidad" style="font-weight:700;font-size:13.5px;padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--brand-deep)">
-              ${DTL.entidades.filter(x=>tieneEntidadDtl(x.id)).map(x=>`<option value="${x.id}" ${x.id===dtlEntidadActualId?'selected':''}>${esc(x.nombre)}${x.activo?'':' (archivada)'}</option>`).join('')}
-            </select>
-            ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-sm btn-pc-only" id="btnGestionEntidades">${I.pen} Gestionar entidades</button>`:''}
-          </div>
+          <p>Entrega de dotación legal (pantalones, camisas y botas), con firma digital. Todos los trabajadores, de todas las entidades, en un solo lugar.</p>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
+          ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-sm btn-pc-only" id="btnGestionEntidades">${I.pen} Gestionar entidades</button>`:''}
           ${puedeEscribir()?`<button class="btn btn-ghost btn-pc-only" id="btnPredeterminadosDtl">${I.pen} Predeterminados</button>`:''}
           ${puedeEscribir()?`<button class="btn btn-ghost btn-pc-only" id="btnPlantillaTrabDtl">${I.doc} Plantilla Excel</button>
           <button class="btn btn-ghost btn-pc-only" id="btnCargaTrabDtl">${I.plus} Carga masiva</button>`:''}
@@ -5180,16 +5186,20 @@ async function renderDtlAdmin(silent){
           ${I.search}
           <input type="text" id="dtlSearch" placeholder="Buscar por nombre, cédula, cargo o área…" value="${esc(dtlQuery)}">
         </div>
+        <select id="selFiltroEntidad" style="font-weight:700;font-size:13.5px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--brand-deep)">
+          <option value="todas" ${dtlFiltroEntidad==='todas'?'selected':''}>Todas las entidades</option>
+          ${entidadesAcc.map(x=>`<option value="${x.id}" ${x.id===dtlFiltroEntidad?'selected':''}>${esc(x.nombre)}${x.activo?'':' (archivada)'}</option>`).join('')}
+        </select>
       </div>
       <div id="dtlGrid"></div>
       <input type="file" id="fileTrabajadoresDtl" accept=".xlsx,.xls,.csv" style="display:none">
     </div>`;
 
   wireLogout();
-  document.getElementById("selEntidad").onchange = (e)=>{
-    dtlEntidadActualId = e.target.value;
-    localStorage.setItem('dtl_entidad_actual', dtlEntidadActualId);
-    renderDtlAdmin();
+  document.getElementById("selFiltroEntidad").onchange = (e)=>{
+    dtlFiltroEntidad = e.target.value;
+    localStorage.setItem('dtl_filtro_entidad', dtlFiltroEntidad);
+    renderDtlAdmin(true);
   };
   const bge=document.getElementById("btnGestionEntidades"); if(bge) bge.onclick = abrirGestionEntidadesDtl;
   const bpd=document.getElementById("btnPredeterminadosDtl"); if(bpd) bpd.onclick = abrirPredeterminadosDtlModal;
@@ -5244,6 +5254,7 @@ function trabajadorDtlCard(t){
     <h3>${esc(t.nombre)}</h3>
     <div class="meta">
       <div>${I.user}<span>C.C. ${esc(t.identificacion)}</span></div>
+      <div>${I.box}<span>${esc(nombreEntidadDtl(t.entidad_id))}</span></div>
       <div>${I.pin}<span>${esc(t.area||'—')}</span></div>
       ${ultima?`<div>${I.cal}<span>Última entrega: ${fmtDate(ultima)}</span></div>`:''}
     </div>
@@ -5322,7 +5333,7 @@ function abrirFormEntidadDtl(id, alGuardar){
 /* ---------- Trabajadores ---------- */
 function abrirTrabajadorDtlForm(id){
   const t = id ? DTL.trabajadores.find(x=>x.id===id) : null;
-  const entidadDefault = t ? t.entidad_id : dtlEntidadActualId;
+  const entidadDefault = t ? t.entidad_id : (dtlFiltroEntidad!=='todas' ? dtlFiltroEntidad : (DTL.entidades[0]?.id||''));
   openModal(`<div class="modal" style="max-width:480px">
     <div class="modal-head"><div><h2>${t?'Editar trabajador':'Nuevo trabajador'}</h2><p>Se guarda en el directorio para futuras entregas.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
@@ -5335,6 +5346,10 @@ function abrirTrabajadorDtlForm(id){
       <div class="field row2">
         <div><label>Cargo</label><input id="tdCargo" value="${esc(t?.cargo||'')}" placeholder="Cargo"></div>
         <div><label>Área</label><input id="tdArea" value="${esc(t?.area||'')}" placeholder="Área o dependencia"></div>
+      </div>
+      <div class="field row2">
+        <div><label>Fecha de ingreso</label><input type="date" id="tdFechaIngreso" value="${t?.fecha_ingreso||''}"></div>
+        <div><label>Correo</label><input type="email" id="tdCorreo" value="${esc(t?.correo||'')}" placeholder="correo@ejemplo.com"></div>
       </div>
       <p class="muted-sm">La cédula es única en toda la empresa (para que el enlace de entrega remota la encuentre sin importar la entidad).</p>
     </div>
@@ -5350,14 +5365,16 @@ async function guardarTrabajadorDtl(id){
   const identificacion = document.getElementById('tdCedula').value.trim();
   const cargo = document.getElementById('tdCargo').value.trim() || null;
   const area = document.getElementById('tdArea').value.trim() || null;
+  const fecha_ingreso = document.getElementById('tdFechaIngreso').value || null;
+  const correo = document.getElementById('tdCorreo').value.trim() || null;
   if(!entidad_id){ toast("Selecciona la entidad","err"); return; }
   if(!nombre){ toast("Falta el nombre","err"); return; }
   if(!identificacion){ toast("Falta la identificación","err"); return; }
   const btn = document.getElementById('btnGuardarTrabDtl'); btn.disabled=true; btn.innerHTML="Guardando…";
   bloquear("Guardando…");
   let error;
-  if(id){ ({error} = await sb.from("dtl_trabajadores").update({nombre,identificacion,cargo,area,entidad_id}).eq("id",id)); }
-  else { ({error} = await sb.from("dtl_trabajadores").insert({nombre,identificacion,cargo,area,entidad_id})); }
+  if(id){ ({error} = await sb.from("dtl_trabajadores").update({nombre,identificacion,cargo,area,entidad_id,fecha_ingreso,correo}).eq("id",id)); }
+  else { ({error} = await sb.from("dtl_trabajadores").insert({nombre,identificacion,cargo,area,entidad_id,fecha_ingreso,correo})); }
   desbloquear();
   if(error){
     btn.disabled=false; btn.innerHTML=`${I.check} Guardar`;
@@ -5392,13 +5409,27 @@ function eliminarTrabajadorDtl(id){
 
 function descargarPlantillaTrabajadoresDtl(){
   if(!window.XLSX){ toast("No se pudo cargar el generador de Excel (revisa tu conexión)","err"); return; }
-  const datos = [["Nombre completo","Cédula","Cargo","Área"],["Juan Pérez","1234567890","Operario","Producción"]];
+  const datos = [
+    ["Contrato","Nombre completo","Cédula","Fecha de ingreso","Cargo","Correo"],
+    ["Hospital de Medellín","Juan Pérez","1234567890","2024-03-15","Operario","juan.perez@correo.com"]
+  ];
   const ws = XLSX.utils.aoa_to_sheet(datos);
-  ws["!cols"] = [{wch:28},{wch:16},{wch:20},{wch:20}];
+  ws["!cols"] = [{wch:24},{wch:28},{wch:16},{wch:16},{wch:20},{wch:28}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Trabajadores");
   XLSX.writeFile(wb, "Plantilla_trabajadores_dotacion.xlsx");
   toast("Plantilla descargada","ok");
+}
+/* Intenta interpretar una fecha de Excel en varios formatos comunes → YYYY-MM-DD, o null si no se pudo */
+function parseFechaExcelDtl(v){
+  const s = String(v||"").trim();
+  if(!s) return null;
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if(m){ return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`; }
+  const d = new Date(s);
+  if(!isNaN(d.getTime())) return d.toISOString().slice(0,10);
+  return null;
 }
 async function cargarTrabajadoresExcelDtl(file){
   if(!window.XLSX){ toast("No se pudo cargar el lector de Excel (revisa tu conexión)","err"); return; }
@@ -5412,18 +5443,42 @@ async function cargarTrabajadoresExcelDtl(file){
     const norm = s => String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").trim();
     const head = (filas[0]||[]).map(norm);
     const findCol = (...alts)=> head.findIndex(h => alts.some(a => h.includes(a)));
-    let cNom = findCol("nombre"), cCed = findCol("cedula","cédula","identificacion","documento"), cCargo = findCol("cargo"), cArea = findCol("area","área");
+    let cEnt = findCol("contrato","entidad"), cNom = findCol("nombre"), cCed = findCol("cedula","cédula","identificacion","documento"),
+        cFecha = findCol("fecha de ingreso","fecha ingreso","ingreso"), cCargo = findCol("cargo"), cCorreo = findCol("correo","email","e-mail");
     let start = 1;
-    if(cNom === -1){ cNom=0; cCed=1; cCargo=2; cArea=3; start=0; }
+    if(cNom === -1){ cEnt=0; cNom=1; cCed=2; cFecha=3; cCargo=4; cCorreo=5; start=0; }
     const validos = []; let ignoradas = 0;
     for(let i=start;i<filas.length;i++){
       const r = filas[i]; if(!r) continue;
+      const entidadNombre = String(cEnt>=0?r[cEnt]:"").trim();
       const nombre = String(cNom>=0?r[cNom]:"").trim();
       const identificacion = String(cCed>=0?r[cCed]:"").trim();
-      if(!nombre || !identificacion){ if(r.some(v=>String(v||"").trim())) ignoradas++; continue; }
-      validos.push({ nombre, identificacion, cargo: cCargo>=0?(String(r[cCargo]||"").trim()||null):null, area: cArea>=0?(String(r[cArea]||"").trim()||null):null, entidad_id: dtlEntidadActualId });
+      if(!entidadNombre || !nombre || !identificacion){ if(r.some(v=>String(v||"").trim())) ignoradas++; continue; }
+      validos.push({
+        entidadNombre, nombre, identificacion,
+        fecha_ingreso: cFecha>=0 ? parseFechaExcelDtl(r[cFecha]) : null,
+        cargo: cCargo>=0?(String(r[cCargo]||"").trim()||null):null,
+        correo: cCorreo>=0?(String(r[cCorreo]||"").trim()||null):null
+      });
     }
-    if(!validos.length){ toast("No se encontraron filas válidas (se requiere nombre y cédula)","err"); return; }
+    if(!validos.length){ toast("No se encontraron filas válidas (se requiere contrato, nombre y cédula)","err"); return; }
+
+    // Resuelve el nombre del contrato/entidad a un id — si no existe, se crea (requiere ser admin por RLS)
+    const keyEnt = s => s.trim().toLowerCase();
+    const entidadPorNombre = new Map(DTL.entidades.map(en=>[keyEnt(en.nombre), en.id]));
+    let entidadesCreadas = 0;
+    for(const it of validos){
+      const k = keyEnt(it.entidadNombre);
+      if(!entidadPorNombre.has(k)){
+        const { data, error } = await sb.from("dtl_entidades").insert({ nombre: it.entidadNombre }).select().single();
+        if(error){ toast(`No se pudo crear la entidad "${it.entidadNombre}": `+error.message,"err"); return; }
+        entidadPorNombre.set(k, data.id);
+        DTL.entidades.push(data);
+        entidadesCreadas++;
+      }
+      it.entidad_id = entidadPorNombre.get(k);
+    }
+
     const keyOf = s => s.trim().toLowerCase();
     const existentes = new Set(DTL.trabajadores.map(t=>keyOf(t.identificacion)));
     const vistos = new Set(); let dup = 0, yaExistian = 0;
@@ -5433,7 +5488,7 @@ async function cargarTrabajadoresExcelDtl(file){
       if(vistos.has(k)){ dup++; return; }
       vistos.add(k);
       if(existentes.has(k)){ yaExistian++; return; }
-      nuevos.push(it);
+      nuevos.push({ nombre: it.nombre, identificacion: it.identificacion, cargo: it.cargo, correo: it.correo, fecha_ingreso: it.fecha_ingreso, entidad_id: it.entidad_id });
     });
     if(nuevos.length){
       const { error } = await sb.from("dtl_trabajadores").insert(nuevos);
@@ -5442,6 +5497,7 @@ async function cargarTrabajadoresExcelDtl(file){
     await loadDtlState();
     renderDtlGrid();
     let msg = `${nuevos.length} trabajador(es) nuevo(s) agregado(s)`;
+    if(entidadesCreadas) msg += ` · ${entidadesCreadas} entidad(es) nueva(s) creada(s)`;
     if(yaExistian) msg += ` · ${yaExistian} ya existían (cédula repetida, sin cambios)`;
     if(ignoradas) msg += ` · ${ignoradas} fila(s) incompleta(s) omitida(s)`;
     if(dup) msg += ` · ${dup} duplicada(s) en el archivo`;
@@ -5452,20 +5508,28 @@ async function cargarTrabajadoresExcelDtl(file){
 
 /* ---------- Predeterminados (firma del responsable, por entidad) ---------- */
 const PREDET_DTL_MAX = 3;
+let predetDtlEntidadId = null;
 async function abrirPredeterminadosDtlModal(){
+  const entidadesAcc = DTL.entidades.filter(x=>tieneEntidadDtl(x.id));
+  if(!entidadesAcc.length){ toast("No tienes ninguna entidad asignada todavía","err"); return; }
+  if(!predetDtlEntidadId || !entidadesAcc.some(x=>x.id===predetDtlEntidadId)) predetDtlEntidadId = entidadesAcc[0].id;
   bloquear("Cargando predeterminados…");
-  try{ await loadDtlState(); } finally{ desbloquear(); }
+  try{ DTL.predeterminados = await cargarPredeterminadosDtl(predetDtlEntidadId); } finally{ desbloquear(); }
   const alTope = DTL.predeterminados.length >= PREDET_DTL_MAX;
   openModal(`<div class="modal" style="max-width:560px">
-    <div class="modal-head"><div><h2>Predeterminado</h2><p>Guarda el nombre, cargo y firma de quien entrega, para no repetirlos en cada entrega. Máximo ${PREDET_DTL_MAX} plantillas.</p></div>
+    <div class="modal-head"><div><h2>Predeterminado</h2><p>Guarda el nombre, cargo y firma de quien entrega, para no repetirlos en cada entrega. Máximo ${PREDET_DTL_MAX} plantillas por entidad.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
-      ${alTope?`<p class="muted-sm" style="margin-bottom:14px">Ya tienes el máximo de ${PREDET_DTL_MAX} plantillas. Elimina alguna para crear otra.</p>`
-        :`<button class="btn btn-primary btn-sm" id="btnNuevoPredetDtl" style="margin-bottom:14px">${I.plus} Nueva plantilla</button>`}
+      <div class="field"><label>Entidad</label>
+        <select id="selPredetEntidad">${entidadesAcc.map(x=>`<option value="${x.id}" ${x.id===predetDtlEntidadId?'selected':''}>${esc(x.nombre)}</option>`).join('')}</select>
+      </div>
+      ${alTope?`<p class="muted-sm" style="margin:14px 0">Ya tienes el máximo de ${PREDET_DTL_MAX} plantillas en esta entidad. Elimina alguna para crear otra.</p>`
+        :`<button class="btn btn-primary btn-sm" id="btnNuevoPredetDtl" style="margin:14px 0">${I.plus} Nueva plantilla</button>`}
       <div id="predetDtlLista"></div>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
   </div>`);
+  document.getElementById('selPredetEntidad').onchange = (e)=>{ predetDtlEntidadId = e.target.value; abrirPredeterminadosDtlModal(); };
   const bnp = document.getElementById('btnNuevoPredetDtl'); if(bnp) bnp.onclick = ()=> abrirFormPredeterminadoDtl(null);
   renderPredeterminadosDtlLista();
 }
@@ -5531,9 +5595,9 @@ function abrirFormPredeterminadoDtl(id){
     const payload = { nombre, responsable_nombre: respNombre, responsable_cargo: respCargo, firma };
     const { error } = p
       ? await sb.from("dtl_predeterminados").update(payload).eq("id", p.id)
-      : await sb.from("dtl_predeterminados").insert({ ...payload, entidad_id: dtlEntidadActualId });
+      : await sb.from("dtl_predeterminados").insert({ ...payload, entidad_id: predetDtlEntidadId });
     if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
-    await loadDtlState();
+    DTL.predeterminados = await cargarPredeterminadosDtl(predetDtlEntidadId);
     toast(p?"Plantilla actualizada":"Plantilla creada","ok");
     closeModal();
   };
@@ -5550,18 +5614,22 @@ function eliminarPredeterminadoDtl(id){
     const btn=document.getElementById("confDelPredetDtl"); btn.disabled=true; btn.innerHTML="Eliminando…";
     const { error } = await sb.from("dtl_predeterminados").delete().eq("id", id);
     if(error){ btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`; toast("No se pudo eliminar: "+error.message,"err"); return; }
-    await loadDtlState();
+    DTL.predeterminados = await cargarPredeterminadosDtl(predetDtlEntidadId);
     toast("Plantilla eliminada","ok");
     closeModal();
   };
 }
 
 /* ---------- Nueva entrega presencial (asistente de 3 pasos) ---------- */
-function abrirNuevaEntregaDtl(trabajadorId){
+async function abrirNuevaEntregaDtl(trabajadorId){
+  const t = DTL.trabajadores.find(x=>x.id===trabajadorId);
+  if(!t){ toast("Trabajador no encontrado","err"); return; }
+  bloquear("Cargando…");
+  try{ DTL.predeterminados = await cargarPredeterminadosDtl(t.entidad_id); } finally{ desbloquear(); }
   let ultimoResp = {};
   try{ ultimoResp = JSON.parse(localStorage.getItem('dtl_ultimo_responsable')||'{}'); }catch(e){}
   dtlEntregaDraft = {
-    trabajadorId: trabajadorId || null,
+    trabajadorId: trabajadorId,
     fecha: hoyLocal(),
     pantalonCantidad: 2, pantalonTalla: '',
     camisaCantidad: 2, camisaTalla: '',
@@ -5794,16 +5862,16 @@ function renderPasoDtl3(){
       firma = sigPad.dataURL();
       const chk = document.getElementById('chkGuardarPredetDtl');
       if(chk && chk.checked){
+        const tEnt = DTL.trabajadores.find(x=>x.id===dtlEntregaDraft.trabajadorId);
         const nombrePlantilla = document.getElementById('nuevaPredetDtlNombre').value.trim() || ('Plantilla '+(DTL.predeterminados.length+1));
         const { error } = await sb.from("dtl_predeterminados").insert({
           nombre: nombrePlantilla,
           responsable_nombre: dtlEntregaDraft.responsableNombre || '',
           responsable_cargo: dtlEntregaDraft.responsableCargo || null,
           firma,
-          entidad_id: dtlEntidadActualId
+          entidad_id: tEnt?.entidad_id
         });
         if(error) toast("La entrega se va a guardar, pero no se pudo guardar la plantilla: "+error.message,"err");
-        else await loadDtlState();
       }
     }
     const btn=document.getElementById('btnFirmaRespOkDtl'); btn.disabled=true; btn.innerHTML="Guardando…";
@@ -5873,7 +5941,7 @@ async function renderFichaTrabajadorDtl(id){
           <button class="btn btn-ghost btn-sm" id="btnVolverDtl">${I.back} Volver</button>
         </div>
         <div class="page-head">
-          <div><h1>${esc(t.nombre)}</h1><p>C.C. ${esc(t.identificacion)}${t.cargo?' · '+esc(t.cargo):''}${t.area?' · '+esc(t.area):''} · ${esc(DTL.entidades.find(x=>x.id===t.entidad_id)?.nombre||'—')}</p></div>
+          <div><h1>${esc(t.nombre)}</h1><p>C.C. ${esc(t.identificacion)}${t.cargo?' · '+esc(t.cargo):''}${t.area?' · '+esc(t.area):''} · ${esc(nombreEntidadDtl(t.entidad_id))}${t.fecha_ingreso?' · Ingresó '+fmtDate(t.fecha_ingreso):''}${t.correo?' · '+esc(t.correo):''}</p></div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
             ${puedeEscribir()?`<button class="btn btn-ghost" id="btnEditarTrabDtl">${I.pen} Editar datos</button>`:''}
             ${listaEntregas.length?`<button class="btn btn-ghost" id="btnKardexDtl">${I.pdf} Imprimir kárdex</button>`:''}
@@ -6065,7 +6133,7 @@ async function descargarZipKardexDtlTodos(){
     bloquearMsg("Comprimiendo ZIP…");
     const blob = await zip.generateAsync({ type:'blob', compression:'DEFLATE' });
     const url = URL.createObjectURL(blob);
-    const nombreEntidad = entidadDtlActual()?.nombre || 'entidad';
+    const nombreEntidad = dtlFiltroEntidad==='todas' ? 'todas_las_entidades' : nombreEntidadDtl(dtlFiltroEntidad);
     const safeEntidad = String(nombreEntidad).replace(/[^\w\sáéíóúñ-]/gi,'').trim().replace(/\s+/g,'_').slice(0,40);
     const a = document.createElement('a'); a.href=url;
     a.download = 'Kardex_dotacion_'+safeEntidad+'.zip';
