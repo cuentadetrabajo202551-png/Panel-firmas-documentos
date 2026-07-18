@@ -540,7 +540,16 @@ let MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulo
 /* Mapa uid -> nombre/correo, para mostrar "Creado por: X" sin exponer toda acc_perfiles */
 let PERFILES_NOMBRE = {};
 
+/* Ajustes globales de la empresa (tabla app_config, fila única). Legible por anon
+   porque el enlace público de Dotación también necesita saber si la foto es obligatoria. */
+let APP_CONFIG = { eppFotoObligatoria:false, dotacionFotoObligatoria:false };
+async function cargarAppConfig(){
+  const { data } = await sb.from("app_config").select("epp_foto_obligatoria,dotacion_foto_obligatoria").eq("id",true).maybeSingle();
+  if(data) APP_CONFIG = { eppFotoObligatoria: !!data.epp_foto_obligatoria, dotacionFotoObligatoria: !!data.dotacion_foto_obligatoria };
+}
+
 async function cargarMiPerfil(){
+  await cargarAppConfig();
   const { data:{ session } } = await sb.auth.getSession();
   if(!session){ MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], editarCatalogo:false, nombre:"", uid:null }; return; }
   const uid = session.user.id;
@@ -4615,7 +4624,7 @@ function renderPasoEntregaFirmaTrabajador(){
     <div class="modal-body">
       <div style="margin-bottom:14px">${resumen}</div>
       <div style="margin-bottom:14px">
-        <p class="muted-sm" style="margin-bottom:6px">Foto del trabajador recibiendo <span class="opt">(opcional)</span></p>
+        <p class="muted-sm" style="margin-bottom:6px">Foto del trabajador recibiendo ${APP_CONFIG.eppFotoObligatoria?'<span style="color:var(--danger);font-weight:700">(obligatoria)</span>':'<span class="opt">(opcional)</span>'}</p>
         <div id="fotoTrabPreview">${fotoTrabPreviewHTML()}</div>
         <input type="file" id="fileFotoTrab" accept="image/*" capture="user" style="display:none">
       </div>
@@ -4643,6 +4652,7 @@ function renderPasoEntregaFirmaTrabajador(){
     initSignature(); document.getElementById('sigClear').onclick = ()=> sigPad.clear();
   };
   document.getElementById('btnFirmaTrabOk').onclick = ()=>{
+    if(APP_CONFIG.eppFotoObligatoria && !entregaDraft.fotoTrabajador){ toast("La foto del trabajador es obligatoria","err"); return; }
     if(usarPad){
       if(!sigPad || sigPad.isEmpty()){ toast("El trabajador debe firmar primero","err"); return; }
       entregaDraft.firmaTrabajador = sigPad.dataURL();
@@ -5763,7 +5773,7 @@ function renderPasoDtl2(){
     <div class="modal-body">
       <div style="margin-bottom:14px">${resumen.join('')}</div>
       <div style="margin-bottom:14px">
-        <p class="muted-sm" style="margin-bottom:6px">Foto del trabajador recibiendo <span class="opt">(opcional)</span></p>
+        <p class="muted-sm" style="margin-bottom:6px">Foto del trabajador recibiendo ${APP_CONFIG.dotacionFotoObligatoria?'<span style="color:var(--danger);font-weight:700">(obligatoria)</span>':'<span class="opt">(opcional)</span>'}</p>
         <div id="fotoTrabDtlPreview">${fotoTrabDtlPreviewHTML()}</div>
         <input type="file" id="fileFotoTrabDtl" accept="image/*" capture="user" style="display:none">
       </div>
@@ -5793,6 +5803,7 @@ function renderPasoDtl2(){
     initSignature(); document.getElementById('sigClear').onclick = ()=> sigPad.clear();
   };
   document.getElementById('btnFirmaTrabOkDtl').onclick = ()=>{
+    if(APP_CONFIG.dotacionFotoObligatoria && !dtlEntregaDraft.fotoTrabajador){ toast("La foto del trabajador es obligatoria","err"); return; }
     if(usarPad){
       if(!sigPad || sigPad.isEmpty()){ toast("El trabajador debe firmar primero","err"); return; }
       dtlEntregaDraft.firmaTrabajador = sigPad.dataURL();
@@ -6162,6 +6173,7 @@ let dtlPublicoState = { trabajador:null, foto:null };
 
 async function renderDtlPublico(){
   dtlPublicoState = { trabajador:null, foto:null };
+  await cargarAppConfig();
   renderDtlPublicoCedula();
 }
 
@@ -6218,7 +6230,7 @@ function renderDtlPublicoFormulario(){
       <div class="field"><label>Adicional <span class="opt">(opcional)</span></label><textarea id="dpAdicional" placeholder="Algo más que estés recibiendo…"></textarea></div>
 
       <div style="margin-bottom:14px">
-        <p class="muted-sm" style="margin-bottom:6px">Tu foto <span class="opt">(opcional)</span></p>
+        <p class="muted-sm" style="margin-bottom:6px">Tu foto ${APP_CONFIG.dotacionFotoObligatoria?'<span style="color:var(--danger);font-weight:700">(obligatoria)</span>':'<span class="opt">(opcional)</span>'}</p>
         <div id="dpFotoPreview">${dpFotoPreviewHTML()}</div>
         <input type="file" id="dpFileFoto" accept="image/*" capture="user" style="display:none">
       </div>
@@ -6259,6 +6271,7 @@ function wireDpFotoPreview(){
 
 async function confirmarEntregaDtlPublica(){
   const err = document.getElementById('dpError'); err.textContent = '';
+  if(APP_CONFIG.dotacionFotoObligatoria && !dtlPublicoState.foto){ err.textContent = 'Tu foto es obligatoria para continuar.'; return; }
   if(!sigPad || sigPad.isEmpty()){ err.textContent = 'Falta tu firma.'; return; }
   const btn = document.getElementById('dpConfirmarBtn'); btn.disabled=true; btn.innerHTML='Guardando…';
   const firma = sigPad.dataURL();
@@ -6276,7 +6289,7 @@ async function confirmarEntregaDtlPublica(){
   });
   if(error || !data || !data.ok){
     btn.disabled=false; btn.innerHTML=`${I.check} Confirmar entrega`;
-    err.textContent = 'No se pudo registrar la entrega. Intenta de nuevo.';
+    err.textContent = (error && error.message) ? error.message : 'No se pudo registrar la entrega. Intenta de nuevo.';
     return;
   }
   renderDtlPublicoExito();
@@ -6296,10 +6309,12 @@ async function renderConfiguracion(){
   bloquear("Cargando usuarios…");
   let perfiles = [];
   try{
-    const { data } = await sb.from("acc_perfiles")
-      .select("id,email,nombre,es_admin,activo,dotacion_editar_catalogo,rol")
-      .order("email",{ascending:true});
+    const [{ data }, { data:cfgData }] = await Promise.all([
+      sb.from("acc_perfiles").select("id,email,nombre,es_admin,activo,dotacion_editar_catalogo,rol").order("email",{ascending:true}),
+      sb.from("app_config").select("epp_foto_obligatoria,dotacion_foto_obligatoria").eq("id",true).maybeSingle()
+    ]);
     perfiles = data || [];
+    if(cfgData) APP_CONFIG = { eppFotoObligatoria: !!cfgData.epp_foto_obligatoria, dotacionFotoObligatoria: !!cfgData.dotacion_foto_obligatoria };
   } finally { desbloquear(); }
 
   const filas = perfiles.map(p=>{
@@ -6325,18 +6340,37 @@ async function renderConfiguracion(){
           <div class="rf-v" style="font-size:13px;font-weight:600">Créale la cuenta (correo y contraseña) en Supabase → Authentication → Users. Aparecerá aquí bloqueada por defecto — solo falta asignarle permisos.</div>
         </div>
       </div>
+      <div class="sec-bar"><h2>Ajustes generales</h2></div>
+      <div style="margin-bottom:20px;padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px">
+        <p class="muted-sm" style="margin-bottom:10px">Si marcas alguna, no se podrá guardar una entrega de ese módulo sin foto del trabajador (aplica también al enlace público de Dotación).</p>
+        <label class="chk"><input type="checkbox" id="cfgFotoEpp" ${APP_CONFIG.eppFotoObligatoria?'checked':''}> Foto obligatoria en <b>EPP</b></label>
+        <label class="chk"><input type="checkbox" id="cfgFotoDtl" ${APP_CONFIG.dotacionFotoObligatoria?'checked':''}> Foto obligatoria en <b>Dotación</b></label>
+        <button class="btn btn-primary btn-sm" id="btnGuardarAjustes" style="margin-top:10px">${I.check} Guardar</button>
+      </div>
       <div class="sec-bar"><h2>Usuarios</h2><span class="muted-sm">${perfiles.length} registrado(s)</span></div>
       ${perfiles.length
         ? `<div class="table-wrap"><table class="dt"><thead><tr><th>Usuario</th><th>Rol</th><th>Estado</th><th>Permisos</th></tr></thead><tbody>${filas}</tbody></table></div>`
         : `<div class="empty"><div class="ic">${I.user}</div><h3>Sin usuarios todavía</h3><p>Correrá automáticamente cuando alguien inicie sesión, o al correr CAMBIOS_SQL_7.sql si ya tienes usuarios creados.</p></div>`}
     </div>`;
   wireLogout();
+  document.getElementById('btnGuardarAjustes').onclick = guardarAjustesGenerales;
   document.querySelectorAll('[data-perf-activo]').forEach(chk=>{
     chk.onchange = ()=> toggleActivoPerfil(chk.dataset.perfActivo, chk.checked);
   });
   document.querySelectorAll('[data-perf-editar]').forEach(b=>{
     b.onclick = ()=> abrirPermisosUsuario(b.dataset.perfEditar);
   });
+}
+
+async function guardarAjustesGenerales(){
+  const eppOb = document.getElementById('cfgFotoEpp').checked;
+  const dtlOb = document.getElementById('cfgFotoDtl').checked;
+  const btn = document.getElementById('btnGuardarAjustes'); btn.disabled=true; btn.innerHTML="Guardando…";
+  const { error } = await sb.from("app_config").update({ epp_foto_obligatoria: eppOb, dotacion_foto_obligatoria: dtlOb }).eq("id", true);
+  if(error){ toast("No se pudo guardar: "+error.message,"err"); btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; return; }
+  APP_CONFIG = { eppFotoObligatoria: eppOb, dotacionFotoObligatoria: dtlOb };
+  toast("Ajustes guardados","ok");
+  btn.disabled=false; btn.innerHTML=`${I.check} Guardar`;
 }
 
 async function toggleActivoPerfil(id, activo){
