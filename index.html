@@ -6471,8 +6471,9 @@ async function abrirPermisosUsuario(perfilId){
     <div class="modal-head"><div><h2>${esc(perfil.nombre||perfil.email||'Usuario')}</h2><p>${esc(perfil.email||'')}</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
-      <label class="chk"><input type="checkbox" id="pfAdmin" ${perfil.es_admin?'checked':''} ${esUnoMismo?'disabled':''}> Es administrador (acceso total a todo)</label>
-      ${esUnoMismo?`<p class="muted-sm" style="margin:-4px 0 10px">No puedes quitarte tu propio acceso de administrador.</p>`:''}
+      <div id="resumenAcceso" style="margin-bottom:14px;padding:10px 12px;background:#eef1fb;border-radius:8px;font-size:13px;color:var(--ink-2)"></div>
+      <label class="chk"><input type="checkbox" id="pfAdmin" ${perfil.es_admin?'checked':''}> Es administrador (acceso total a todo)</label>
+      ${esUnoMismo?`<p class="muted-sm" style="margin:-4px 0 10px">Estás editando tu propia cuenta — si te quitas el admin, debe quedar al menos otro administrador activo (si no, no se dejará guardar).</p>`:''}
       <div id="permisosDetalle" style="${perfil.es_admin?'display:none':''}">
         <div class="sec-bar" style="margin-top:14px"><h2 style="font-size:14px">Rol</h2></div>
         <label class="chk"><input type="radio" name="pfRol" value="editor" ${perfil.rol!=='visualizador'?'checked':''}> <b>Editor</b> — crea y edita solo lo que él mismo creó; no puede tocar nada cerrado/finalizado ni de otra persona</label>
@@ -6502,18 +6503,61 @@ async function abrirPermisosUsuario(perfilId){
       <button class="btn btn-primary" id="btnGuardarPermisos">${I.check} Guardar</button>
     </div></div>`);
 
+  /* Resumen en texto claro de lo que estos checkboxes realmente significan — se recalcula
+     en vivo con cada cambio, para que no haya sorpresas como "le quité módulos pero le
+     quedó acceso a todo" (eso pasaba cuando "Es administrador" seguía marcado sin notarlo). */
+  const actualizarResumenAccesoUI = ()=>{
+    const el = document.getElementById('resumenAcceso'); if(!el) return;
+    if(document.getElementById('pfAdmin').checked){
+      el.innerHTML = `<b>Administrador</b> — acceso total a todos los módulos, contratos y entidades, sin restricciones.`;
+      return;
+    }
+    const modulosSel = Array.from(document.querySelectorAll('[data-pf-mod]:checked')).map(x=>x.dataset.pfMod);
+    if(!modulosSel.length){
+      el.innerHTML = `<span style="color:var(--danger)">Sin ningún módulo marcado — al iniciar sesión no verá nada.</span>`;
+      return;
+    }
+    const partes = [];
+    if(modulosSel.includes('asistencia')) partes.push('Asistencia');
+    if(modulosSel.includes('documentos')) partes.push('Documentos y Firmas');
+    if(modulosSel.includes('dotacion')){
+      const ids = Array.from(document.querySelectorAll('[data-pf-contrato]:checked')).map(x=>x.dataset.pfContrato);
+      const nombres = ids.map(id=>todosLosContratos.find(c=>c.id===id)?.nombre).filter(Boolean);
+      partes.push(`EPP (${nombres.length?esc(nombres.join(', ')):'<span style="color:var(--danger)">ningún contrato marcado</span>'})`);
+    }
+    if(modulosSel.includes('dotacionlegal')){
+      const ids = Array.from(document.querySelectorAll('[data-pf-entidad]:checked')).map(x=>x.dataset.pfEntidad);
+      const nombres = ids.map(id=>todasLasEntidades.find(x=>x.id===id)?.nombre).filter(Boolean);
+      partes.push(`Dotación (${nombres.length?esc(nombres.join(', ')):'<span style="color:var(--danger)">ninguna entidad marcada</span>'})`);
+    }
+    const rol = document.querySelector('input[name="pfRol"]:checked')?.value || 'editor';
+    const rolTxt = rol==='visualizador' ? 'solo puede ver (Visualizador)' : 'puede crear/editar lo suyo (Editor)';
+    el.innerHTML = `Podrá entrar a: <b>${partes.join(' · ')}</b>. Rol: ${rolTxt}.`;
+  };
+  actualizarResumenAccesoUI();
+
   document.getElementById('pfAdmin').onchange = (e)=>{
     document.getElementById('permisosDetalle').style.display = e.target.checked ? 'none' : 'block';
+    actualizarResumenAccesoUI();
   };
   const chkDot = document.querySelector('[data-pf-mod="dotacion"]');
   if(chkDot) chkDot.onchange = (e)=>{ document.getElementById('permisosDotacion').style.display = e.target.checked ? 'block' : 'none'; };
   const chkDtl = document.querySelector('[data-pf-mod="dotacionlegal"]');
   if(chkDtl) chkDtl.onchange = (e)=>{ document.getElementById('permisosDotacionLegal').style.display = e.target.checked ? 'block' : 'none'; };
+  document.querySelectorAll('input[name="pfRol"]').forEach(r=> r.addEventListener('change', actualizarResumenAccesoUI));
+  document.querySelectorAll('[data-pf-mod],[data-pf-contrato],[data-pf-entidad]').forEach(chk=>{
+    chk.addEventListener('change', actualizarResumenAccesoUI);
+  });
   document.getElementById('btnGuardarPermisos').onclick = ()=> guardarPermisosUsuario(perfilId);
 }
 
 async function guardarPermisosUsuario(perfilId){
   const esAdmin = document.getElementById('pfAdmin').checked;
+  if(!esAdmin && perfilId === MIPERFIL.uid){
+    const { count, error: eCount } = await sb.from("acc_perfiles").select("id",{count:'exact',head:true}).eq("es_admin",true).eq("activo",true).neq("id", perfilId);
+    if(eCount){ toast("No se pudo verificar: "+eCount.message,"err"); return; }
+    if(!count){ toast("Eres el único administrador activo — no puedes quitarte el acceso hasta que haya otro administrador","err"); return; }
+  }
   const modulosMarcados = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-mod]:checked')).map(el=>el.dataset.pfMod);
   const contratosMarcados = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-contrato]:checked')).map(el=>el.dataset.pfContrato);
   const entidadesMarcadas = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-entidad]:checked')).map(el=>el.dataset.pfEntidad);
