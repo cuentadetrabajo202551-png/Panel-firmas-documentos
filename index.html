@@ -584,6 +584,14 @@ function puedeEscribir(){ return MIPERFIL.esAdmin || MIPERFIL.rol==='editor'; }
 function puedoTocar(uidCreador){ return MIPERFIL.esAdmin || (MIPERFIL.rol==='editor' && uidCreador===MIPERFIL.uid); }
 /* Igual, pero además exige que no esté cerrado/finalizado (admin sí puede aunque esté cerrado) */
 function puedoTocarCerrable(uidCreador, cerrado){ return MIPERFIL.esAdmin || (MIPERFIL.rol==='editor' && uidCreador===MIPERFIL.uid && !cerrado); }
+/* Solo para EPP y Dotación: cualquier editor puede tocar (editar/eliminar) una entrega
+   de CUALQUIERA mientras no hayan pasado 24h desde que se creó — ya no importa el
+   creador, importa la antigüedad. Pasadas las 24h, ni siquiera el que la creó puede. */
+function puedoTocarReciente(creadoEn){
+  if(MIPERFIL.esAdmin) return true;
+  if(MIPERFIL.rol!=='editor' || !creadoEn) return false;
+  return (Date.now() - new Date(creadoEn).getTime()) < 24*60*60*1000;
+}
 function nombreDe(uid){ return uid ? (PERFILES_NOMBRE[uid] || "—") : "—"; }
 
 /* Pantalla de candado: se usa cuando el usuario no tiene acceso a un módulo o está desactivado */
@@ -3873,10 +3881,10 @@ async function renderDotacionAdmin(silent){
         <div style="display:flex;gap:10px;flex-wrap:wrap">
           ${!enTodos?`<button class="btn btn-ghost btn-pc-only" id="btnCatalogo">${I.box} Catálogo de ítems</button>`:''}
           ${puedeEscribir()?`<button class="btn btn-ghost btn-pc-only" id="btnPredeterminados">${I.pen} Predeterminados</button>`:''}
-          ${!enTodos && puedeEscribir()?`<button class="btn btn-ghost btn-pc-only" id="btnPlantillaTrab">${I.doc} Plantilla Excel</button>
+          ${!enTodos && MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-pc-only" id="btnPlantillaTrab">${I.doc} Plantilla Excel</button>
           <button class="btn btn-ghost btn-pc-only" id="btnCargaTrab">${I.plus} Carga masiva</button>`:''}
           ${totalEntregas?`<button class="btn btn-ghost btn-pc-only" id="btnZipKardex">${I.doc} Descargar todos (ZIP)</button>`:''}
-          ${!enTodos && puedeEscribir()?`<button class="btn btn-primary btn-pc-only" id="btnNuevoTrab">${I.plus} Nuevo trabajador</button>`:''}
+          ${!enTodos && MIPERFIL.esAdmin?`<button class="btn btn-primary btn-pc-only" id="btnNuevoTrab">${I.plus} Nuevo trabajador</button>`:''}
         </div>
       </div>
 
@@ -3983,8 +3991,8 @@ function trabajadorCard(t){
       <div class="card-actions">
         <button class="icon-btn" title="Ver ficha" data-trab="ver" data-id="${t.id}">${I.eye}</button>
         ${puedeEscribir()?`<button class="icon-btn" title="Registrar entrega" data-trab="entregar" data-id="${t.id}">${I.plus}</button>
-        <button class="icon-btn" title="Editar" data-trab="editar" data-id="${t.id}">${I.pen}</button>
-        <button class="icon-btn danger" title="Eliminar" data-trab="del" data-id="${t.id}">${I.trash}</button>`:''}
+        <button class="icon-btn" title="Editar" data-trab="editar" data-id="${t.id}">${I.pen}</button>`:''}
+        ${MIPERFIL.esAdmin?`<button class="icon-btn danger" title="Eliminar" data-trab="del" data-id="${t.id}">${I.trash}</button>`:''}
       </div>
     </div>
   </div>`;
@@ -4785,7 +4793,7 @@ async function renderFichaTrabajador(id){
     const t = DOTACION.trabajadores.find(x=>x.id===id);
     if(!t){ toast("Trabajador no encontrado","err"); location.hash="#/dotacion"; return; }
     const { data: entregas } = await sb.from("dot_entregas")
-      .select("id,fecha,responsable_nombre,responsable_cargo,observaciones")
+      .select("id,fecha,responsable_nombre,responsable_cargo,observaciones,creado_en")
       .eq("trabajador_id", id).order("fecha",{ascending:false});
     const listaEntregas = entregas || [];
     const idsEnt = listaEntregas.map(e=>e.id);
@@ -4801,7 +4809,8 @@ async function renderFichaTrabajador(id){
         <td>${fmtDate(e.fecha)}</td>
         <td>${its||'—'}</td>
         <td>${esc(e.responsable_nombre||'—')}</td>
-        <td>${puedeEscribir()?`<button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntrega('${e.id}','${t.id}')">${I.trash}</button>`:''}</td>
+        <td>${puedoTocarReciente(e.creado_en)?`<button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntrega('${e.id}','${t.id}')">${I.pen}</button>
+        <button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntrega('${e.id}','${t.id}')">${I.trash}</button>`:''}</td>
       </tr>`;
     }).join('');
 
@@ -4846,6 +4855,101 @@ function eliminarEntrega(entregaId, trabajadorId){
     toast("Entrega eliminada","ok");
     renderFichaTrabajador(trabajadorId);
   };
+}
+
+/* ---------- Editar una entrega ya registrada (fecha/ítems/responsable/observaciones).
+   La firma y la foto NO se pueden modificar aquí — son evidencia de lo que se firmó. ---------- */
+let editarEntregaDraft = null;
+async function abrirEditarEntrega(entregaId, trabajadorId){
+  bloquear("Cargando…");
+  let entrega, items;
+  try{
+    const { data:e } = await sb.from("dot_entregas").select("id,fecha,responsable_nombre,responsable_cargo,observaciones").eq("id",entregaId).maybeSingle();
+    const { data:it } = await sb.from("dot_entrega_items").select("id,nombre_item,cantidad,talla").eq("entrega_id",entregaId);
+    entrega = e; items = it||[];
+  } finally { desbloquear(); }
+  if(!entrega){ toast("Entrega no encontrada","err"); return; }
+  editarEntregaDraft = {
+    id: entrega.id, trabajadorId,
+    fecha: entrega.fecha,
+    responsableNombre: entrega.responsable_nombre || '',
+    responsableCargo: entrega.responsable_cargo || '',
+    observaciones: entrega.observaciones || '',
+    items: items.length ? items.map(it=>({ nombreItem: it.nombre_item, cantidad: it.cantidad, talla: it.talla||'' })) : [{ nombreItem:'', cantidad:1, talla:'' }]
+  };
+  renderFormEditarEntrega();
+}
+
+function renderFormEditarEntrega(){
+  openModal(`<div class="modal lg">
+    <div class="modal-head"><div><h2>Editar entrega de EPP</h2><p>Corrige los datos registrados. La firma y la foto no se pueden modificar aquí.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Fecha de entrega</label><input type="date" id="eeFecha" value="${editarEntregaDraft.fecha}"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:16px 0 10px">
+        <label style="font-weight:700;font-size:14px">Ítems entregados *</label>
+        <button class="btn btn-ghost btn-sm" id="btnEeAddItem">${I.plus} Agregar ítem</button>
+      </div>
+      <div id="eeItemsList"></div>
+      <div class="field row2" style="margin-top:14px">
+        <div><label>Responsable</label><input id="eeRespNombre" value="${esc(editarEntregaDraft.responsableNombre)}" placeholder="Nombre del supervisor"></div>
+        <div><label>Cargo</label><input id="eeRespCargo" value="${esc(editarEntregaDraft.responsableCargo)}" placeholder="Cargo"></div>
+      </div>
+      <div class="field"><label>Observaciones <span class="opt">(opcional)</span></label><input id="eeObs" value="${esc(editarEntregaDraft.observaciones)}"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnEeGuardar">${I.check} Guardar cambios</button>
+    </div>
+  </div>`);
+  renderEeItemsList();
+  document.getElementById('btnEeAddItem').onclick = ()=>{ editarEntregaDraft.items.push({nombreItem:'',cantidad:1,talla:''}); renderEeItemsList(); };
+  document.getElementById('btnEeGuardar').onclick = guardarEdicionEntrega;
+}
+
+function renderEeItemsList(){
+  const host = document.getElementById('eeItemsList'); if(!host) return;
+  host.innerHTML = editarEntregaDraft.items.map((it,i)=>`
+    <div class="item-row" data-i="${i}">
+      <span class="firmante-num">${i+1}</span>
+      <input data-f="nombreItem" value="${esc(it.nombreItem||'')}" placeholder="Nombre del ítem">
+      <input data-f="cantidad" type="number" min="1" step="1" value="${it.cantidad}" placeholder="Cant.">
+      <input data-f="talla" value="${esc(it.talla||'')}" placeholder="Talla (opc.)">
+      <button class="icon-btn danger" data-del="${i}" title="Quitar" ${editarEntregaDraft.items.length<=1?'disabled':''}>${I.trash}</button>
+    </div>`).join('');
+  host.querySelectorAll('input[data-f]').forEach(el=>{
+    el.oninput = ()=>{
+      const i = +el.closest('.item-row').dataset.i;
+      const val = el.dataset.f==='cantidad' ? (+el.value||0) : el.value;
+      editarEntregaDraft.items[i][el.dataset.f] = val;
+    };
+  });
+  host.querySelectorAll('[data-del]').forEach(b=>{
+    b.onclick = ()=>{ if(editarEntregaDraft.items.length<=1) return; editarEntregaDraft.items.splice(+b.dataset.del,1); renderEeItemsList(); };
+  });
+}
+
+async function guardarEdicionEntrega(){
+  const fecha = document.getElementById('eeFecha').value;
+  const responsableNombre = document.getElementById('eeRespNombre').value.trim();
+  const responsableCargo = document.getElementById('eeRespCargo').value.trim();
+  const observaciones = document.getElementById('eeObs').value.trim();
+  const validos = editarEntregaDraft.items.filter(it=>it.nombreItem && it.cantidad>0);
+  if(!validos.length){ toast("Agrega al menos un ítem con nombre y cantidad","err"); return; }
+  const btn = document.getElementById('btnEeGuardar'); btn.disabled=true; btn.innerHTML="Guardando…";
+  bloquear("Guardando cambios…");
+  try{
+    const { error:e1 } = await sb.from("dot_entregas").update({
+      fecha, responsable_nombre: responsableNombre||null, responsable_cargo: responsableCargo||null, observaciones: observaciones||null
+    }).eq("id", editarEntregaDraft.id);
+    if(e1){ toast("No se pudo guardar: "+e1.message,"err"); return; }
+    await sb.from("dot_entrega_items").delete().eq("entrega_id", editarEntregaDraft.id);
+    const { error:e2 } = await sb.from("dot_entrega_items").insert(validos.map(it=>({ entrega_id: editarEntregaDraft.id, nombre_item: it.nombreItem, cantidad: it.cantidad, talla: it.talla||null })));
+    if(e2) toast("Se guardó la entrega, pero hubo un error con los ítems: "+e2.message,"err");
+    else toast("Entrega actualizada","ok");
+    closeModal();
+    renderFichaTrabajador(editarEntregaDraft.trabajadorId);
+  } finally { desbloquear(); }
 }
 
 /* Dimensiones naturales (px) de una imagen data-URL, para no distorsionar su proporción al estamparla en el PDF */
@@ -5030,13 +5134,16 @@ async function descargarZipKardexSeleccion(contratoIds){
   if(!window.jspdf || !window.jspdf.jsPDF){ toast("No se pudo cargar el generador de PDF (revisa tu conexión)","err"); return; }
   if(!window.JSZip){ toast("No se pudo cargar el compresor ZIP (revisa tu conexión)","err"); return; }
   const idsSet = new Set(contratoIds);
-  const lista = DOTACION.trabajadores.filter(t=>idsSet.has(t.contrato_id));
-  if(!lista.length){ toast("No hay trabajadores para exportar","err"); return; }
+  const candidatos = DOTACION.trabajadores.filter(t=>idsSet.has(t.contrato_id));
+  const idsConEntrega = new Set(DOTACION.entregas.map(e=>e.trabajador_id));
+  const lista = candidatos.filter(t=>idsConEntrega.has(t.id));
+  if(!candidatos.length){ toast("No hay trabajadores para exportar","err"); return; }
+  if(!lista.length){ toast("Ninguno de los trabajadores elegidos tiene entregas registradas todavía","err"); return; }
   bloquear("Preparando ZIP…");
   try{
     const zip = new JSZip();
     const usados = {};
-    let incluidos = 0, sinEntregas = 0;
+    let incluidos = 0, sinEntregas = candidatos.length - lista.length;
     for(let i=0;i<lista.length;i++){
       const t = lista[i];
       bloquearMsg(`Generando kárdex ${i+1} de ${lista.length}…`);
@@ -5210,11 +5317,12 @@ async function renderDtlAdmin(silent){
         <div style="display:flex;gap:10px;flex-wrap:wrap">
           ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-sm btn-pc-only" id="btnGestionEntidades">${I.pen} Gestionar entidades</button>`:''}
           ${puedeEscribir()?`<button class="btn btn-ghost btn-pc-only" id="btnPredeterminadosDtl">${I.pen} Predeterminados</button>`:''}
-          ${puedeEscribir()?`<button class="btn btn-ghost btn-pc-only" id="btnPlantillaTrabDtl">${I.doc} Plantilla Excel</button>
+          ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-pc-only" id="btnPlantillaTrabDtl">${I.doc} Plantilla Excel</button>
           <button class="btn btn-ghost btn-pc-only" id="btnCargaTrabDtl">${I.plus} Carga masiva</button>`:''}
           ${totalEntregas?`<button class="btn btn-ghost btn-pc-only" id="btnZipKardexDtl">${I.doc} Descargar todos (ZIP)</button>`:''}
-          ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-pc-only" id="btnCopiarEnlacePublico">${I.link} Copiar enlace de entrega remota</button>`:''}
-          ${puedeEscribir()?`<button class="btn btn-primary" id="btnNuevoTrabDtl">${I.plus} Nuevo trabajador</button>`:''}
+          ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-pc-only" id="btnCopiarEnlacePublico">${I.link} Copiar enlace de entrega remota</button>
+          <button class="btn btn-ghost btn-pc-only" id="btnQrEnlacePublico">${I.link} Ver QR</button>`:''}
+          ${MIPERFIL.esAdmin?`<button class="btn btn-primary" id="btnNuevoTrabDtl">${I.plus} Nuevo trabajador</button>`:''}
         </div>
       </div>
 
@@ -5253,6 +5361,7 @@ async function renderDtlAdmin(silent){
   const bnt=document.getElementById("btnNuevoTrabDtl"); if(bnt) bnt.onclick = ()=> abrirTrabajadorDtlForm(null);
   const bzk=document.getElementById("btnZipKardexDtl"); if(bzk) bzk.onclick = abrirSeleccionZipDtl;
   const bce=document.getElementById("btnCopiarEnlacePublico"); if(bce) bce.onclick = ()=> copyText(location.href.split("#")[0]+"#/dotacionlegal/entrega", "Enlace de entrega remota copiado");
+  const bqr=document.getElementById("btnQrEnlacePublico"); if(bqr) bqr.onclick = ()=> mostrarQR(location.href.split("#")[0]+"#/dotacionlegal/entrega", "Entrega remota de dotación");
   document.getElementById("dtlSearch").oninput = (e)=>{ dtlQuery = e.target.value; renderDtlGrid(); };
   renderDtlGrid();
   if(silent) window.scrollTo(0, scrollY);
@@ -5307,8 +5416,8 @@ function trabajadorDtlCard(t){
       <div class="card-actions">
         <button class="icon-btn" title="Ver ficha" data-trabdtl="ver" data-id="${t.id}">${I.eye}</button>
         ${puedeEscribir()?`<button class="icon-btn" title="Registrar entrega" data-trabdtl="entregar" data-id="${t.id}">${I.plus}</button>
-        <button class="icon-btn" title="Editar" data-trabdtl="editar" data-id="${t.id}">${I.pen}</button>
-        <button class="icon-btn danger" title="Eliminar" data-trabdtl="del" data-id="${t.id}">${I.trash}</button>`:''}
+        <button class="icon-btn" title="Editar" data-trabdtl="editar" data-id="${t.id}">${I.pen}</button>`:''}
+        ${MIPERFIL.esAdmin?`<button class="icon-btn danger" title="Eliminar" data-trabdtl="del" data-id="${t.id}">${I.trash}</button>`:''}
       </div>
     </div>
   </div>`;
@@ -5968,7 +6077,7 @@ async function renderFichaTrabajadorDtl(id){
     const t = DTL.trabajadores.find(x=>x.id===id);
     if(!t){ toast("Trabajador no encontrado","err"); location.hash="#/dotacionlegal"; return; }
     const { data: entregas } = await sb.from("dtl_entregas")
-      .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,via")
+      .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,via,creado_en")
       .eq("trabajador_id", id).order("fecha",{ascending:false});
     const listaEntregas = entregas || [];
 
@@ -5982,7 +6091,8 @@ async function renderFichaTrabajadorDtl(id){
         <td>${fmtDate(e.fecha)}</td>
         <td>${partes.join(', ')||'—'}</td>
         <td>${esc(e.responsable_nombre||(e.via==='remoto'?'(entrega remota)':'—'))}</td>
-        <td>${puedeEscribir()?`<button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntregaDtl('${e.id}','${t.id}')">${I.trash}</button>`:''}</td>
+        <td>${puedoTocarReciente(e.creado_en)?`<button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntregaDtl('${e.id}','${t.id}')">${I.pen}</button>
+        <button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntregaDtl('${e.id}','${t.id}')">${I.trash}</button>`:''}</td>
       </tr>`;
     }).join('');
 
@@ -6027,6 +6137,101 @@ function eliminarEntregaDtl(entregaId, trabajadorId){
     toast("Entrega eliminada","ok");
     renderFichaTrabajadorDtl(trabajadorId);
   };
+}
+
+/* ---------- Editar una entrega de Dotación ya registrada. La firma y la foto no se
+   pueden modificar aquí — son evidencia de lo que se firmó. ---------- */
+let editarEntregaDtlDraft = null;
+async function abrirEditarEntregaDtl(entregaId, trabajadorId){
+  bloquear("Cargando…");
+  let entrega;
+  try{
+    const { data:e } = await sb.from("dtl_entregas")
+      .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,responsable_cargo,via")
+      .eq("id",entregaId).maybeSingle();
+    entrega = e;
+  } finally { desbloquear(); }
+  if(!entrega){ toast("Entrega no encontrada","err"); return; }
+  editarEntregaDtlDraft = {
+    id: entrega.id, trabajadorId,
+    fecha: entrega.fecha,
+    pantalonCantidad: entrega.pantalon_cantidad, pantalonTalla: entrega.pantalon_talla || '',
+    camisaCantidad: entrega.camisa_cantidad, camisaTalla: entrega.camisa_talla || '',
+    botasCantidad: entrega.botas_cantidad, botasTalla: entrega.botas_talla || '',
+    adicional: entrega.adicional || '',
+    responsableNombre: entrega.responsable_nombre || '', responsableCargo: entrega.responsable_cargo || '',
+    via: entrega.via
+  };
+  renderFormEditarEntregaDtl();
+}
+
+function renderFormEditarEntregaDtl(){
+  const d = editarEntregaDtlDraft;
+  openModal(`<div class="modal lg">
+    <div class="modal-head"><div><h2>Editar entrega de dotación</h2><p>Corrige los datos registrados. La firma y la foto no se pueden modificar aquí.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Fecha de entrega</label><input type="date" id="eeDtlFecha" value="${d.fecha}"></div>
+      <label style="font-weight:700;font-size:14px;display:block;margin:16px 0 10px">Elementos entregados</label>
+      <div class="field row2">
+        <div><label>Pantalones — cantidad</label><input type="number" min="0" id="eeDtlPantalonCant" value="${d.pantalonCantidad}"></div>
+        <div><label>Talla</label><input id="eeDtlPantalonTalla" value="${esc(d.pantalonTalla)}" placeholder="Ej. 34"></div>
+      </div>
+      <div class="field row2">
+        <div><label>Camisas — cantidad</label><input type="number" min="0" id="eeDtlCamisaCant" value="${d.camisaCantidad}"></div>
+        <div><label>Talla</label><input id="eeDtlCamisaTalla" value="${esc(d.camisaTalla)}" placeholder="Ej. M"></div>
+      </div>
+      <div class="field row2">
+        <div><label>Botas — cantidad</label><input type="number" min="0" id="eeDtlBotasCant" value="${d.botasCantidad}"></div>
+        <div><label>Talla</label><input id="eeDtlBotasTalla" value="${esc(d.botasTalla)}" placeholder="Ej. 40"></div>
+      </div>
+      <div class="field"><label>Adicional <span class="opt">(opcional)</span></label><textarea id="eeDtlAdicional">${esc(d.adicional)}</textarea></div>
+      ${d.via==='presencial'?`
+      <div class="field row2" style="margin-top:14px">
+        <div><label>Responsable</label><input id="eeDtlRespNombre" value="${esc(d.responsableNombre)}" placeholder="Nombre del responsable"></div>
+        <div><label>Cargo</label><input id="eeDtlRespCargo" value="${esc(d.responsableCargo)}" placeholder="Cargo"></div>
+      </div>`:`<p class="muted-sm" style="margin-top:10px">Esta entrega fue remota (por el enlace público) — no tiene responsable presencial que editar.</p>`}
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnEeDtlGuardar">${I.check} Guardar cambios</button>
+    </div>
+  </div>`);
+  document.getElementById('btnEeDtlGuardar').onclick = guardarEdicionEntregaDtl;
+}
+
+async function guardarEdicionEntregaDtl(){
+  const d = editarEntregaDtlDraft;
+  const fecha = document.getElementById('eeDtlFecha').value;
+  const pantalonCantidad = +document.getElementById('eeDtlPantalonCant').value || 0;
+  const pantalonTalla = document.getElementById('eeDtlPantalonTalla').value.trim();
+  const camisaCantidad = +document.getElementById('eeDtlCamisaCant').value || 0;
+  const camisaTalla = document.getElementById('eeDtlCamisaTalla').value.trim();
+  const botasCantidad = +document.getElementById('eeDtlBotasCant').value || 0;
+  const botasTalla = document.getElementById('eeDtlBotasTalla').value.trim();
+  const adicional = document.getElementById('eeDtlAdicional').value.trim();
+  if(pantalonCantidad>0 && !pantalonTalla){ toast("Escribe la talla del pantalón","err"); return; }
+  if(camisaCantidad>0 && !camisaTalla){ toast("Escribe la talla de la camisa","err"); return; }
+  if(botasCantidad>0 && !botasTalla){ toast("Escribe la talla de las botas","err"); return; }
+  const payload = {
+    fecha, pantalon_cantidad: pantalonCantidad, pantalon_talla: pantalonTalla||null,
+    camisa_cantidad: camisaCantidad, camisa_talla: camisaTalla||null,
+    botas_cantidad: botasCantidad, botas_talla: botasTalla||null,
+    adicional: adicional||null
+  };
+  if(d.via==='presencial'){
+    payload.responsable_nombre = document.getElementById('eeDtlRespNombre').value.trim()||null;
+    payload.responsable_cargo = document.getElementById('eeDtlRespCargo').value.trim()||null;
+  }
+  const btn = document.getElementById('btnEeDtlGuardar'); btn.disabled=true; btn.innerHTML="Guardando…";
+  bloquear("Guardando cambios…");
+  try{
+    const { error } = await sb.from("dtl_entregas").update(payload).eq("id", d.id);
+    if(error){ toast("No se pudo guardar: "+error.message,"err"); return; }
+    toast("Entrega actualizada","ok");
+    closeModal();
+    renderFichaTrabajadorDtl(d.trabajadorId);
+  } finally { desbloquear(); }
 }
 
 /* Resumen legible del user-agent capturado por el servidor en la entrega remota — solo
@@ -6222,13 +6427,16 @@ async function descargarZipKardexDtlSeleccion(entidadIds){
   if(!window.jspdf || !window.jspdf.jsPDF){ toast("No se pudo cargar el generador de PDF (revisa tu conexión)","err"); return; }
   if(!window.JSZip){ toast("No se pudo cargar el compresor ZIP (revisa tu conexión)","err"); return; }
   const idsSet = new Set(entidadIds);
-  const lista = DTL.trabajadores.filter(t=>idsSet.has(t.entidad_id));
-  if(!lista.length){ toast("No hay trabajadores para exportar","err"); return; }
+  const candidatos = DTL.trabajadores.filter(t=>idsSet.has(t.entidad_id));
+  const idsConEntrega = new Set(DTL.entregas.map(e=>e.trabajador_id));
+  const lista = candidatos.filter(t=>idsConEntrega.has(t.id));
+  if(!candidatos.length){ toast("No hay trabajadores para exportar","err"); return; }
+  if(!lista.length){ toast("Ninguno de los trabajadores elegidos tiene entregas registradas todavía","err"); return; }
   bloquear("Preparando ZIP…");
   try{
     const zip = new JSZip();
     const usados = {};
-    let incluidos = 0, sinEntregas = 0;
+    let incluidos = 0, sinEntregas = candidatos.length - lista.length;
     for(let i=0;i<lista.length;i++){
       const t = lista[i];
       bloquearMsg(`Generando kárdex ${i+1} de ${lista.length}…`);
@@ -6311,15 +6519,15 @@ function renderDtlPublicoFormulario(){
       <label style="font-weight:700;font-size:14px;display:block;margin-bottom:10px">Elementos que estás recibiendo</label>
       <div class="field row2">
         <div><label>Pantalones — cantidad</label><input type="number" min="0" id="dpPantalonCant" value="2"></div>
-        <div><label>Talla</label><input id="dpPantalonTalla" placeholder="Ej. 34"></div>
+        <div><label>Talla *</label><input id="dpPantalonTalla" placeholder="Ej. 34"></div>
       </div>
       <div class="field row2">
         <div><label>Camisas — cantidad</label><input type="number" min="0" id="dpCamisaCant" value="2"></div>
-        <div><label>Talla</label><input id="dpCamisaTalla" placeholder="Ej. M"></div>
+        <div><label>Talla *</label><input id="dpCamisaTalla" placeholder="Ej. M"></div>
       </div>
       <div class="field row2">
         <div><label>Botas — cantidad</label><input type="number" min="0" id="dpBotasCant" value="1"></div>
-        <div><label>Talla</label><input id="dpBotasTalla" placeholder="Ej. 40"></div>
+        <div><label>Talla *</label><input id="dpBotasTalla" placeholder="Ej. 40"></div>
       </div>
       <div class="field"><label>Adicional <span class="opt">(opcional)</span></label><textarea id="dpAdicional" placeholder="Algo más que estés recibiendo…"></textarea></div>
 
@@ -6365,18 +6573,27 @@ function wireDpFotoPreview(){
 
 async function confirmarEntregaDtlPublica(){
   const err = document.getElementById('dpError'); err.textContent = '';
+  const pCant = +document.getElementById('dpPantalonCant').value || 0;
+  const pTalla = document.getElementById('dpPantalonTalla').value.trim();
+  const cCant = +document.getElementById('dpCamisaCant').value || 0;
+  const cTalla = document.getElementById('dpCamisaTalla').value.trim();
+  const bCant = +document.getElementById('dpBotasCant').value || 0;
+  const bTalla = document.getElementById('dpBotasTalla').value.trim();
+  if(pCant>0 && !pTalla){ err.textContent = 'Escribe la talla del pantalón.'; return; }
+  if(cCant>0 && !cTalla){ err.textContent = 'Escribe la talla de la camisa.'; return; }
+  if(bCant>0 && !bTalla){ err.textContent = 'Escribe la talla de las botas.'; return; }
   if(APP_CONFIG.dotacionFotoObligatoria && !dtlPublicoState.foto){ err.textContent = 'Tu foto es obligatoria para continuar.'; return; }
   if(!sigPad || sigPad.isEmpty()){ err.textContent = 'Falta tu firma.'; return; }
   const btn = document.getElementById('dpConfirmarBtn'); btn.disabled=true; btn.innerHTML='Guardando…';
   const firma = sigPad.dataURL();
   const { data, error } = await sb.rpc('dtl_publico_registrar', {
     p_trabajador_id: dtlPublicoState.trabajador.id,
-    p_pantalon_cantidad: +document.getElementById('dpPantalonCant').value || 0,
-    p_pantalon_talla: document.getElementById('dpPantalonTalla').value.trim() || null,
-    p_camisa_cantidad: +document.getElementById('dpCamisaCant').value || 0,
-    p_camisa_talla: document.getElementById('dpCamisaTalla').value.trim() || null,
-    p_botas_cantidad: +document.getElementById('dpBotasCant').value || 0,
-    p_botas_talla: document.getElementById('dpBotasTalla').value.trim() || null,
+    p_pantalon_cantidad: pCant,
+    p_pantalon_talla: pTalla || null,
+    p_camisa_cantidad: cCant,
+    p_camisa_talla: cTalla || null,
+    p_botas_cantidad: bCant,
+    p_botas_talla: bTalla || null,
     p_adicional: document.getElementById('dpAdicional').value.trim() || null,
     p_firma_trabajador: firma,
     p_foto_trabajador: dtlPublicoState.foto
@@ -6399,8 +6616,9 @@ function renderDtlPublicoExito(){
    el panel de Supabase (Authentication → Users) — aquí solo se asigna
    rol/módulos/contratos una vez el login ya existe (ver CAMBIOS_SQL_7.sql).
    ============================================================ */
-async function renderConfiguracion(){
-  bloquear("Cargando usuarios…");
+async function renderConfiguracion(silent){
+  const scrollY = window.scrollY;
+  if(!silent) bloquear("Cargando usuarios…");
   let perfiles = [];
   try{
     const [{ data }, { data:cfgData }] = await Promise.all([
@@ -6409,7 +6627,7 @@ async function renderConfiguracion(){
     ]);
     perfiles = data || [];
     if(cfgData) APP_CONFIG = { eppFotoObligatoria: !!cfgData.epp_foto_obligatoria, dotacionFotoObligatoria: !!cfgData.dotacion_foto_obligatoria };
-  } finally { desbloquear(); }
+  } finally { if(!silent) desbloquear(); }
 
   const filas = perfiles.map(p=>{
     const esUnoMismo = p.id === MIPERFIL.uid;
@@ -6426,13 +6644,20 @@ async function renderConfiguracion(){
     ${topbar('configuracion')}
     <div class="wrap">
       <div class="page-head">
-        <div><h1>Configuración</h1><p>Usuarios y permisos de acceso a cada módulo y contrato.</p></div>
+        <div><h1>Configuración</h1><p>Usuarios y permisos de acceso a cada módulo (Asistencia, Documentos, EPP y Dotación) y a los contratos/entidades dentro de EPP y Dotación.</p></div>
       </div>
       <div class="resp-firma" style="margin-bottom:20px">
         <div class="rf-info">
           <div class="rf-k">Dar de alta a alguien nuevo</div>
-          <div class="rf-v" style="font-size:13px;font-weight:600">Créale la cuenta (correo y contraseña) en Supabase → Authentication → Users. Aparecerá aquí bloqueada por defecto — solo falta asignarle permisos.</div>
+          <div class="rf-v" style="font-size:13px;font-weight:600">Créale la cuenta (correo y contraseña) en Supabase → Authentication → Users. Aparecerá aquí BLOQUEADA por defecto, sin ningún módulo — no ve nada hasta que le marques módulos abajo en "Permisos". Nunca queda con acceso total por accidente.</div>
         </div>
+      </div>
+      <div class="sec-bar"><h2>Cómo funcionan los roles</h2></div>
+      <div style="margin-bottom:20px;padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
+        <p style="margin-bottom:8px"><b>Administrador</b> — acceso total a todo, sin restricciones, en los 4 módulos.</p>
+        <p style="margin-bottom:8px"><b>Editor en Asistencia y Documentos y Firmas</b> — crea, y solo edita/elimina lo que él mismo creó; nunca puede tocar una lista cerrada o un documento finalizado, así sea suyo.</p>
+        <p style="margin-bottom:8px"><b>Editor en EPP y Dotación</b> — ve todo el directorio y todas las entregas; puede registrar entregas nuevas libremente; puede editar o eliminar cualquier entrega (no solo las que él creó) <b>durante las primeras 24 horas</b> desde que se registró — pasado ese plazo, ni siquiera el que la creó puede tocarla, solo un administrador. Puede corregir datos de un trabajador ya existente, pero <b>no puede agregar trabajadores nuevos ni eliminar trabajadores</b> del directorio (tampoco por carga masiva de Excel) — eso es solo de administrador.</p>
+        <p><b>Visualizador</b> — en cualquier módulo, solo puede ver lo que sus módulos/contratos le permitan; nunca crea, edita ni elimina nada.</p>
       </div>
       <div class="sec-bar"><h2>Ajustes generales</h2></div>
       <div style="margin-bottom:20px;padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px">
@@ -6454,6 +6679,7 @@ async function renderConfiguracion(){
   document.querySelectorAll('[data-perf-editar]').forEach(b=>{
     b.onclick = ()=> abrirPermisosUsuario(b.dataset.perfEditar);
   });
+  if(silent) window.scrollTo(0, scrollY);
 }
 
 async function guardarAjustesGenerales(){
@@ -6502,7 +6728,7 @@ async function abrirPermisosUsuario(perfilId){
       ${esUnoMismo?`<p class="muted-sm" style="margin:-4px 0 10px">No puedes quitarte tu propio acceso de administrador.</p>`:''}
       <div id="permisosDetalle" style="${perfil.es_admin?'display:none':''}">
         <div class="sec-bar" style="margin-top:14px"><h2 style="font-size:14px">Rol</h2></div>
-        <label class="chk"><input type="radio" name="pfRol" value="editor" ${perfil.rol!=='visualizador'?'checked':''}> <b>Editor</b> — crea y edita solo lo que él mismo creó; no puede tocar nada cerrado/finalizado ni de otra persona</label>
+        <label class="chk"><input type="radio" name="pfRol" value="editor" ${perfil.rol!=='visualizador'?'checked':''}> <b>Editor</b> — en Asistencia/Documentos: crea y edita solo lo suyo, nunca lo cerrado/finalizado. En EPP/Dotación: ve y registra todo, edita/elimina cualquier entrega de las últimas 24h, pero no agrega ni elimina trabajadores</label>
         <label class="chk"><input type="radio" name="pfRol" value="visualizador" ${perfil.rol==='visualizador'?'checked':''}> <b>Visualizador</b> — solo puede ver lo que sus módulos/contratos le permitan; no crea, edita ni elimina nada</label>
         <div class="sec-bar" style="margin-top:14px"><h2 style="font-size:14px">Módulos</h2></div>
         <label class="chk"><input type="checkbox" data-pf-mod="asistencia" ${modulos.includes('asistencia')?'checked':''}> Asistencia</label>
@@ -6624,6 +6850,8 @@ document.addEventListener("visibilitychange", ()=>{
   // (si el acceso fue revocado mientras la pestaña estaba abierta, cae a router() para mostrar el candado)
   if(location.hash === "#/docs" && tieneModulo('documentos')){ renderDocsAdmin(true); return; }
   if(location.hash === "#/dotacion" && tieneModulo('dotacion')){ renderDotacionAdmin(true); return; }
+  if(location.hash === "#/dotacionlegal" && tieneModulo('dotacionlegal')){ renderDtlAdmin(true); return; }
+  if(location.hash === "#/configuracion" && MIPERFIL.esAdmin){ renderConfiguracion(true); return; }
   router();   // re-renderiza el módulo activo (asistencia, documentos, dotación o configuración)
 });
 
