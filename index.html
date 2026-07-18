@@ -6029,12 +6029,25 @@ function eliminarEntregaDtl(entregaId, trabajadorId){
   };
 }
 
+/* Resumen legible del user-agent capturado por el servidor en la entrega remota — solo
+   identifica la familia de sistema operativo, no busca precisión de navegador/versión. */
+function resumenDispositivoUA(ua){
+  if(!ua) return null;
+  if(/ipad/i.test(ua)) return 'iPad';
+  if(/iphone/i.test(ua)) return 'iPhone';
+  if(/android/i.test(ua)) return 'Android';
+  if(/windows/i.test(ua)) return 'Windows';
+  if(/macintosh|mac os x/i.test(ua)) return 'Mac';
+  if(/linux/i.test(ua)) return 'Linux';
+  return 'Otro dispositivo';
+}
+
 /* ---------- Kárdex acumulado en PDF ---------- */
 async function construirKardexDtlPDF(trabajadorId){
   const { data: t } = await sb.from("dtl_trabajadores").select("id,nombre,identificacion,cargo,area,entidad_id").eq("id",trabajadorId).maybeSingle();
   if(!t) return null;
   const { data: entregas } = await sb.from("dtl_entregas")
-    .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,firma_trabajador,firma_responsable,foto_trabajador,creado_en")
+    .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,firma_trabajador,firma_responsable,foto_trabajador,creado_en,via,ip_address,dispositivo_ua")
     .eq("trabajador_id", trabajadorId).order("fecha",{ascending:true});
   const listaEntregas = entregas || [];
   if(!listaEntregas.length) return null;
@@ -6108,7 +6121,7 @@ async function construirKardexDtlPDF(trabajadorId){
     if(e.adicional) partes.push("• "+e.adicional);
     const lineas = partes.length ? partes : ["—"];
     const wrapped = doc.splitTextToSize(pdfTexto(lineas.join("\n")), x2-x1-4);
-    let rowH = Math.max(16, wrapped.length*3.6 + 5);
+    let rowH = Math.max(e.via==='remoto' ? 22 : 16, wrapped.length*3.6 + 5);
     let fotoH = 0;
     const dims = e.foto_trabajador ? await getImageSize(e.foto_trabajador) : null;
     if(dims && dims.w>0){ fotoH = Math.min(90, colFotoW * (dims.h/dims.w)); rowH = Math.max(rowH, fotoH+4); }
@@ -6122,10 +6135,18 @@ async function construirKardexDtlPDF(trabajadorId){
     doc.line(M,y+rowH,RIGHT,y+rowH);
     doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(20,20,20);
     doc.text(fmtDate(e.fecha), (x0+x1)/2, y+rowH/2-0.5, {align:"center"});
+    let yAudit = y+rowH/2+4;
     if(e.creado_en){
       const horaFirma = new Date(e.creado_en).toLocaleTimeString("es-CO",{hour:'2-digit',minute:'2-digit'});
       doc.setFontSize(6.5); doc.setTextColor(120,120,140);
-      doc.text(horaFirma, (x0+x1)/2, y+rowH/2+4, {align:"center"});
+      doc.text(horaFirma, (x0+x1)/2, yAudit, {align:"center"});
+      yAudit += 3;
+    }
+    if(e.via==='remoto'){
+      doc.setFontSize(5.3); doc.setTextColor(150,150,170);
+      if(e.ip_address){ doc.text("IP "+e.ip_address, (x0+x1)/2, yAudit, {align:"center"}); yAudit += 2.6; }
+      const disp = resumenDispositivoUA(e.dispositivo_ua);
+      if(disp) doc.text(disp, (x0+x1)/2, yAudit, {align:"center"});
     }
     doc.setFontSize(7.4); doc.setTextColor(20,20,20);
     doc.text(wrapped, x1+2, y+5);
@@ -6137,6 +6158,11 @@ async function construirKardexDtlPDF(trabajadorId){
     }
     if(e.firma_trabajador){ try{ doc.addImage(e.firma_trabajador,"PNG",x2f+3,y+2,x3-x2f-6,rowH-4); }catch(err){} }
     if(e.firma_responsable){ try{ doc.addImage(e.firma_responsable,"PNG",x3+3,y+2,x4-x3-6,rowH-4); }catch(err){} }
+    else if(e.via==='remoto'){
+      doc.setFont("helvetica","italic"); doc.setFontSize(7.5); doc.setTextColor(130,130,150);
+      doc.text("Firmado remotamente", (x3+x4)/2, y+rowH/2, {align:"center"});
+      doc.setFont("helvetica","normal");
+    }
     doc.setFontSize(6); doc.setTextColor(120,120,140);
     if(e.responsable_nombre) doc.text(pdfTexto(e.responsable_nombre), x3+3, y+rowH-1.5);
     y += rowH;
@@ -6472,8 +6498,8 @@ async function abrirPermisosUsuario(perfilId){
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
       <div id="resumenAcceso" style="margin-bottom:14px;padding:10px 12px;background:#eef1fb;border-radius:8px;font-size:13px;color:var(--ink-2)"></div>
-      <label class="chk"><input type="checkbox" id="pfAdmin" ${perfil.es_admin?'checked':''}> Es administrador (acceso total a todo)</label>
-      ${esUnoMismo?`<p class="muted-sm" style="margin:-4px 0 10px">Estás editando tu propia cuenta — si te quitas el admin, debe quedar al menos otro administrador activo (si no, no se dejará guardar).</p>`:''}
+      <label class="chk"><input type="checkbox" id="pfAdmin" ${perfil.es_admin?'checked':''} ${esUnoMismo?'disabled':''}> Es administrador (acceso total a todo)</label>
+      ${esUnoMismo?`<p class="muted-sm" style="margin:-4px 0 10px">No puedes quitarte tu propio acceso de administrador.</p>`:''}
       <div id="permisosDetalle" style="${perfil.es_admin?'display:none':''}">
         <div class="sec-bar" style="margin-top:14px"><h2 style="font-size:14px">Rol</h2></div>
         <label class="chk"><input type="radio" name="pfRol" value="editor" ${perfil.rol!=='visualizador'?'checked':''}> <b>Editor</b> — crea y edita solo lo que él mismo creó; no puede tocar nada cerrado/finalizado ni de otra persona</label>
@@ -6553,11 +6579,6 @@ async function abrirPermisosUsuario(perfilId){
 
 async function guardarPermisosUsuario(perfilId){
   const esAdmin = document.getElementById('pfAdmin').checked;
-  if(!esAdmin && perfilId === MIPERFIL.uid){
-    const { count, error: eCount } = await sb.from("acc_perfiles").select("id",{count:'exact',head:true}).eq("es_admin",true).eq("activo",true).neq("id", perfilId);
-    if(eCount){ toast("No se pudo verificar: "+eCount.message,"err"); return; }
-    if(!count){ toast("Eres el único administrador activo — no puedes quitarte el acceso hasta que haya otro administrador","err"); return; }
-  }
   const modulosMarcados = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-mod]:checked')).map(el=>el.dataset.pfMod);
   const contratosMarcados = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-contrato]:checked')).map(el=>el.dataset.pfContrato);
   const entidadesMarcadas = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-entidad]:checked')).map(el=>el.dataset.pfEntidad);
