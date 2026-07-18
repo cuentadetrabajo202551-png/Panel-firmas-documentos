@@ -742,7 +742,7 @@ document.getElementById("overlay").addEventListener("mousedown", e=>{
    ROUTER
    ============================================================ */
 function esRutaPublica(){
-  return location.hash.startsWith("#/lista/") || location.hash.startsWith("#/firmar/") || location.hash.startsWith("#/responsable/") || location.hash.startsWith("#/firmadoc/") || location.hash.startsWith("#/dotacionlegal/entrega");
+  return location.hash.startsWith("#/lista/") || location.hash.startsWith("#/firmar/") || location.hash.startsWith("#/responsable/") || location.hash.startsWith("#/firmadoc/") || location.hash.startsWith("#/dotacionlegal/entrega") || location.hash.startsWith("#/dotacion/entrega/");
 }
 
 async function router(){
@@ -756,6 +756,8 @@ async function router(){
   const mFdoc = location.hash.match(/^#\/firmadoc\/(.+)$/);
   if(mFdoc){ await renderFirmaDoc(decodeURIComponent(mFdoc[1])); return; }
   if(location.hash.startsWith("#/dotacionlegal/entrega")){ await renderDtlPublico(); return; }
+  const mDotEntrega = location.hash.match(/^#\/dotacion\/entrega\/(.+)$/);
+  if(mDotEntrega){ await renderDotPublico(decodeURIComponent(mDotEntrega[1])); return; }
   // ----- Rutas de ADMINISTRACIÓN (requieren sesión) -----
   const { data:{ session } } = await sb.auth.getSession();
   if(!session){ renderLogin(); return; }
@@ -3778,8 +3780,6 @@ let DOTACION = { contratos: [], trabajadores: [], catalogo: [], entregas: [], en
 let dotQuery = "";
 let entregaDraft = null;
 let contratoActualId = localStorage.getItem('dot_contrato_actual') || null; // null hasta que se carguen los contratos; "todos" = vista combinada
-let dotVista = "trabajadores"; // "trabajadores" | "estadisticas"
-let dotPeriodo = "todo"; // "todo" | "mes" | "anio" (para Estadísticas)
 
 async function loadDotacionState(){
   const [co, t, e, ei] = await Promise.all([
@@ -3884,6 +3884,8 @@ async function renderDotacionAdmin(silent){
           ${!enTodos && MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-pc-only" id="btnPlantillaTrab">${I.doc} Plantilla Excel</button>
           <button class="btn btn-ghost btn-pc-only" id="btnCargaTrab">${I.plus} Carga masiva</button>`:''}
           ${totalEntregas?`<button class="btn btn-ghost btn-pc-only" id="btnZipKardex">${I.doc} Descargar todos (ZIP)</button>`:''}
+          ${!enTodos?`<button class="btn btn-ghost btn-pc-only" id="btnCopiarEnlaceEpp">${I.link} Copiar enlace de entrega remota</button>
+          <button class="btn btn-ghost btn-pc-only" id="btnQrEpp">${I.link} QR remoto</button>`:''}
           ${!enTodos && MIPERFIL.esAdmin?`<button class="btn btn-primary btn-pc-only" id="btnNuevoTrab">${I.plus} Nuevo trabajador</button>`:''}
         </div>
       </div>
@@ -3893,11 +3895,6 @@ async function renderDotacionAdmin(silent){
         <div class="stat s-act"><div class="label">Entregas registradas</div><div class="value">${totalEntregas}</div></div>
         <div class="stat s-asi"><div class="label">Entregas este mes</div><div class="value">${entregasMes}</div></div>
         <div class="stat s-clo"><div class="label">Sin entregas aún</div><div class="value">${sinEntregas}</div></div>
-      </div>
-
-      <div class="tabs dot-pc-only" style="margin-bottom:18px">
-        <button class="tab ${dotVista==='trabajadores'?'active':''}" data-vista="trabajadores">${I.users} Trabajadores</button>
-        <button class="tab ${dotVista==='estadisticas'?'active':''}" data-vista="estadisticas">📊 Estadísticas</button>
       </div>
 
       <div id="dotBody"></div>
@@ -3918,15 +3915,13 @@ async function renderDotacionAdmin(silent){
   document.getElementById("fileTrabajadores").onchange = (e)=>{ const f=e.target.files[0]; if(f) cargarTrabajadoresExcelDot(f); e.target.value=""; };
   const bnt=document.getElementById("btnNuevoTrab"); if(bnt) bnt.onclick = ()=> abrirTrabajadorForm(null);
   const bzk=document.getElementById("btnZipKardex"); if(bzk) bzk.onclick = abrirSeleccionZipDot;
-  document.querySelectorAll(".tab[data-vista]").forEach(tb=>{
-    tb.onclick = ()=>{ dotVista = tb.dataset.vista; renderDotacionBody(); document.querySelectorAll(".tab[data-vista]").forEach(x=>x.classList.toggle('active', x===tb)); };
-  });
+  const bceEpp=document.getElementById("btnCopiarEnlaceEpp"); if(bceEpp) bceEpp.onclick = ()=> copyText(location.href.split("#")[0]+"#/dotacion/entrega/"+contratoActualId, "Enlace de entrega remota copiado");
+  const bqrEpp=document.getElementById("btnQrEpp"); if(bqrEpp) bqrEpp.onclick = ()=> mostrarQR(location.href.split("#")[0]+"#/dotacion/entrega/"+contratoActualId, "Entrega remota de EPP — "+(contratoActual()?.nombre||''));
   renderDotacionBody();
   if(silent) window.scrollTo(0, scrollY);
 }
 
 function renderDotacionBody(){
-  if(dotVista==='estadisticas'){ renderDotEstadisticas(); return; }
   const host = document.getElementById("dotBody");
   if(!host) return;
   host.innerHTML = `
@@ -4952,6 +4947,150 @@ async function guardarEdicionEntrega(){
   } finally { desbloquear(); }
 }
 
+/* ============================================================
+   Flujo público — enlace de entrega remota de EPP, UN ENLACE POR
+   CONTRATO (#/dotacion/entrega/<contratoId>). En EPP la cédula es
+   única solo DENTRO de cada contrato (no en toda la empresa como en
+   Dotación), así que el enlace lleva el contrato incluido y busca la
+   cédula solo ahí — sin ambigüedad posible.
+   ============================================================ */
+const EPP_DECLARACION = "Declaro haber recibido a satisfacción los elementos de protección personal (EPP) relacionados en este documento, en buen estado y en las cantidades indicadas. Me comprometo a utilizarlos durante el desarrollo de mis labores y a darles el cuidado adecuado.";
+let dotPublicoState = { contratoId:null, catalogo:[], trabajador:null, foto:null };
+
+async function renderDotPublico(contratoId){
+  dotPublicoState = { contratoId, catalogo:[], trabajador:null, foto:null };
+  const { data } = await sb.rpc('dot_publico_catalogo', { p_contrato_id: contratoId });
+  dotPublicoState.catalogo = data || [];
+  renderDotPublicoCedula();
+}
+
+function renderDotPublicoCedula(){
+  document.getElementById("app").innerHTML = `
+    <div class="pub-wrap"><div class="pub-card"><div class="pub-body">
+      <img src="${LOGO}" alt="Don Aseo Ltda." style="height:48px;display:block;margin:0 auto 18px">
+      <h2 style="text-align:center;margin-bottom:6px">Entrega de EPP</h2>
+      <p class="muted-sm" style="text-align:center;margin-bottom:20px">Escribe tu número de cédula para continuar.</p>
+      <div class="field"><label>Número de identificación (cédula) *</label><input id="epCedula" inputmode="numeric" placeholder="C.C."></div>
+      <div id="epError" class="login-err"></div>
+      <button class="btn btn-primary" id="epBuscarBtn" style="width:100%;padding:13px;margin-top:6px">${I.check} Continuar</button>
+    </div></div></div>`;
+  document.getElementById('epBuscarBtn').onclick = async ()=>{
+    const cedula = document.getElementById('epCedula').value.trim();
+    const err = document.getElementById('epError');
+    err.textContent = '';
+    if(!cedula){ err.textContent = 'Escribe tu cédula.'; return; }
+    const btn = document.getElementById('epBuscarBtn'); btn.disabled=true; btn.innerHTML='Buscando…';
+    const { data, error } = await sb.rpc('dot_publico_buscar', { p_contrato_id: dotPublicoState.contratoId, p_cedula: cedula });
+    btn.disabled=false; btn.innerHTML=`${I.check} Continuar`;
+    if(error || !data || !data.ok){
+      err.textContent = 'No encontramos tu cédula en este contrato. Contacta a Recursos Humanos.';
+      return;
+    }
+    dotPublicoState.trabajador = data.trabajador;
+    renderDotPublicoFormulario();
+  };
+}
+
+function renderDotPublicoFormulario(){
+  const t = dotPublicoState.trabajador;
+  const cat = dotPublicoState.catalogo;
+  document.getElementById("app").innerHTML = `
+    <div class="pub-wrap"><div class="pub-card"><div class="pub-body">
+      <img src="${LOGO}" alt="Don Aseo Ltda." style="height:40px;display:block;margin:0 auto 14px">
+      <div class="trab-summary" style="margin-bottom:16px">
+        <div class="tk">Recibe</div>
+        <div class="tv">${esc(t.nombre)} — C.C. ${esc(t.identificacion)}</div>
+      </div>
+      <label style="font-weight:700;font-size:14px;display:block;margin-bottom:10px">Elementos que estás recibiendo</label>
+      ${cat.length ? cat.map(c=>`
+        <label class="chk" style="margin-bottom:6px"><input type="checkbox" data-epinc="${c.id}"> ${esc(c.nombre)}</label>
+        <div class="field row2" id="epFields_${c.id}" style="display:none">
+          <div><label>Cantidad</label><input type="number" min="1" step="1" value="1" data-epcant="${c.id}"></div>
+          <div><label>Talla <span class="opt">(opcional)</span></label><input placeholder="Si aplica" data-eptalla="${c.id}"></div>
+        </div>`).join('') : `<p class="muted-sm">No hay ítems configurados en el catálogo de este contrato — contacta a Recursos Humanos.</p>`}
+      <div class="field"><label>Observaciones <span class="opt">(opcional)</span></label><input id="epObs" placeholder="Ej. reposición por daño, talla especial…"></div>
+
+      <div style="margin-bottom:14px">
+        <p class="muted-sm" style="margin-bottom:6px">Tu foto ${APP_CONFIG.eppFotoObligatoria?'<span style="color:var(--danger);font-weight:700">(obligatoria)</span>':'<span class="opt">(opcional)</span>'}</p>
+        <div id="epFotoPreview">${epFotoPreviewHTML()}</div>
+        <input type="file" id="epFileFoto" accept="image/*" capture="user" style="display:none">
+      </div>
+
+      <div class="firma-legal" style="margin-bottom:14px">
+        <p>${esc(EPP_DECLARACION)}</p>
+      </div>
+
+      <div class="sig-box" id="sigBox"><canvas id="sigCanvas"></canvas><div class="sig-placeholder" id="sigPh">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div></div>
+      <div class="sig-actions"><button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar</button></div>
+
+      <div id="epError" class="login-err" style="margin-top:10px"></div>
+      <button class="btn btn-primary" id="epConfirmarBtn" style="width:100%;padding:13px;margin-top:14px">${I.check} Confirmar entrega</button>
+    </div></div></div>`;
+  initSignature();
+  document.getElementById('sigClear').onclick = ()=> sigPad.clear();
+  wireEpFotoPreview();
+  cat.forEach(c=>{
+    const chk = document.querySelector(`[data-epinc="${c.id}"]`);
+    chk.onchange = ()=>{ document.getElementById('epFields_'+c.id).style.display = chk.checked ? '' : 'none'; };
+  });
+  document.getElementById('epConfirmarBtn').onclick = confirmarEntregaDotPublica;
+}
+
+function epFotoPreviewHTML(){
+  return dotPublicoState.foto
+    ? `<div class="cap-prev"><img src="${dotPublicoState.foto}"><button class="btn btn-ghost btn-sm" id="epBtnCambiarFoto">${I.pen} Cambiar foto</button></div>`
+    : `<button class="btn btn-ghost btn-sm" id="epBtnTomarFoto">${I.user} Tomar foto</button>`;
+}
+function wireEpFotoPreview(){
+  const inp = document.getElementById('epFileFoto');
+  inp.onchange = async ()=>{
+    const f = inp.files[0]; if(!f) return;
+    dotPublicoState.foto = await comprimirImagen(f, 700);
+    inp.value = '';
+    document.getElementById('epFotoPreview').innerHTML = epFotoPreviewHTML();
+    wireEpFotoPreview();
+  };
+  const bt = document.getElementById('epBtnTomarFoto'); if(bt) bt.onclick = ()=> inp.click();
+  const bc = document.getElementById('epBtnCambiarFoto'); if(bc) bc.onclick = ()=> inp.click();
+}
+
+async function confirmarEntregaDotPublica(){
+  const err = document.getElementById('epError'); err.textContent = '';
+  const items = [];
+  dotPublicoState.catalogo.forEach(c=>{
+    const chk = document.querySelector(`[data-epinc="${c.id}"]`);
+    if(chk && chk.checked){
+      const cant = +document.querySelector(`[data-epcant="${c.id}"]`).value || 0;
+      const talla = document.querySelector(`[data-eptalla="${c.id}"]`).value.trim();
+      if(cant>0) items.push({ nombre: c.nombre, cantidad: cant, talla: talla||null });
+    }
+  });
+  if(!items.length){ err.textContent = 'Selecciona al menos un ítem que estás recibiendo.'; return; }
+  if(APP_CONFIG.eppFotoObligatoria && !dotPublicoState.foto){ err.textContent = 'Tu foto es obligatoria para continuar.'; return; }
+  if(!sigPad || sigPad.isEmpty()){ err.textContent = 'Falta tu firma.'; return; }
+  const btn = document.getElementById('epConfirmarBtn'); btn.disabled=true; btn.innerHTML='Guardando…';
+  const firma = sigPad.dataURL();
+  const observaciones = document.getElementById('epObs').value.trim();
+  const { data, error } = await sb.rpc('dot_publico_registrar', {
+    p_contrato_id: dotPublicoState.contratoId,
+    p_trabajador_id: dotPublicoState.trabajador.id,
+    p_items: items,
+    p_observaciones: observaciones || null,
+    p_firma_trabajador: firma,
+    p_foto_trabajador: dotPublicoState.foto
+  });
+  if(error || !data || !data.ok){
+    btn.disabled=false; btn.innerHTML=`${I.check} Confirmar entrega`;
+    err.textContent = (error && error.message) ? error.message : 'No se pudo registrar la entrega. Intenta de nuevo.';
+    return;
+  }
+  renderDotPublicoExito();
+}
+
+function renderDotPublicoExito(){
+  document.getElementById("app").innerHTML = pantallaFirmaOk("¡Listo!", "Tu entrega de EPP quedó registrada correctamente.");
+}
+
 /* Dimensiones naturales (px) de una imagen data-URL, para no distorsionar su proporción al estamparla en el PDF */
 function getImageSize(dataUrl){
   return new Promise(res=>{
@@ -4970,7 +5109,7 @@ async function construirKardexPDF(trabajadorId){
   const { data: t } = await sb.from("dot_trabajadores").select("id,nombre,identificacion,cargo,area,contrato_id").eq("id",trabajadorId).maybeSingle();
   if(!t) return null;
   const { data: entregas } = await sb.from("dot_entregas")
-    .select("id,fecha,responsable_nombre,responsable_cargo,firma_trabajador,firma_responsable,foto_trabajador,creado_en")
+    .select("id,fecha,responsable_nombre,responsable_cargo,firma_trabajador,firma_responsable,foto_trabajador,creado_en,via,ip_address,dispositivo_ua")
     .eq("trabajador_id", trabajadorId).order("fecha",{ascending:true});
   const listaEntregas = entregas || [];
   if(!listaEntregas.length) return null;
@@ -5044,7 +5183,7 @@ async function construirKardexPDF(trabajadorId){
     const its = itemsPorEntrega[e.id]||[];
     const lineas = its.length ? its.map(it=>"• "+it.nombre_item+" × "+it.cantidad+(it.talla?" ("+it.talla+")":"")) : ["—"];
     const wrapped = doc.splitTextToSize(pdfTexto(lineas.join("\n")), x2-x1-4);
-    let rowH = Math.max(16, wrapped.length*3.6 + 5);
+    let rowH = Math.max(e.via==='remoto' ? 22 : 16, wrapped.length*3.6 + 5);
     // Si hay foto, la fila crece para respetar su proporción original (nunca se estira/deforma la foto)
     let fotoH = 0;
     const dims = e.foto_trabajador ? await getImageSize(e.foto_trabajador) : null;
@@ -5059,10 +5198,18 @@ async function construirKardexPDF(trabajadorId){
     doc.line(M,y+rowH,RIGHT,y+rowH);
     doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(20,20,20);
     doc.text(fmtDate(e.fecha), (x0+x1)/2, y+rowH/2-0.5, {align:"center"});
+    let yAudit = y+rowH/2+4;
     if(e.creado_en){
       const horaFirma = new Date(e.creado_en).toLocaleTimeString("es-CO",{hour:'2-digit',minute:'2-digit'});
       doc.setFontSize(6.5); doc.setTextColor(120,120,140);
-      doc.text(horaFirma, (x0+x1)/2, y+rowH/2+4, {align:"center"});
+      doc.text(horaFirma, (x0+x1)/2, yAudit, {align:"center"});
+      yAudit += 3;
+    }
+    if(e.via==='remoto'){
+      doc.setFontSize(5.3); doc.setTextColor(150,150,170);
+      if(e.ip_address){ doc.text("IP "+e.ip_address, (x0+x1)/2, yAudit, {align:"center"}); yAudit += 2.6; }
+      const disp = resumenDispositivoUA(e.dispositivo_ua);
+      if(disp) doc.text(disp, (x0+x1)/2, yAudit, {align:"center"});
     }
     doc.setFontSize(7.4); doc.setTextColor(20,20,20);
     doc.text(wrapped, x1+2, y+5);
@@ -5074,6 +5221,11 @@ async function construirKardexPDF(trabajadorId){
     }
     if(e.firma_trabajador){ try{ doc.addImage(e.firma_trabajador,"PNG",x2f+3,y+2,x3-x2f-6,rowH-4); }catch(err){} }
     if(e.firma_responsable){ try{ doc.addImage(e.firma_responsable,"PNG",x3+3,y+2,x4-x3-6,rowH-4); }catch(err){} }
+    else if(e.via==='remoto'){
+      doc.setFont("helvetica","italic"); doc.setFontSize(7.5); doc.setTextColor(130,130,150);
+      doc.text("Firmado remotamente", (x3+x4)/2, y+rowH/2, {align:"center"});
+      doc.setFont("helvetica","normal");
+    }
     doc.setFontSize(6); doc.setTextColor(120,120,140);
     if(e.responsable_nombre) doc.text(pdfTexto(e.responsable_nombre), x3+3, y+rowH-1.5);
     y += rowH;
@@ -5171,55 +5323,6 @@ async function descargarZipKardexSeleccion(contratoIds){
     toast(msg,"ok");
   }catch(e){ console.error(e); toast("No se pudo generar el ZIP: "+(e.message||''),"err"); }
   finally{ desbloquear(); }
-}
-
-/* ---------- Estadísticas: para eso existe el catálogo fijo — saber cuánto se ha entregado de cada ítem ---------- */
-function renderDotEstadisticas(){
-  const host = document.getElementById('dotBody');
-  if(!host) return;
-  const trabIds = new Set(trabajadoresDelContrato().map(t=>t.id));
-  const prefijo = dotPeriodo==='mes' ? hoyLocal().slice(0,7) : (dotPeriodo==='anio' ? hoyLocal().slice(0,4) : null);
-  const entregasFiltradas = DOTACION.entregas.filter(e=> trabIds.has(e.trabajador_id) && (!prefijo || (e.fecha||"").startsWith(prefijo)));
-  const idsEntFiltradas = new Set(entregasFiltradas.map(e=>e.id));
-  const itemsFiltrados = DOTACION.entregaItems.filter(it=> idsEntFiltradas.has(it.entrega_id));
-
-  const porItem = {};
-  itemsFiltrados.forEach(it=>{
-    const k = it.nombre_item;
-    if(!porItem[k]) porItem[k] = { nombre:k, cantidad:0, entregas:0 };
-    porItem[k].cantidad += (+it.cantidad || 0);
-    porItem[k].entregas += 1;
-  });
-  const ranking = Object.values(porItem).sort((a,b)=> b.cantidad - a.cantidad);
-  const totalItems = ranking.reduce((s,r)=>s+r.cantidad, 0);
-  const maxCantidad = ranking.length ? ranking[0].cantidad : 0;
-  const trabajadoresAtendidos = new Set(entregasFiltradas.map(e=>e.trabajador_id)).size;
-
-  host.innerHTML = `
-    <div class="tabs" style="margin-bottom:16px">
-      <button class="tab ${dotPeriodo==='todo'?'active':''}" data-periodo="todo">Todo el tiempo</button>
-      <button class="tab ${dotPeriodo==='mes'?'active':''}" data-periodo="mes">Este mes</button>
-      <button class="tab ${dotPeriodo==='anio'?'active':''}" data-periodo="anio">Este año</button>
-    </div>
-    <div class="stats">
-      <div class="stat s-total"><div class="label">Entregas en el periodo</div><div class="value">${entregasFiltradas.length}</div></div>
-      <div class="stat s-act"><div class="label">Trabajadores atendidos</div><div class="value">${trabajadoresAtendidos}</div></div>
-      <div class="stat s-asi"><div class="label">Ítems entregados (total)</div><div class="value">${totalItems}</div></div>
-      <div class="stat s-clo"><div class="label">Ítem más entregado</div><div class="value" style="font-size:16px;line-height:1.3">${ranking.length?esc(ranking[0].nombre):'—'}</div></div>
-    </div>
-    <div class="sec-bar"><h2>Ítems entregados por tipo</h2><span class="muted-sm">${ranking.length} tipo(s)</span></div>
-    ${ranking.length ? `<div class="table-wrap"><table class="dt"><thead><tr><th>Ítem</th><th>Cantidad total</th><th>Nº de entregas</th><th></th></tr></thead><tbody>
-      ${ranking.map(r=>`<tr>
-        <td>${esc(r.nombre)}</td>
-        <td><b>${r.cantidad}</b></td>
-        <td>${r.entregas}</td>
-        <td style="width:160px"><div style="background:var(--brand-soft);border-radius:6px;height:8px;overflow:hidden"><div style="background:var(--brand);height:100%;width:${maxCantidad?Math.round(r.cantidad/maxCantidad*100):0}%"></div></div></td>
-      </tr>`).join('')}
-    </tbody></table></div>` : `<div class="empty"><div class="ic">${I.box}</div><h3>Sin datos todavía</h3><p>Cuando registres entregas, aquí verás cuánto se ha entregado de cada ítem del catálogo.</p></div>`}
-  `;
-  host.querySelectorAll('[data-periodo]').forEach(b=>{
-    b.onclick = ()=>{ dotPeriodo = b.dataset.periodo; renderDotEstadisticas(); };
-  });
 }
 
 /* ============================================================
@@ -5321,16 +5424,22 @@ async function renderDtlAdmin(silent){
         <div>
           <h1>Dotación</h1>
           <p>Entrega de dotación legal (pantalones, camisas y botas), con firma digital. Todos los trabajadores, de todas las entidades, en un solo lugar.</p>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
+            <select id="selFiltroEntidad" style="font-weight:700;font-size:13.5px;padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--brand-deep)">
+              ${puedeVerTodas?`<option value="todas" ${dtlFiltroEntidad==='todas'?'selected':''}>Todas las entidades</option>`:''}
+              ${entidadesAcc.map(x=>`<option value="${x.id}" ${x.id===dtlFiltroEntidad?'selected':''}>${esc(x.nombre)}${x.activo?'':' (archivada)'}</option>`).join('')}
+            </select>
+            ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-sm btn-pc-only" id="btnGestionEntidades">${I.pen} Gestionar entidades</button>`:''}
+          </div>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
-          ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-sm btn-pc-only" id="btnGestionEntidades">${I.pen} Gestionar entidades</button>`:''}
           ${puedeEscribir()?`<button class="btn btn-ghost btn-pc-only" id="btnPredeterminadosDtl">${I.pen} Predeterminados</button>`:''}
           ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-pc-only" id="btnPlantillaTrabDtl">${I.doc} Plantilla Excel</button>
           <button class="btn btn-ghost btn-pc-only" id="btnCargaTrabDtl">${I.plus} Carga masiva</button>`:''}
           ${totalEntregas?`<button class="btn btn-ghost btn-pc-only" id="btnZipKardexDtl">${I.doc} Descargar todos (ZIP)</button>`:''}
           <button class="btn btn-ghost btn-pc-only" id="btnCopiarEnlacePublico">${I.link} Copiar enlace de entrega remota</button>
           <button class="btn btn-ghost btn-pc-only" id="btnQrEnlacePublico">${I.link} QR remoto</button>
-          ${MIPERFIL.esAdmin?`<button class="btn btn-primary" id="btnNuevoTrabDtl">${I.plus} Nuevo trabajador</button>`:''}
+          ${MIPERFIL.esAdmin?`<button class="btn btn-primary btn-pc-only" id="btnNuevoTrabDtl">${I.plus} Nuevo trabajador</button>`:''}
         </div>
       </div>
 
@@ -5346,10 +5455,6 @@ async function renderDtlAdmin(silent){
           ${I.search}
           <input type="text" id="dtlSearch" placeholder="Buscar por nombre, cédula, cargo o área…" value="${esc(dtlQuery)}">
         </div>
-        <select id="selFiltroEntidad" style="font-weight:700;font-size:13.5px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--brand-deep)">
-          ${puedeVerTodas?`<option value="todas" ${dtlFiltroEntidad==='todas'?'selected':''}>Todas las entidades</option>`:''}
-          ${entidadesAcc.map(x=>`<option value="${x.id}" ${x.id===dtlFiltroEntidad?'selected':''}>${esc(x.nombre)}${x.activo?'':' (archivada)'}</option>`).join('')}
-        </select>
       </div>
       <div id="dtlGrid"></div>
       <input type="file" id="fileTrabajadoresDtl" accept=".xlsx,.xls,.csv" style="display:none">
