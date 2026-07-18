@@ -3883,7 +3883,8 @@ async function renderDotacionAdmin(silent){
           ${puedeEscribir()?`<button class="btn btn-ghost btn-pc-only" id="btnPredeterminados">${I.pen} Predeterminados</button>`:''}
           ${!enTodos && MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-pc-only" id="btnPlantillaTrab">${I.doc} Plantilla Excel</button>
           <button class="btn btn-ghost btn-pc-only" id="btnCargaTrab">${I.plus} Carga masiva</button>`:''}
-          ${totalEntregas?`<button class="btn btn-ghost btn-pc-only" id="btnZipKardex">${I.doc} Descargar todos (ZIP)</button>`:''}
+          ${totalEntregas?`<button class="btn btn-ghost btn-pc-only" id="btnZipKardex">${I.doc} Descargar todos (ZIP)</button>
+          <button class="btn btn-ghost btn-pc-only" id="btnExcelEpp">${I.doc} Descargar Excel</button>`:''}
           ${!enTodos?`<button class="btn btn-ghost btn-pc-only" id="btnCopiarEnlaceEpp">${I.link} Copiar enlace de entrega remota</button>
           <button class="btn btn-ghost btn-pc-only" id="btnQrEpp">${I.link} QR remoto</button>`:''}
           ${!enTodos && MIPERFIL.esAdmin?`<button class="btn btn-primary btn-pc-only" id="btnNuevoTrab">${I.plus} Nuevo trabajador</button>`:''}
@@ -3915,6 +3916,7 @@ async function renderDotacionAdmin(silent){
   document.getElementById("fileTrabajadores").onchange = (e)=>{ const f=e.target.files[0]; if(f) cargarTrabajadoresExcelDot(f); e.target.value=""; };
   const bnt=document.getElementById("btnNuevoTrab"); if(bnt) bnt.onclick = ()=> abrirTrabajadorForm(null);
   const bzk=document.getElementById("btnZipKardex"); if(bzk) bzk.onclick = abrirSeleccionZipDot;
+  const bxl=document.getElementById("btnExcelEpp"); if(bxl) bxl.onclick = abrirSeleccionExcelDot;
   const bceEpp=document.getElementById("btnCopiarEnlaceEpp"); if(bceEpp) bceEpp.onclick = ()=> copyText(location.href.split("#")[0]+"#/dotacion/entrega/"+contratoActualId, "Enlace de entrega remota copiado");
   const bqrEpp=document.getElementById("btnQrEpp"); if(bqrEpp) bqrEpp.onclick = ()=> mostrarQR(location.href.split("#")[0]+"#/dotacion/entrega/"+contratoActualId, "Entrega remota de EPP — "+(contratoActual()?.nombre||''));
   renderDotacionBody();
@@ -5327,6 +5329,92 @@ async function descargarZipKardexSeleccion(contratoIds){
   finally{ desbloquear(); }
 }
 
+/* Selección de contratos para el Excel de entregas de EPP — mismo modal que el ZIP, distinta acción. */
+function abrirSeleccionExcelDot(){
+  const preseleccion = contratoActualId!=='todos' ? [contratoActualId] : [];
+  openModal(`<div class="modal" style="max-width:480px">
+    <div class="modal-head"><div><h2>Descargar Excel de entregas</h2><p>Elige qué contratos incluir. Una fila por entrega, con fecha, ítems y responsable.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+        <button class="btn btn-ghost btn-sm" id="btnExcelDotTodos">Seleccionar todos</button>
+      </div>
+      <div id="excelDotLista">
+        ${DOTACION.contratos.length
+          ? DOTACION.contratos.map(c=>`<label class="chk" style="padding:4px 0"><input type="checkbox" data-excel-contrato="${c.id}" ${preseleccion.includes(c.id)?'checked':''}> ${esc(c.nombre)}${c.activo?'':' (archivado)'}</label>`).join('')
+          : '<p class="muted-sm">No hay contratos creados.</p>'}
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnExcelDotDescargar">${I.doc} Descargar Excel</button>
+    </div>
+  </div>`);
+  document.getElementById('btnExcelDotTodos').onclick = ()=>{
+    document.querySelectorAll('[data-excel-contrato]').forEach(chk=>chk.checked=true);
+  };
+  document.getElementById('btnExcelDotDescargar').onclick = ()=>{
+    const ids = Array.from(document.querySelectorAll('[data-excel-contrato]:checked')).map(el=>el.dataset.excelContrato);
+    if(!ids.length){ toast("Elige al menos un contrato","err"); return; }
+    closeModal();
+    descargarExcelDotSeleccion(ids);
+  };
+}
+
+/* Excel de entregas de EPP: una fila por entrega (nombre/identificación/cargo/área + fecha/ítems/responsable).
+   Los trabajadores sin ninguna entrega también aparecen, con esas columnas en blanco (para detectar
+   quién todavía no ha recibido nada). Se consultan fecha/ítems/responsable frescos porque el estado
+   precargado (DOTACION.entregas/entregaItems) no trae responsable_nombre ni talla. */
+async function descargarExcelDotSeleccion(contratoIds){
+  if(!window.XLSX){ toast("No se pudo cargar el generador de Excel (revisa tu conexión)","err"); return; }
+  const idsSet = new Set(contratoIds);
+  const trabajadores = DOTACION.trabajadores.filter(t=>idsSet.has(t.contrato_id));
+  if(!trabajadores.length){ toast("No hay trabajadores para exportar","err"); return; }
+  bloquear("Generando Excel…");
+  try{
+    const idsTrab = trabajadores.map(t=>t.id);
+    const { data: entregas, error: e1 } = await sb.from("dot_entregas")
+      .select("id,trabajador_id,fecha,responsable_nombre,via").in("trabajador_id", idsTrab).order("fecha",{ascending:true});
+    if(e1){ toast("No se pudo cargar: "+e1.message,"err"); return; }
+    const idsEnt = (entregas||[]).map(e=>e.id);
+    const { data: items, error: e2 } = idsEnt.length
+      ? await sb.from("dot_entrega_items").select("entrega_id,nombre_item,cantidad,talla").in("entrega_id", idsEnt)
+      : { data: [] };
+    if(e2){ toast("No se pudo cargar: "+e2.message,"err"); return; }
+    const itemsPorEntrega = {};
+    (items||[]).forEach(it=>{ (itemsPorEntrega[it.entrega_id]=itemsPorEntrega[it.entrega_id]||[]).push(it); });
+    const entregasPorTrab = {};
+    (entregas||[]).forEach(e=>{ (entregasPorTrab[e.trabajador_id]=entregasPorTrab[e.trabajador_id]||[]).push(e); });
+
+    const filas = [];
+    trabajadores.forEach(t=>{
+      const nombreContrato = (DOTACION.contratos.find(c=>c.id===t.contrato_id)||{}).nombre || '';
+      const entregasT = entregasPorTrab[t.id] || [];
+      if(!entregasT.length){
+        filas.push({ Contrato:nombreContrato, 'Nombre completo':t.nombre, 'Identificación':t.identificacion, Cargo:t.cargo||'', 'Área':t.area||'', 'Fecha de entrega':'', 'Ítems entregados':'', Responsable:'' });
+      } else {
+        entregasT.forEach(e=>{
+          const its = (itemsPorEntrega[e.id]||[]).map(it=>it.nombre_item+' × '+it.cantidad+(it.talla?' ('+it.talla+')':'')).join(', ');
+          filas.push({
+            Contrato: nombreContrato, 'Nombre completo': t.nombre, 'Identificación': t.identificacion,
+            Cargo: t.cargo||'', 'Área': t.area||'',
+            'Fecha de entrega': fmtDate(e.fecha), 'Ítems entregados': its || '—',
+            Responsable: e.responsable_nombre || (e.via==='remoto' ? '(entrega remota)' : '')
+          });
+        });
+      }
+    });
+    const ws = XLSX.utils.json_to_sheet(filas);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'EPP');
+    const nombreArchivo = contratoIds.length===DOTACION.contratos.length ? 'todos_los_contratos' : (contratoIds.length===1 ? (DOTACION.contratos.find(c=>c.id===contratoIds[0])?.nombre||'contrato') : contratoIds.length+'_contratos');
+    const safe = String(nombreArchivo).replace(/[^\w\sáéíóúñ-]/gi,'').trim().replace(/\s+/g,'_').slice(0,40);
+    XLSX.writeFile(wb, 'Entregas_EPP_'+safe+'.xlsx');
+    toast("Excel generado","ok");
+  }catch(e){ console.error(e); toast("No se pudo generar el Excel: "+(e.message||''),"err"); }
+  finally{ desbloquear(); }
+}
+
 /* ============================================================
    MÓDULO DOTACIÓN · Elementos de dotación legal (2 pantalones,
    2 camisas, 1 par de botas + adicional libre). Directorio propio
@@ -5438,7 +5526,8 @@ async function renderDtlAdmin(silent){
           ${puedeEscribir()?`<button class="btn btn-ghost btn-pc-only" id="btnPredeterminadosDtl">${I.pen} Predeterminados</button>`:''}
           ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-pc-only" id="btnPlantillaTrabDtl">${I.doc} Plantilla Excel</button>
           <button class="btn btn-ghost btn-pc-only" id="btnCargaTrabDtl">${I.plus} Carga masiva</button>`:''}
-          ${totalEntregas?`<button class="btn btn-ghost btn-pc-only" id="btnZipKardexDtl">${I.doc} Descargar todos (ZIP)</button>`:''}
+          ${totalEntregas?`<button class="btn btn-ghost btn-pc-only" id="btnZipKardexDtl">${I.doc} Descargar todos (ZIP)</button>
+          <button class="btn btn-ghost btn-pc-only" id="btnExcelDtl">${I.doc} Descargar Excel</button>`:''}
           <button class="btn btn-ghost btn-pc-only" id="btnCopiarEnlacePublico">${I.link} Copiar enlace de entrega remota</button>
           <button class="btn btn-ghost btn-pc-only" id="btnQrEnlacePublico">${I.link} QR remoto</button>
           ${MIPERFIL.esAdmin?`<button class="btn btn-primary btn-pc-only" id="btnNuevoTrabDtl">${I.plus} Nuevo trabajador</button>`:''}
@@ -5475,6 +5564,7 @@ async function renderDtlAdmin(silent){
   document.getElementById("fileTrabajadoresDtl").onchange = (e)=>{ const f=e.target.files[0]; if(f) cargarTrabajadoresExcelDtl(f); e.target.value=""; };
   const bnt=document.getElementById("btnNuevoTrabDtl"); if(bnt) bnt.onclick = ()=> abrirTrabajadorDtlForm(null);
   const bzk=document.getElementById("btnZipKardexDtl"); if(bzk) bzk.onclick = abrirSeleccionZipDtl;
+  const bxl=document.getElementById("btnExcelDtl"); if(bxl) bxl.onclick = abrirSeleccionExcelDtl;
   const bce=document.getElementById("btnCopiarEnlacePublico"); if(bce) bce.onclick = ()=> copyText(location.href.split("#")[0]+"#/dotacionlegal/entrega", "Enlace de entrega remota copiado");
   const bqr=document.getElementById("btnQrEnlacePublico"); if(bqr) bqr.onclick = ()=> mostrarQR(location.href.split("#")[0]+"#/dotacionlegal/entrega", "Entrega remota de dotación");
   document.getElementById("dtlSearch").oninput = (e)=>{ dtlQuery = e.target.value; renderDtlGrid(); };
@@ -6603,6 +6693,88 @@ async function descargarZipKardexDtlSeleccion(entidadIds){
     if(sinEntregas) msg += ` (${sinEntregas} trabajador(es) sin entregas, omitido(s))`;
     toast(msg,"ok");
   }catch(e){ console.error(e); toast("No se pudo generar el ZIP: "+(e.message||''),"err"); }
+  finally{ desbloquear(); }
+}
+
+/* Selección de contratos para el Excel de entregas de Dotación — mismo modal que el ZIP, distinta acción. */
+function abrirSeleccionExcelDtl(){
+  const preseleccion = dtlFiltroEntidad!=='todas' ? [dtlFiltroEntidad] : [];
+  openModal(`<div class="modal" style="max-width:480px">
+    <div class="modal-head"><div><h2>Descargar Excel de entregas</h2><p>Elige qué contratos incluir. Una fila por entrega, con fecha, ítems y responsable.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+        <button class="btn btn-ghost btn-sm" id="btnExcelDtlTodos">Seleccionar todos</button>
+      </div>
+      <div id="excelDtlLista">
+        ${DTL.entidades.length
+          ? DTL.entidades.map(en=>`<label class="chk" style="padding:4px 0"><input type="checkbox" data-excel-entidad="${en.id}" ${preseleccion.includes(en.id)?'checked':''}> ${esc(en.nombre)}</label>`).join('')
+          : '<p class="muted-sm">No hay contratos creados.</p>'}
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnExcelDtlDescargar">${I.doc} Descargar Excel</button>
+    </div>
+  </div>`);
+  document.getElementById('btnExcelDtlTodos').onclick = ()=>{
+    document.querySelectorAll('[data-excel-entidad]').forEach(chk=>chk.checked=true);
+  };
+  document.getElementById('btnExcelDtlDescargar').onclick = ()=>{
+    const ids = Array.from(document.querySelectorAll('[data-excel-entidad]:checked')).map(el=>el.dataset.excelEntidad);
+    if(!ids.length){ toast("Elige al menos un contrato","err"); return; }
+    closeModal();
+    descargarExcelDtlSeleccion(ids);
+  };
+}
+
+/* Excel de entregas de Dotación: una fila por entrega (nombre/identificación/cargo/área + fecha/ítems/responsable).
+   Los trabajadores sin ninguna entrega también aparecen, con esas columnas en blanco. */
+async function descargarExcelDtlSeleccion(entidadIds){
+  if(!window.XLSX){ toast("No se pudo cargar el generador de Excel (revisa tu conexión)","err"); return; }
+  const idsSet = new Set(entidadIds);
+  const trabajadores = DTL.trabajadores.filter(t=>idsSet.has(t.entidad_id));
+  if(!trabajadores.length){ toast("No hay trabajadores para exportar","err"); return; }
+  bloquear("Generando Excel…");
+  try{
+    const idsTrab = trabajadores.map(t=>t.id);
+    const { data: entregas, error } = await sb.from("dtl_entregas")
+      .select("id,trabajador_id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,via")
+      .in("trabajador_id", idsTrab).order("fecha",{ascending:true});
+    if(error){ toast("No se pudo cargar: "+error.message,"err"); return; }
+    const entregasPorTrab = {};
+    (entregas||[]).forEach(e=>{ (entregasPorTrab[e.trabajador_id]=entregasPorTrab[e.trabajador_id]||[]).push(e); });
+
+    const filas = [];
+    trabajadores.forEach(t=>{
+      const nombreContrato = nombreEntidadDtl(t.entidad_id);
+      const entregasT = entregasPorTrab[t.id] || [];
+      if(!entregasT.length){
+        filas.push({ Contrato:nombreContrato, 'Nombre completo':t.nombre, 'Identificación':t.identificacion, Cargo:t.cargo||'', 'Área':t.area||'', 'Fecha de entrega':'', 'Ítems entregados':'', Responsable:'' });
+      } else {
+        entregasT.forEach(e=>{
+          const partes = [];
+          if(e.pantalon_cantidad>0) partes.push('Pantalón × '+e.pantalon_cantidad+(e.pantalon_talla?' ('+e.pantalon_talla+')':''));
+          if(e.camisa_cantidad>0) partes.push('Camisa × '+e.camisa_cantidad+(e.camisa_talla?' ('+e.camisa_talla+')':''));
+          if(e.botas_cantidad>0) partes.push('Botas × '+e.botas_cantidad+(e.botas_talla?' ('+e.botas_talla+')':''));
+          if(e.adicional) partes.push(e.adicional);
+          filas.push({
+            Contrato: nombreContrato, 'Nombre completo': t.nombre, 'Identificación': t.identificacion,
+            Cargo: t.cargo||'', 'Área': t.area||'',
+            'Fecha de entrega': fmtDate(e.fecha), 'Ítems entregados': partes.join(', ') || '—',
+            Responsable: e.responsable_nombre || (e.via==='remoto' ? '(entrega remota)' : '')
+          });
+        });
+      }
+    });
+    const ws = XLSX.utils.json_to_sheet(filas);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Dotación');
+    const nombreArchivo = entidadIds.length===DTL.entidades.length ? 'todos_los_contratos' : (entidadIds.length===1 ? nombreEntidadDtl(entidadIds[0]) : entidadIds.length+'_contratos');
+    const safe = String(nombreArchivo).replace(/[^\w\sáéíóúñ-]/gi,'').trim().replace(/\s+/g,'_').slice(0,40);
+    XLSX.writeFile(wb, 'Entregas_Dotacion_'+safe+'.xlsx');
+    toast("Excel generado","ok");
+  }catch(e){ console.error(e); toast("No se pudo generar el Excel: "+(e.message||''),"err"); }
   finally{ desbloquear(); }
 }
 
