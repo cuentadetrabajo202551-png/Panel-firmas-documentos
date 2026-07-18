@@ -3990,9 +3990,9 @@ function trabajadorCard(t){
       <div class="attn"><span class="num">${n}</span><span class="lab">entrega${n===1?'':'s'}<br>registrada${n===1?'':'s'}</span></div>
       <div class="card-actions">
         <button class="icon-btn" title="Ver ficha" data-trab="ver" data-id="${t.id}">${I.eye}</button>
-        ${puedeEscribir()?`<button class="icon-btn" title="Registrar entrega" data-trab="entregar" data-id="${t.id}">${I.plus}</button>
-        <button class="icon-btn" title="Editar" data-trab="editar" data-id="${t.id}">${I.pen}</button>`:''}
-        ${MIPERFIL.esAdmin?`<button class="icon-btn danger" title="Eliminar" data-trab="del" data-id="${t.id}">${I.trash}</button>`:''}
+        ${puedeEscribir()?`<button class="icon-btn" title="Registrar entrega" data-trab="entregar" data-id="${t.id}">${I.plus}</button>`:''}
+        ${MIPERFIL.esAdmin?`<button class="icon-btn" title="Editar" data-trab="editar" data-id="${t.id}">${I.pen}</button>
+        <button class="icon-btn danger" title="Eliminar" data-trab="del" data-id="${t.id}">${I.trash}</button>`:''}
       </div>
     </div>
   </div>`;
@@ -4823,7 +4823,7 @@ async function renderFichaTrabajador(id){
         <div class="page-head">
           <div><h1>${esc(t.nombre)}</h1><p>C.C. ${esc(t.identificacion)}${t.cargo?' · '+esc(t.cargo):''}${t.area?' · '+esc(t.area):''} · ${esc(DOTACION.contratos.find(c=>c.id===t.contrato_id)?.nombre||'—')}</p></div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
-            ${puedeEscribir()?`<button class="btn btn-ghost" id="btnEditarTrab">${I.pen} Editar datos</button>`:''}
+            ${MIPERFIL.esAdmin?`<button class="btn btn-ghost" id="btnEditarTrab">${I.pen} Editar datos</button>`:''}
             ${listaEntregas.length?`<button class="btn btn-ghost" id="btnKardex">${I.pdf} Imprimir kárdex</button>`:''}
             ${puedeEscribir()?`<button class="btn btn-primary" id="btnNuevaEntregaFicha">${I.plus} Registrar entrega</button>`:''}
           </div>
@@ -5305,6 +5305,14 @@ async function renderDtlAdmin(silent){
   const sinEntregas = trabs.filter(t=>!conEntrega.has(t.id)).length;
 
   const entidadesAcc = DTL.entidades.filter(x=>tieneEntidadDtl(x.id));
+  // Si el supervisor solo tiene UNA entidad asignada, "todas las entidades" es lo mismo que
+  // esa entidad — mostrar la opción "todas" ahí solo confunde, así que se oculta y se deja
+  // fija en su única entidad (igual criterio que ya usa el selector de contratos de EPP).
+  const puedeVerTodas = MIPERFIL.esAdmin || entidadesAcc.length > 1;
+  if(!puedeVerTodas && entidadesAcc.length===1 && dtlFiltroEntidad==='todas'){
+    dtlFiltroEntidad = entidadesAcc[0].id;
+    localStorage.setItem('dtl_filtro_entidad', dtlFiltroEntidad);
+  }
 
   document.getElementById("app").innerHTML = `
     ${topbar('dotacionlegal')}
@@ -5320,8 +5328,8 @@ async function renderDtlAdmin(silent){
           ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-pc-only" id="btnPlantillaTrabDtl">${I.doc} Plantilla Excel</button>
           <button class="btn btn-ghost btn-pc-only" id="btnCargaTrabDtl">${I.plus} Carga masiva</button>`:''}
           ${totalEntregas?`<button class="btn btn-ghost btn-pc-only" id="btnZipKardexDtl">${I.doc} Descargar todos (ZIP)</button>`:''}
-          ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-pc-only" id="btnCopiarEnlacePublico">${I.link} Copiar enlace de entrega remota</button>
-          <button class="btn btn-ghost btn-pc-only" id="btnQrEnlacePublico">${I.link} Ver QR</button>`:''}
+          <button class="btn btn-ghost btn-pc-only" id="btnCopiarEnlacePublico">${I.link} Copiar enlace de entrega remota</button>
+          <button class="btn btn-ghost btn-pc-only" id="btnQrEnlacePublico">${I.link} QR remoto</button>
           ${MIPERFIL.esAdmin?`<button class="btn btn-primary" id="btnNuevoTrabDtl">${I.plus} Nuevo trabajador</button>`:''}
         </div>
       </div>
@@ -5339,7 +5347,7 @@ async function renderDtlAdmin(silent){
           <input type="text" id="dtlSearch" placeholder="Buscar por nombre, cédula, cargo o área…" value="${esc(dtlQuery)}">
         </div>
         <select id="selFiltroEntidad" style="font-weight:700;font-size:13.5px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--brand-deep)">
-          <option value="todas" ${dtlFiltroEntidad==='todas'?'selected':''}>Todas las entidades</option>
+          ${puedeVerTodas?`<option value="todas" ${dtlFiltroEntidad==='todas'?'selected':''}>Todas las entidades</option>`:''}
           ${entidadesAcc.map(x=>`<option value="${x.id}" ${x.id===dtlFiltroEntidad?'selected':''}>${esc(x.nombre)}${x.activo?'':' (archivada)'}</option>`).join('')}
         </select>
       </div>
@@ -5415,9 +5423,9 @@ function trabajadorDtlCard(t){
       <div class="attn"><span class="num">${n}</span><span class="lab">entrega${n===1?'':'s'}<br>registrada${n===1?'':'s'}</span></div>
       <div class="card-actions">
         <button class="icon-btn" title="Ver ficha" data-trabdtl="ver" data-id="${t.id}">${I.eye}</button>
-        ${puedeEscribir()?`<button class="icon-btn" title="Registrar entrega" data-trabdtl="entregar" data-id="${t.id}">${I.plus}</button>
-        <button class="icon-btn" title="Editar" data-trabdtl="editar" data-id="${t.id}">${I.pen}</button>`:''}
-        ${MIPERFIL.esAdmin?`<button class="icon-btn danger" title="Eliminar" data-trabdtl="del" data-id="${t.id}">${I.trash}</button>`:''}
+        ${puedeEscribir()?`<button class="icon-btn" title="Registrar entrega" data-trabdtl="entregar" data-id="${t.id}">${I.plus}</button>`:''}
+        ${MIPERFIL.esAdmin?`<button class="icon-btn" title="Editar" data-trabdtl="editar" data-id="${t.id}">${I.pen}</button>
+        <button class="icon-btn danger" title="Eliminar" data-trabdtl="del" data-id="${t.id}">${I.trash}</button>`:''}
       </div>
     </div>
   </div>`;
@@ -5819,17 +5827,20 @@ function renderPasoDtl1(){
       <div class="field"><label>Fecha de entrega</label><input type="date" id="dtlFecha" value="${dtlEntregaDraft.fecha}"></div>
 
       <label style="font-weight:700;font-size:14px;display:block;margin:16px 0 10px">Elementos entregados</label>
-      <div class="field row2">
-        <div><label>Pantalones — cantidad</label><input type="number" min="0" id="dtlPantalonCant" value="${dtlEntregaDraft.pantalonCantidad}"></div>
-        <div><label>Talla</label><input id="dtlPantalonTalla" value="${esc(dtlEntregaDraft.pantalonTalla)}" placeholder="Ej. 34"></div>
+      <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="dtlPantalonInc" checked> Pantalones</label>
+      <div class="field row2" id="dtlPantalonFields">
+        <div><label>Cantidad</label><input type="number" min="0" id="dtlPantalonCant" value="${dtlEntregaDraft.pantalonCantidad}"></div>
+        <div><label>Talla *</label><input id="dtlPantalonTalla" value="${esc(dtlEntregaDraft.pantalonTalla)}" placeholder="Ej. 34"></div>
       </div>
-      <div class="field row2">
-        <div><label>Camisas — cantidad</label><input type="number" min="0" id="dtlCamisaCant" value="${dtlEntregaDraft.camisaCantidad}"></div>
-        <div><label>Talla</label><input id="dtlCamisaTalla" value="${esc(dtlEntregaDraft.camisaTalla)}" placeholder="Ej. M"></div>
+      <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="dtlCamisaInc" checked> Camisas</label>
+      <div class="field row2" id="dtlCamisaFields">
+        <div><label>Cantidad</label><input type="number" min="0" id="dtlCamisaCant" value="${dtlEntregaDraft.camisaCantidad}"></div>
+        <div><label>Talla *</label><input id="dtlCamisaTalla" value="${esc(dtlEntregaDraft.camisaTalla)}" placeholder="Ej. M"></div>
       </div>
-      <div class="field row2">
-        <div><label>Botas — cantidad</label><input type="number" min="0" id="dtlBotasCant" value="${dtlEntregaDraft.botasCantidad}"></div>
-        <div><label>Talla</label><input id="dtlBotasTalla" value="${esc(dtlEntregaDraft.botasTalla)}" placeholder="Ej. 40"></div>
+      <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="dtlBotasInc" checked> Par de botas</label>
+      <div class="field row2" id="dtlBotasFields">
+        <div><label>Cantidad de pares</label><input type="number" min="0" id="dtlBotasCant" value="${dtlEntregaDraft.botasCantidad}"></div>
+        <div><label>Talla *</label><input id="dtlBotasTalla" value="${esc(dtlEntregaDraft.botasTalla)}" placeholder="Ej. 40"></div>
       </div>
       <div class="field"><label>Adicional <span class="opt">(opcional — algo más que se entregue)</span></label><textarea id="dtlAdicional" placeholder="Ej. 1 chaqueta impermeable">${esc(dtlEntregaDraft.adicional)}</textarea></div>
 
@@ -5852,7 +5863,24 @@ function renderPasoDtl1(){
   </div>`);
   actualizarQuienFirmaDtl();
   wireDtlPredetChips();
+  wireIncluirItemDtl('dtlPantalonInc','dtlPantalonFields','dtlPantalonCant',2);
+  wireIncluirItemDtl('dtlCamisaInc','dtlCamisaFields','dtlCamisaCant',2);
+  wireIncluirItemDtl('dtlBotasInc','dtlBotasFields','dtlBotasCant',1);
   document.getElementById('btnDtlContinuar').onclick = validarYContinuarPasoDtl1;
+}
+
+/* Casilla "se entrega este ítem" — marcada por defecto (siempre se suele entregar todo);
+   al desmarcarla oculta cantidad/talla y deja la cantidad en 0 (no se entrega esta vez). */
+function wireIncluirItemDtl(chkId, fieldsId, cantInputId, cantidadPorDefecto){
+  const chk = document.getElementById(chkId);
+  const fields = document.getElementById(fieldsId);
+  const cantInput = document.getElementById(cantInputId);
+  fields.style.display = chk.checked ? '' : 'none';
+  chk.onchange = ()=>{
+    fields.style.display = chk.checked ? '' : 'none';
+    if(!chk.checked){ cantInput.dataset.prev = cantInput.value; cantInput.value = 0; }
+    else { cantInput.value = (cantInput.dataset.prev && +cantInput.dataset.prev>0) ? cantInput.dataset.prev : cantidadPorDefecto; }
+  };
 }
 
 function wireDtlPredetChips(){
@@ -5898,6 +5926,9 @@ function validarYContinuarPasoDtl1(){
   if(dtlEntregaDraft.pantalonCantidad<=0 && dtlEntregaDraft.camisaCantidad<=0 && dtlEntregaDraft.botasCantidad<=0 && !dtlEntregaDraft.adicional){
     toast("Agrega al menos un elemento a entregar","err"); return;
   }
+  if(dtlEntregaDraft.pantalonCantidad>0 && !dtlEntregaDraft.pantalonTalla){ toast("Escribe la talla del pantalón","err"); return; }
+  if(dtlEntregaDraft.camisaCantidad>0 && !dtlEntregaDraft.camisaTalla){ toast("Escribe la talla de la camisa","err"); return; }
+  if(dtlEntregaDraft.botasCantidad>0 && !dtlEntregaDraft.botasTalla){ toast("Escribe la talla de las botas","err"); return; }
   localStorage.setItem('dtl_ultimo_responsable', JSON.stringify({ nombre: dtlEntregaDraft.responsableNombre, cargo: dtlEntregaDraft.responsableCargo }));
   renderPasoDtl2();
 }
@@ -6105,7 +6136,7 @@ async function renderFichaTrabajadorDtl(id){
         <div class="page-head">
           <div><h1>${esc(t.nombre)}</h1><p>C.C. ${esc(t.identificacion)}${t.cargo?' · '+esc(t.cargo):''}${t.area?' · '+esc(t.area):''} · ${esc(nombreEntidadDtl(t.entidad_id))}${t.fecha_ingreso?' · Ingresó '+fmtDate(t.fecha_ingreso):''}${t.correo?' · '+esc(t.correo):''}</p></div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
-            ${puedeEscribir()?`<button class="btn btn-ghost" id="btnEditarTrabDtl">${I.pen} Editar datos</button>`:''}
+            ${MIPERFIL.esAdmin?`<button class="btn btn-ghost" id="btnEditarTrabDtl">${I.pen} Editar datos</button>`:''}
             ${listaEntregas.length?`<button class="btn btn-ghost" id="btnKardexDtl">${I.pdf} Imprimir kárdex</button>`:''}
             ${puedeEscribir()?`<button class="btn btn-primary" id="btnNuevaEntregaFichaDtl">${I.plus} Registrar entrega</button>`:''}
           </div>
@@ -6175,15 +6206,15 @@ function renderFormEditarEntregaDtl(){
       <label style="font-weight:700;font-size:14px;display:block;margin:16px 0 10px">Elementos entregados</label>
       <div class="field row2">
         <div><label>Pantalones — cantidad</label><input type="number" min="0" id="eeDtlPantalonCant" value="${d.pantalonCantidad}"></div>
-        <div><label>Talla</label><input id="eeDtlPantalonTalla" value="${esc(d.pantalonTalla)}" placeholder="Ej. 34"></div>
+        <div><label>Talla *</label><input id="eeDtlPantalonTalla" value="${esc(d.pantalonTalla)}" placeholder="Ej. 34"></div>
       </div>
       <div class="field row2">
         <div><label>Camisas — cantidad</label><input type="number" min="0" id="eeDtlCamisaCant" value="${d.camisaCantidad}"></div>
-        <div><label>Talla</label><input id="eeDtlCamisaTalla" value="${esc(d.camisaTalla)}" placeholder="Ej. M"></div>
+        <div><label>Talla *</label><input id="eeDtlCamisaTalla" value="${esc(d.camisaTalla)}" placeholder="Ej. M"></div>
       </div>
       <div class="field row2">
-        <div><label>Botas — cantidad</label><input type="number" min="0" id="eeDtlBotasCant" value="${d.botasCantidad}"></div>
-        <div><label>Talla</label><input id="eeDtlBotasTalla" value="${esc(d.botasTalla)}" placeholder="Ej. 40"></div>
+        <div><label>Par de botas — cantidad de pares</label><input type="number" min="0" id="eeDtlBotasCant" value="${d.botasCantidad}"></div>
+        <div><label>Talla *</label><input id="eeDtlBotasTalla" value="${esc(d.botasTalla)}" placeholder="Ej. 40"></div>
       </div>
       <div class="field"><label>Adicional <span class="opt">(opcional)</span></label><textarea id="eeDtlAdicional">${esc(d.adicional)}</textarea></div>
       ${d.via==='presencial'?`
@@ -6517,16 +6548,19 @@ function renderDtlPublicoFormulario(){
         ${t.entidad_nombre?`<div class="muted-sm" style="margin-top:2px">${esc(t.entidad_nombre)}</div>`:''}
       </div>
       <label style="font-weight:700;font-size:14px;display:block;margin-bottom:10px">Elementos que estás recibiendo</label>
-      <div class="field row2">
-        <div><label>Pantalones — cantidad</label><input type="number" min="0" id="dpPantalonCant" value="2"></div>
+      <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="dpPantalonInc" checked> Pantalones</label>
+      <div class="field row2" id="dpPantalonFields">
+        <div><label>Cantidad</label><input type="number" min="0" id="dpPantalonCant" value="2"></div>
         <div><label>Talla *</label><input id="dpPantalonTalla" placeholder="Ej. 34"></div>
       </div>
-      <div class="field row2">
-        <div><label>Camisas — cantidad</label><input type="number" min="0" id="dpCamisaCant" value="2"></div>
+      <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="dpCamisaInc" checked> Camisas</label>
+      <div class="field row2" id="dpCamisaFields">
+        <div><label>Cantidad</label><input type="number" min="0" id="dpCamisaCant" value="2"></div>
         <div><label>Talla *</label><input id="dpCamisaTalla" placeholder="Ej. M"></div>
       </div>
-      <div class="field row2">
-        <div><label>Botas — cantidad</label><input type="number" min="0" id="dpBotasCant" value="1"></div>
+      <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="dpBotasInc" checked> Par de botas</label>
+      <div class="field row2" id="dpBotasFields">
+        <div><label>Cantidad de pares</label><input type="number" min="0" id="dpBotasCant" value="1"></div>
         <div><label>Talla *</label><input id="dpBotasTalla" placeholder="Ej. 40"></div>
       </div>
       <div class="field"><label>Adicional <span class="opt">(opcional)</span></label><textarea id="dpAdicional" placeholder="Algo más que estés recibiendo…"></textarea></div>
@@ -6550,6 +6584,9 @@ function renderDtlPublicoFormulario(){
   initSignature();
   document.getElementById('sigClear').onclick = ()=> sigPad.clear();
   wireDpFotoPreview();
+  wireIncluirItemDtl('dpPantalonInc','dpPantalonFields','dpPantalonCant',2);
+  wireIncluirItemDtl('dpCamisaInc','dpCamisaFields','dpCamisaCant',2);
+  wireIncluirItemDtl('dpBotasInc','dpBotasFields','dpBotasCant',1);
   document.getElementById('dpConfirmarBtn').onclick = confirmarEntregaDtlPublica;
 }
 
@@ -6656,7 +6693,7 @@ async function renderConfiguracion(silent){
       <div style="margin-bottom:20px;padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
         <p style="margin-bottom:8px"><b>Administrador</b> — acceso total a todo, sin restricciones, en los 4 módulos.</p>
         <p style="margin-bottom:8px"><b>Editor en Asistencia y Documentos y Firmas</b> — crea, y solo edita/elimina lo que él mismo creó; nunca puede tocar una lista cerrada o un documento finalizado, así sea suyo.</p>
-        <p style="margin-bottom:8px"><b>Editor en EPP y Dotación</b> — ve todo el directorio y todas las entregas; puede registrar entregas nuevas libremente; puede editar o eliminar cualquier entrega (no solo las que él creó) <b>durante las primeras 24 horas</b> desde que se registró — pasado ese plazo, ni siquiera el que la creó puede tocarla, solo un administrador. Puede corregir datos de un trabajador ya existente, pero <b>no puede agregar trabajadores nuevos ni eliminar trabajadores</b> del directorio (tampoco por carga masiva de Excel) — eso es solo de administrador.</p>
+        <p style="margin-bottom:8px"><b>Editor en EPP y Dotación</b> — ve todo el directorio y todas las entregas; puede registrar entregas nuevas libremente; puede editar o eliminar cualquier entrega (no solo las que él creó) <b>durante las primeras 24 horas</b> desde que se registró — pasado ese plazo, ni siquiera el que la creó puede tocarla, solo un administrador. <b>No puede agregar, editar ni eliminar trabajadores</b> del directorio (tampoco por carga masiva de Excel) — el directorio de trabajadores es solo de administrador.</p>
         <p><b>Visualizador</b> — en cualquier módulo, solo puede ver lo que sus módulos/contratos le permitan; nunca crea, edita ni elimina nada.</p>
       </div>
       <div class="sec-bar"><h2>Ajustes generales</h2></div>
@@ -6728,7 +6765,7 @@ async function abrirPermisosUsuario(perfilId){
       ${esUnoMismo?`<p class="muted-sm" style="margin:-4px 0 10px">No puedes quitarte tu propio acceso de administrador.</p>`:''}
       <div id="permisosDetalle" style="${perfil.es_admin?'display:none':''}">
         <div class="sec-bar" style="margin-top:14px"><h2 style="font-size:14px">Rol</h2></div>
-        <label class="chk"><input type="radio" name="pfRol" value="editor" ${perfil.rol!=='visualizador'?'checked':''}> <b>Editor</b> — en Asistencia/Documentos: crea y edita solo lo suyo, nunca lo cerrado/finalizado. En EPP/Dotación: ve y registra todo, edita/elimina cualquier entrega de las últimas 24h, pero no agrega ni elimina trabajadores</label>
+        <label class="chk"><input type="radio" name="pfRol" value="editor" ${perfil.rol!=='visualizador'?'checked':''}> <b>Editor</b> — en Asistencia/Documentos: crea y edita solo lo suyo, nunca lo cerrado/finalizado. En EPP/Dotación: ve y registra todo, edita/elimina cualquier entrega de las últimas 24h, pero no toca el directorio de trabajadores (agregar/editar/eliminar es solo admin)</label>
         <label class="chk"><input type="radio" name="pfRol" value="visualizador" ${perfil.rol==='visualizador'?'checked':''}> <b>Visualizador</b> — solo puede ver lo que sus módulos/contratos le permitan; no crea, edita ni elimina nada</label>
         <div class="sec-bar" style="margin-top:14px"><h2 style="font-size:14px">Módulos</h2></div>
         <label class="chk"><input type="checkbox" data-pf-mod="asistencia" ${modulos.includes('asistencia')?'checked':''}> Asistencia</label>
