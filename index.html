@@ -3909,7 +3909,7 @@ async function renderDotacionAdmin(silent){
   const bct=document.getElementById("btnCargaTrab"); if(bct) bct.onclick = ()=> document.getElementById("fileTrabajadores").click();
   document.getElementById("fileTrabajadores").onchange = (e)=>{ const f=e.target.files[0]; if(f) cargarTrabajadoresExcelDot(f); e.target.value=""; };
   const bnt=document.getElementById("btnNuevoTrab"); if(bnt) bnt.onclick = ()=> abrirTrabajadorForm(null);
-  const bzk=document.getElementById("btnZipKardex"); if(bzk) bzk.onclick = descargarZipKardexTodos;
+  const bzk=document.getElementById("btnZipKardex"); if(bzk) bzk.onclick = abrirSeleccionZipDot;
   document.querySelectorAll(".tab[data-vista]").forEach(tb=>{
     tb.onclick = ()=>{ dotVista = tb.dataset.vista; renderDotacionBody(); document.querySelectorAll(".tab[data-vista]").forEach(x=>x.classList.toggle('active', x===tb)); };
   });
@@ -4993,10 +4993,44 @@ async function generarKardexPDF(trabajadorId){
 }
 
 /* Descarga el kárdex de TODOS los trabajadores del contrato actual, empaquetados en un ZIP */
-async function descargarZipKardexTodos(){
+/* En modo "todos los contratos" el ZIP puede terminar procesando cientos de trabajadores de
+   golpe — se deja elegir cuáles contratos incluir en vez de forzar siempre a bajarlos todos. */
+function abrirSeleccionZipDot(){
+  const preseleccion = contratoActualId!=='todos' ? [contratoActualId] : [];
+  openModal(`<div class="modal" style="max-width:480px">
+    <div class="modal-head"><div><h2>Descargar kárdex (ZIP)</h2><p>Elige qué contratos incluir — entre más elijas, más tarda en generarse.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+        <button class="btn btn-ghost btn-sm" id="btnZipDotTodos">Seleccionar todos</button>
+      </div>
+      <div id="zipDotLista">
+        ${DOTACION.contratos.length
+          ? DOTACION.contratos.map(c=>`<label class="chk" style="padding:4px 0"><input type="checkbox" data-zip-contrato="${c.id}" ${preseleccion.includes(c.id)?'checked':''}> ${esc(c.nombre)}${c.activo?'':' (archivado)'}</label>`).join('')
+          : '<p class="muted-sm">No hay contratos creados.</p>'}
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnZipDotDescargar">${I.doc} Descargar ZIP</button>
+    </div>
+  </div>`);
+  document.getElementById('btnZipDotTodos').onclick = ()=>{
+    document.querySelectorAll('[data-zip-contrato]').forEach(chk=>chk.checked=true);
+  };
+  document.getElementById('btnZipDotDescargar').onclick = ()=>{
+    const ids = Array.from(document.querySelectorAll('[data-zip-contrato]:checked')).map(el=>el.dataset.zipContrato);
+    if(!ids.length){ toast("Elige al menos un contrato","err"); return; }
+    closeModal();
+    descargarZipKardexSeleccion(ids);
+  };
+}
+
+async function descargarZipKardexSeleccion(contratoIds){
   if(!window.jspdf || !window.jspdf.jsPDF){ toast("No se pudo cargar el generador de PDF (revisa tu conexión)","err"); return; }
   if(!window.JSZip){ toast("No se pudo cargar el compresor ZIP (revisa tu conexión)","err"); return; }
-  const lista = trabajadoresDelContrato();
+  const idsSet = new Set(contratoIds);
+  const lista = DOTACION.trabajadores.filter(t=>idsSet.has(t.contrato_id));
   if(!lista.length){ toast("No hay trabajadores para exportar","err"); return; }
   bloquear("Preparando ZIP…");
   try{
@@ -5019,7 +5053,7 @@ async function descargarZipKardexTodos(){
     bloquearMsg("Comprimiendo ZIP…");
     const blob = await zip.generateAsync({ type:'blob', compression:'DEFLATE' });
     const url = URL.createObjectURL(blob);
-    const nombreContrato = contratoActualId==='todos' ? 'todos_los_contratos' : (contratoActual()?.nombre||'contrato');
+    const nombreContrato = contratoIds.length===DOTACION.contratos.length ? 'todos_los_contratos' : (contratoIds.length===1 ? (DOTACION.contratos.find(c=>c.id===contratoIds[0])?.nombre||'contrato') : contratoIds.length+'_contratos');
     const safeContrato = String(nombreContrato).replace(/[^\w\sáéíóúñ-]/gi,'').trim().replace(/\s+/g,'_').slice(0,40);
     const a = document.createElement('a'); a.href=url;
     a.download = 'Kardex_dotacion_'+safeContrato+'.zip';
@@ -5217,7 +5251,7 @@ async function renderDtlAdmin(silent){
   const bct=document.getElementById("btnCargaTrabDtl"); if(bct) bct.onclick = ()=> document.getElementById("fileTrabajadoresDtl").click();
   document.getElementById("fileTrabajadoresDtl").onchange = (e)=>{ const f=e.target.files[0]; if(f) cargarTrabajadoresExcelDtl(f); e.target.value=""; };
   const bnt=document.getElementById("btnNuevoTrabDtl"); if(bnt) bnt.onclick = ()=> abrirTrabajadorDtlForm(null);
-  const bzk=document.getElementById("btnZipKardexDtl"); if(bzk) bzk.onclick = descargarZipKardexDtlTodos;
+  const bzk=document.getElementById("btnZipKardexDtl"); if(bzk) bzk.onclick = abrirSeleccionZipDtl;
   const bce=document.getElementById("btnCopiarEnlacePublico"); if(bce) bce.onclick = ()=> copyText(location.href.split("#")[0]+"#/dotacionlegal/entrega", "Enlace de entrega remota copiado");
   document.getElementById("dtlSearch").oninput = (e)=>{ dtlQuery = e.target.value; renderDtlGrid(); };
   renderDtlGrid();
@@ -6125,10 +6159,44 @@ async function generarKardexDtlPDF(trabajadorId){
   finally{ desbloquear(); }
 }
 
-async function descargarZipKardexDtlTodos(){
+/* Elegir qué entidades incluir antes de generar el ZIP — evita procesar los 600+ trabajadores
+   de golpe cuando la vista combinada (sección 7.17) no tiene ya una "entidad actual" que acotar. */
+function abrirSeleccionZipDtl(){
+  const preseleccion = dtlFiltroEntidad!=='todas' ? [dtlFiltroEntidad] : [];
+  openModal(`<div class="modal" style="max-width:480px">
+    <div class="modal-head"><div><h2>Descargar kárdex (ZIP)</h2><p>Elige qué entidades incluir — entre más elijas, más tarda en generarse.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+        <button class="btn btn-ghost btn-sm" id="btnZipDtlTodas">Seleccionar todas</button>
+      </div>
+      <div id="zipDtlLista">
+        ${DTL.entidades.length
+          ? DTL.entidades.map(en=>`<label class="chk" style="padding:4px 0"><input type="checkbox" data-zip-entidad="${en.id}" ${preseleccion.includes(en.id)?'checked':''}> ${esc(en.nombre)}</label>`).join('')
+          : '<p class="muted-sm">No hay entidades creadas.</p>'}
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnZipDtlDescargar">${I.doc} Descargar ZIP</button>
+    </div>
+  </div>`);
+  document.getElementById('btnZipDtlTodas').onclick = ()=>{
+    document.querySelectorAll('[data-zip-entidad]').forEach(chk=>chk.checked=true);
+  };
+  document.getElementById('btnZipDtlDescargar').onclick = ()=>{
+    const ids = Array.from(document.querySelectorAll('[data-zip-entidad]:checked')).map(el=>el.dataset.zipEntidad);
+    if(!ids.length){ toast("Elige al menos una entidad","err"); return; }
+    closeModal();
+    descargarZipKardexDtlSeleccion(ids);
+  };
+}
+
+async function descargarZipKardexDtlSeleccion(entidadIds){
   if(!window.jspdf || !window.jspdf.jsPDF){ toast("No se pudo cargar el generador de PDF (revisa tu conexión)","err"); return; }
   if(!window.JSZip){ toast("No se pudo cargar el compresor ZIP (revisa tu conexión)","err"); return; }
-  const lista = trabajadoresDeEntidad();
+  const idsSet = new Set(entidadIds);
+  const lista = DTL.trabajadores.filter(t=>idsSet.has(t.entidad_id));
   if(!lista.length){ toast("No hay trabajadores para exportar","err"); return; }
   bloquear("Preparando ZIP…");
   try{
@@ -6151,7 +6219,7 @@ async function descargarZipKardexDtlTodos(){
     bloquearMsg("Comprimiendo ZIP…");
     const blob = await zip.generateAsync({ type:'blob', compression:'DEFLATE' });
     const url = URL.createObjectURL(blob);
-    const nombreEntidad = dtlFiltroEntidad==='todas' ? 'todas_las_entidades' : nombreEntidadDtl(dtlFiltroEntidad);
+    const nombreEntidad = entidadIds.length===DTL.entidades.length ? 'todas_las_entidades' : (entidadIds.length===1 ? nombreEntidadDtl(entidadIds[0]) : entidadIds.length+'_entidades');
     const safeEntidad = String(nombreEntidad).replace(/[^\w\sáéíóúñ-]/gi,'').trim().replace(/\s+/g,'_').slice(0,40);
     const a = document.createElement('a'); a.href=url;
     a.download = 'Kardex_dotacion_'+safeEntidad+'.zip';
