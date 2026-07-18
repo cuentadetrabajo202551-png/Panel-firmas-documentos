@@ -3871,7 +3871,7 @@ async function renderDotacionAdmin(silent){
           <h1>Entrega de EPP</h1>
           <p>Registra la entrega de elementos de protección personal, con firma digital en el momento.</p>
           <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
-            <select id="selContrato" style="font-weight:700;font-size:13.5px;padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--brand-deep)">
+            <select id="selContrato" style="font-weight:700;font-size:13.5px;padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--brand-deep);max-width:calc(100vw - 40px);min-width:0;box-sizing:border-box;text-overflow:ellipsis;white-space:nowrap;overflow:hidden">
               ${DOTACION.contratos.filter(x=>tieneContratoDotacion(x.id)).map(x=>`<option value="${x.id}" ${x.id===contratoActualId?'selected':''}>${esc(x.nombre)}${x.activo?'':' (archivado)'}</option>`).join('')}
               ${MIPERFIL.esAdmin?`<option value="todos" ${enTodos?'selected':''}>— Todos los contratos —</option>`:''}
             </select>
@@ -3957,6 +3957,7 @@ function renderDotTrabajadoresGrid(){
     b.onclick = ()=>{
       const id=b.dataset.id, act=b.dataset.trab;
       if(act==="ver") location.hash = "#/dotacion/trabajador/"+id;
+      else if(act==="kardex") generarKardexPDF(id);
       else if(act==="entregar") abrirNuevaEntrega(id);
       else if(act==="editar") abrirTrabajadorForm(id);
       else if(act==="del") eliminarTrabajador(id);
@@ -3985,6 +3986,7 @@ function trabajadorCard(t){
       <div class="attn"><span class="num">${n}</span><span class="lab">entrega${n===1?'':'s'}<br>registrada${n===1?'':'s'}</span></div>
       <div class="card-actions">
         <button class="icon-btn" title="Ver ficha" data-trab="ver" data-id="${t.id}">${I.eye}</button>
+        ${n>0?`<button class="icon-btn" title="Descargar kárdex" data-trab="kardex" data-id="${t.id}">${I.pdf}</button>`:''}
         ${puedeEscribir()?`<button class="icon-btn" title="Registrar entrega" data-trab="entregar" data-id="${t.id}">${I.plus}</button>`:''}
         ${MIPERFIL.esAdmin?`<button class="icon-btn" title="Editar" data-trab="editar" data-id="${t.id}">${I.pen}</button>
         <button class="icon-btn danger" title="Eliminar" data-trab="del" data-id="${t.id}">${I.trash}</button>`:''}
@@ -5385,13 +5387,13 @@ async function renderDtlAdmin(silent){
   if(!DTL.entidades.length){
     document.getElementById("app").innerHTML = MIPERFIL.esAdmin ? `${topbar('dotacionlegal')}
       <div class="wrap"><div class="empty"><div class="ic">${I.box}</div>
-        <h3>Crea tu primera entidad</h3>
-        <p>Cada entidad/contrato (ej. "Sede Bogotá") tiene su propio directorio de trabajadores y entregas.</p>
-        <div style="margin-top:18px"><button class="btn btn-primary" id="btnPrimeraEntidad">${I.plus} Crear entidad</button></div>
+        <h3>Crea tu primer contrato</h3>
+        <p>Cada contrato (ej. "Sede Bogotá") tiene su propio directorio de trabajadores y entregas.</p>
+        <div style="margin-top:18px"><button class="btn btn-primary" id="btnPrimeraEntidad">${I.plus} Crear contrato</button></div>
       </div></div>` : `${topbar('dotacionlegal')}
       <div class="wrap"><div class="empty"><div class="ic">${I.box}</div>
-        <h3>Aún no tienes ninguna entidad asignada</h3>
-        <p>Pídele al administrador que te dé acceso a una entidad desde Configuración.</p>
+        <h3>Aún no tienes ningún contrato asignado</h3>
+        <p>Pídele al administrador que te dé acceso a un contrato desde Configuración.</p>
       </div></div>`;
     wireLogout();
     const bpe=document.getElementById("btnPrimeraEntidad"); if(bpe) bpe.onclick = ()=> abrirFormEntidadDtl(null, ()=> renderDtlAdmin());
@@ -5423,13 +5425,13 @@ async function renderDtlAdmin(silent){
       <div class="page-head">
         <div>
           <h1>Dotación</h1>
-          <p>Entrega de dotación legal (pantalones, camisas y botas), con firma digital. Todos los trabajadores, de todas las entidades, en un solo lugar.</p>
+          <p>Entrega de dotación legal (pantalones, camisas y botas), con firma digital. Todos los trabajadores, de todos los contratos, en un solo lugar.</p>
           <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
-            <select id="selFiltroEntidad" style="font-weight:700;font-size:13.5px;padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--brand-deep)">
-              ${puedeVerTodas?`<option value="todas" ${dtlFiltroEntidad==='todas'?'selected':''}>Todas las entidades</option>`:''}
-              ${entidadesAcc.map(x=>`<option value="${x.id}" ${x.id===dtlFiltroEntidad?'selected':''}>${esc(x.nombre)}${x.activo?'':' (archivada)'}</option>`).join('')}
+            <select id="selFiltroEntidad" style="font-weight:700;font-size:13.5px;padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--brand-deep);max-width:calc(100vw - 40px);min-width:0;box-sizing:border-box;text-overflow:ellipsis;white-space:nowrap;overflow:hidden">
+              ${puedeVerTodas?`<option value="todas" ${dtlFiltroEntidad==='todas'?'selected':''}>Todos los contratos</option>`:''}
+              ${entidadesAcc.map(x=>`<option value="${x.id}" ${x.id===dtlFiltroEntidad?'selected':''}>${esc(x.nombre)}${x.activo?'':' (archivado)'}</option>`).join('')}
             </select>
-            ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-sm btn-pc-only" id="btnGestionEntidades">${I.pen} Gestionar entidades</button>`:''}
+            ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-sm btn-pc-only" id="btnGestionEntidades">${I.pen} Gestionar contratos</button>`:''}
           </div>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
@@ -5501,6 +5503,7 @@ function renderDtlGrid(){
     b.onclick = ()=>{
       const id=b.dataset.id, act=b.dataset.trabdtl;
       if(act==="ver") location.hash = "#/dotacionlegal/trabajador/"+id;
+      else if(act==="kardex") generarKardexDtlPDF(id);
       else if(act==="entregar") abrirNuevaEntregaDtl(id);
       else if(act==="editar") abrirTrabajadorDtlForm(id);
       else if(act==="del") eliminarTrabajadorDtl(id);
@@ -5528,6 +5531,7 @@ function trabajadorDtlCard(t){
       <div class="attn"><span class="num">${n}</span><span class="lab">entrega${n===1?'':'s'}<br>registrada${n===1?'':'s'}</span></div>
       <div class="card-actions">
         <button class="icon-btn" title="Ver ficha" data-trabdtl="ver" data-id="${t.id}">${I.eye}</button>
+        ${n>0?`<button class="icon-btn" title="Descargar kárdex" data-trabdtl="kardex" data-id="${t.id}">${I.pdf}</button>`:''}
         ${puedeEscribir()?`<button class="icon-btn" title="Registrar entrega" data-trabdtl="entregar" data-id="${t.id}">${I.plus}</button>`:''}
         ${MIPERFIL.esAdmin?`<button class="icon-btn" title="Editar" data-trabdtl="editar" data-id="${t.id}">${I.pen}</button>
         <button class="icon-btn danger" title="Eliminar" data-trabdtl="del" data-id="${t.id}">${I.trash}</button>`:''}
@@ -5539,10 +5543,10 @@ function trabajadorDtlCard(t){
 /* ---------- Entidades ---------- */
 function abrirGestionEntidadesDtl(){
   openModal(`<div class="modal" style="max-width:480px">
-    <div class="modal-head"><div><h2>Entidades / contratos</h2><p>Cada una tiene su propio directorio de trabajadores.</p></div>
+    <div class="modal-head"><div><h2>Contratos</h2><p>Cada uno tiene su propio directorio de trabajadores.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
-      <button class="btn btn-primary btn-sm" id="btnNuevaEntidad" style="margin-bottom:14px">${I.plus} Nueva entidad</button>
+      <button class="btn btn-primary btn-sm" id="btnNuevaEntidad" style="margin-bottom:14px">${I.plus} Nuevo contrato</button>
       <div id="entidadesLista"></div>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
@@ -5554,10 +5558,10 @@ function renderEntidadesDtlLista(){
   const host = document.getElementById('entidadesLista'); if(!host) return;
   host.innerHTML = DTL.entidades.map(x=>`
     <div class="cat-row">
-      <span style="flex:1;font-weight:600;font-size:13.5px;${x.activo?'':'opacity:.45'}">${esc(x.nombre)}${x.activo?'':' (archivada)'}</span>
+      <span style="flex:1;font-weight:600;font-size:13.5px;${x.activo?'':'opacity:.45'}">${esc(x.nombre)}${x.activo?'':' (archivado)'}</span>
       <button class="icon-btn" title="Renombrar" data-ent-edit="${x.id}">${I.pen}</button>
       <button class="icon-btn ${x.activo?'danger':''}" title="${x.activo?'Archivar':'Reactivar'}" data-ent-toggle="${x.id}">${x.activo?I.lock:I.check}</button>
-    </div>`).join('') || '<p class="muted-sm">Sin entidades todavía.</p>';
+    </div>`).join('') || '<p class="muted-sm">Sin contratos todavía.</p>';
   host.querySelectorAll('[data-ent-edit]').forEach(b=>{ b.onclick = ()=> abrirFormEntidadDtl(b.dataset.entEdit); });
   host.querySelectorAll('[data-ent-toggle]').forEach(b=>{
     b.onclick = async ()=>{
@@ -5565,17 +5569,17 @@ function renderEntidadesDtlLista(){
       const { error } = await sb.from("dtl_entidades").update({ activo: !x.activo }).eq("id", x.id);
       if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
       await loadDtlState(); renderEntidadesDtlLista();
-      toast(x.activo?"Entidad archivada":"Entidad reactivada","ok");
+      toast(x.activo?"Contrato archivado":"Contrato reactivado","ok");
     };
   });
 }
 function abrirFormEntidadDtl(id, alGuardar){
   const x = id ? DTL.entidades.find(e=>e.id===id) : null;
   openSubModal(`<div class="modal" style="max-width:440px">
-    <div class="modal-head"><div><h2>${x?'Renombrar entidad':'Nueva entidad'}</h2><p>Ej. "Sede Bogotá", "Hospital San Rafael"…</p></div>
+    <div class="modal-head"><div><h2>${x?'Renombrar contrato':'Nuevo contrato'}</h2><p>Ej. "Sede Bogotá", "Hospital San Rafael"…</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
-      <div class="field"><label>Nombre *</label><input id="entNombre" value="${esc(x?.nombre||'')}" placeholder="Nombre de la entidad"></div>
+      <div class="field"><label>Nombre *</label><input id="entNombre" value="${esc(x?.nombre||'')}" placeholder="Nombre del contrato"></div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
@@ -5590,7 +5594,7 @@ function abrirFormEntidadDtl(id, alGuardar){
       : await sb.from("dtl_entidades").insert({ nombre });
     if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
     await loadDtlState();
-    toast(x?"Entidad actualizada":"Entidad creada","ok");
+    toast(x?"Contrato actualizado":"Contrato creado","ok");
     closeModal();
     if(alGuardar) alGuardar();
   };
@@ -5604,7 +5608,7 @@ function abrirTrabajadorDtlForm(id){
     <div class="modal-head"><div><h2>${t?'Editar trabajador':'Nuevo trabajador'}</h2><p>Se guarda en el directorio para futuras entregas.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
-      <div class="field"><label>Entidad *</label>
+      <div class="field"><label>Contrato *</label>
         <select id="tdEntidad">${DTL.entidades.map(x=>`<option value="${x.id}" ${x.id===entidadDefault?'selected':''}>${esc(x.nombre)}</option>`).join('')}</select>
       </div>
       <div class="field"><label>Nombre completo *</label><input id="tdNombre" value="${esc(t?.nombre||'')}" placeholder="Nombres y apellidos"></div>
@@ -5617,7 +5621,7 @@ function abrirTrabajadorDtlForm(id){
         <div><label>Fecha de ingreso</label><input type="date" id="tdFechaIngreso" value="${t?.fecha_ingreso||''}"></div>
         <div><label>Correo</label><input type="email" id="tdCorreo" value="${esc(t?.correo||'')}" placeholder="correo@ejemplo.com"></div>
       </div>
-      <p class="muted-sm">La cédula es única en toda la empresa (para que el enlace de entrega remota la encuentre sin importar la entidad).</p>
+      <p class="muted-sm">La cédula es única en toda la empresa (para que el enlace de entrega remota la encuentre sin importar el contrato).</p>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
@@ -5633,7 +5637,7 @@ async function guardarTrabajadorDtl(id){
   const area = document.getElementById('tdArea').value.trim() || null;
   const fecha_ingreso = document.getElementById('tdFechaIngreso').value || null;
   const correo = document.getElementById('tdCorreo').value.trim() || null;
-  if(!entidad_id){ toast("Selecciona la entidad","err"); return; }
+  if(!entidad_id){ toast("Selecciona el contrato","err"); return; }
   if(!nombre){ toast("Falta el nombre","err"); return; }
   if(!identificacion){ toast("Falta la identificación","err"); return; }
   const btn = document.getElementById('btnGuardarTrabDtl'); btn.disabled=true; btn.innerHTML="Guardando…";
@@ -5744,7 +5748,7 @@ async function cargarTrabajadoresExcelDtl(file){
       const k = keyEnt(it.entidadNombre);
       if(!entidadPorNombre.has(k)){
         const { data, error } = await sb.from("dtl_entidades").insert({ nombre: it.entidadNombre }).select().single();
-        if(error){ toast(`No se pudo crear la entidad "${it.entidadNombre}": `+error.message,"err"); return; }
+        if(error){ toast(`No se pudo crear el contrato "${it.entidadNombre}": `+error.message,"err"); return; }
         entidadPorNombre.set(k, data.id);
         DTL.entidades.push(data);
         entidadesCreadas++;
@@ -5770,7 +5774,7 @@ async function cargarTrabajadoresExcelDtl(file){
     await loadDtlState();
     renderDtlGrid();
     let msg = `${nuevos.length} trabajador(es) nuevo(s) agregado(s)`;
-    if(entidadesCreadas) msg += ` · ${entidadesCreadas} entidad(es) nueva(s) creada(s)`;
+    if(entidadesCreadas) msg += ` · ${entidadesCreadas} contrato(s) nuevo(s) creado(s)`;
     if(yaExistian) msg += ` · ${yaExistian} ya existían (cédula repetida, sin cambios)`;
     if(ignoradas) msg += ` · ${ignoradas} fila(s) incompleta(s) omitida(s)`;
     if(dup) msg += ` · ${dup} duplicada(s) en el archivo`;
@@ -5784,19 +5788,19 @@ const PREDET_DTL_MAX = 3;
 let predetDtlEntidadId = null;
 async function abrirPredeterminadosDtlModal(){
   const entidadesAcc = DTL.entidades.filter(x=>tieneEntidadDtl(x.id));
-  if(!entidadesAcc.length){ toast("No tienes ninguna entidad asignada todavía","err"); return; }
+  if(!entidadesAcc.length){ toast("No tienes ningún contrato asignado todavía","err"); return; }
   if(!predetDtlEntidadId || !entidadesAcc.some(x=>x.id===predetDtlEntidadId)) predetDtlEntidadId = entidadesAcc[0].id;
   bloquear("Cargando predeterminados…");
   try{ DTL.predeterminados = await cargarPredeterminadosDtl(predetDtlEntidadId); } finally{ desbloquear(); }
   const alTope = DTL.predeterminados.length >= PREDET_DTL_MAX;
   openModal(`<div class="modal" style="max-width:560px">
-    <div class="modal-head"><div><h2>Predeterminado</h2><p>Guarda el nombre, cargo y firma de quien entrega, para no repetirlos en cada entrega. Máximo ${PREDET_DTL_MAX} plantillas por entidad.</p></div>
+    <div class="modal-head"><div><h2>Predeterminado</h2><p>Guarda el nombre, cargo y firma de quien entrega, para no repetirlos en cada entrega. Máximo ${PREDET_DTL_MAX} plantillas por contrato.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
-      <div class="field"><label>Entidad</label>
+      <div class="field"><label>Contrato</label>
         <select id="selPredetEntidad">${entidadesAcc.map(x=>`<option value="${x.id}" ${x.id===predetDtlEntidadId?'selected':''}>${esc(x.nombre)}</option>`).join('')}</select>
       </div>
-      ${alTope?`<p class="muted-sm" style="margin:14px 0">Ya tienes el máximo de ${PREDET_DTL_MAX} plantillas en esta entidad. Elimina alguna para crear otra.</p>`
+      ${alTope?`<p class="muted-sm" style="margin:14px 0">Ya tienes el máximo de ${PREDET_DTL_MAX} plantillas en este contrato. Elimina alguna para crear otra.</p>`
         :`<button class="btn btn-primary btn-sm" id="btnNuevoPredetDtl" style="margin:14px 0">${I.plus} Nueva plantilla</button>`}
       <div id="predetDtlLista"></div>
     </div>
@@ -6531,16 +6535,16 @@ async function generarKardexDtlPDF(trabajadorId){
 function abrirSeleccionZipDtl(){
   const preseleccion = dtlFiltroEntidad!=='todas' ? [dtlFiltroEntidad] : [];
   openModal(`<div class="modal" style="max-width:480px">
-    <div class="modal-head"><div><h2>Descargar kárdex (ZIP)</h2><p>Elige qué entidades incluir — entre más elijas, más tarda en generarse.</p></div>
+    <div class="modal-head"><div><h2>Descargar kárdex (ZIP)</h2><p>Elige qué contratos incluir — entre más elijas, más tarda en generarse.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
       <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
-        <button class="btn btn-ghost btn-sm" id="btnZipDtlTodas">Seleccionar todas</button>
+        <button class="btn btn-ghost btn-sm" id="btnZipDtlTodas">Seleccionar todos</button>
       </div>
       <div id="zipDtlLista">
         ${DTL.entidades.length
           ? DTL.entidades.map(en=>`<label class="chk" style="padding:4px 0"><input type="checkbox" data-zip-entidad="${en.id}" ${preseleccion.includes(en.id)?'checked':''}> ${esc(en.nombre)}</label>`).join('')
-          : '<p class="muted-sm">No hay entidades creadas.</p>'}
+          : '<p class="muted-sm">No hay contratos creados.</p>'}
       </div>
     </div>
     <div class="modal-foot">
@@ -6553,7 +6557,7 @@ function abrirSeleccionZipDtl(){
   };
   document.getElementById('btnZipDtlDescargar').onclick = ()=>{
     const ids = Array.from(document.querySelectorAll('[data-zip-entidad]:checked')).map(el=>el.dataset.zipEntidad);
-    if(!ids.length){ toast("Elige al menos una entidad","err"); return; }
+    if(!ids.length){ toast("Elige al menos un contrato","err"); return; }
     closeModal();
     descargarZipKardexDtlSeleccion(ids);
   };
@@ -6589,7 +6593,7 @@ async function descargarZipKardexDtlSeleccion(entidadIds){
     bloquearMsg("Comprimiendo ZIP…");
     const blob = await zip.generateAsync({ type:'blob', compression:'DEFLATE' });
     const url = URL.createObjectURL(blob);
-    const nombreEntidad = entidadIds.length===DTL.entidades.length ? 'todas_las_entidades' : (entidadIds.length===1 ? nombreEntidadDtl(entidadIds[0]) : entidadIds.length+'_entidades');
+    const nombreEntidad = entidadIds.length===DTL.entidades.length ? 'todos_los_contratos' : (entidadIds.length===1 ? nombreEntidadDtl(entidadIds[0]) : entidadIds.length+'_contratos');
     const safeEntidad = String(nombreEntidad).replace(/[^\w\sáéíóúñ-]/gi,'').trim().replace(/\s+/g,'_').slice(0,40);
     const a = document.createElement('a'); a.href=url;
     a.download = 'Kardex_dotacion_'+safeEntidad+'.zip';
@@ -6786,7 +6790,7 @@ async function renderConfiguracion(silent){
     ${topbar('configuracion')}
     <div class="wrap">
       <div class="page-head">
-        <div><h1>Configuración</h1><p>Usuarios y permisos de acceso a cada módulo (Asistencia, Documentos, EPP y Dotación) y a los contratos/entidades dentro de EPP y Dotación.</p></div>
+        <div><h1>Configuración</h1><p>Usuarios y permisos de acceso a cada módulo (Asistencia, Documentos, EPP y Dotación) y a los contratos dentro de EPP y Dotación.</p></div>
       </div>
       <div class="resp-firma" style="margin-bottom:20px">
         <div class="rf-info">
@@ -6885,10 +6889,10 @@ async function abrirPermisosUsuario(perfilId){
         </div>
         <label class="chk" style="margin-top:8px"><input type="checkbox" data-pf-mod="dotacionlegal" ${modulos.includes('dotacionlegal')?'checked':''}> Dotación</label>
         <div id="permisosDotacionLegal" style="margin-top:10px;padding:12px 14px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;${modulos.includes('dotacionlegal')?'':'display:none'}">
-          <div class="sec-bar" style="margin:0 0 8px"><h2 style="font-size:13px">Entidades permitidas (Dotación)</h2></div>
+          <div class="sec-bar" style="margin:0 0 8px"><h2 style="font-size:13px">Contratos permitidos (Dotación)</h2></div>
           ${todasLasEntidades.length
             ? todasLasEntidades.map(en=>`<label class="chk" style="padding:3px 0"><input type="checkbox" data-pf-entidad="${en.id}" ${entidadesMarcadas.includes(en.id)?'checked':''}> ${esc(en.nombre)}</label>`).join('')
-            : '<p class="muted-sm">Aún no hay entidades creadas.</p>'}
+            : '<p class="muted-sm">Aún no hay contratos creados.</p>'}
         </div>
       </div>
     </div>
@@ -6903,7 +6907,7 @@ async function abrirPermisosUsuario(perfilId){
   const actualizarResumenAccesoUI = ()=>{
     const el = document.getElementById('resumenAcceso'); if(!el) return;
     if(document.getElementById('pfAdmin').checked){
-      el.innerHTML = `<b>Administrador</b> — acceso total a todos los módulos, contratos y entidades, sin restricciones.`;
+      el.innerHTML = `<b>Administrador</b> — acceso total a todos los módulos y contratos, sin restricciones.`;
       return;
     }
     const modulosSel = Array.from(document.querySelectorAll('[data-pf-mod]:checked')).map(x=>x.dataset.pfMod);
@@ -6922,7 +6926,7 @@ async function abrirPermisosUsuario(perfilId){
     if(modulosSel.includes('dotacionlegal')){
       const ids = Array.from(document.querySelectorAll('[data-pf-entidad]:checked')).map(x=>x.dataset.pfEntidad);
       const nombres = ids.map(id=>todasLasEntidades.find(x=>x.id===id)?.nombre).filter(Boolean);
-      partes.push(`Dotación (${nombres.length?esc(nombres.join(', ')):'<span style="color:var(--danger)">ninguna entidad marcada</span>'})`);
+      partes.push(`Dotación (${nombres.length?esc(nombres.join(', ')):'<span style="color:var(--danger)">ningún contrato marcado</span>'})`);
     }
     const rol = document.querySelector('input[name="pfRol"]:checked')?.value || 'editor';
     const rolTxt = rol==='visualizador' ? 'solo puede ver (Visualizador)' : 'puede crear/editar lo suyo (Editor)';
@@ -6975,7 +6979,7 @@ async function guardarPermisosUsuario(perfilId){
     await sb.from("acc_perfil_entidades").delete().eq("perfil_id", perfilId);
     if(entidadesMarcadas.length){
       const { error:e4 } = await sb.from("acc_perfil_entidades").insert(entidadesMarcadas.map(en=>({perfil_id:perfilId, entidad_id:en})));
-      if(e4){ toast("Se guardó parcialmente, error en entidades: "+e4.message,"err"); }
+      if(e4){ toast("Se guardó parcialmente, error en contratos: "+e4.message,"err"); }
     }
     toast("Permisos actualizados","ok");
     closeModal();
