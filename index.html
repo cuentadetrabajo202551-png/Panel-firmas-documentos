@@ -3780,11 +3780,15 @@ let DOTACION = { contratos: [], trabajadores: [], catalogo: [], entregas: [], en
 let dotQuery = "";
 let entregaDraft = null;
 let contratoActualId = localStorage.getItem('dot_contrato_actual') || null; // null hasta que se carguen los contratos; "todos" = vista combinada
+/* Selección múltiple para marcar inactivos / eliminar en bloque (solo admin) */
+let dotMostrarInactivos = false;
+let modoSeleccionDot = false;
+let seleccionadosDot = new Set();
 
 async function loadDotacionState(){
   const [co, t, e, ei] = await Promise.all([
     sb.from("dot_contratos").select("id,nombre,activo,creado_en").order("creado_en",{ascending:true}),
-    sb.from("dot_trabajadores").select("id,nombre,identificacion,cargo,area,contrato_id,creado_en").order("nombre",{ascending:true}),
+    sb.from("dot_trabajadores").select("id,nombre,identificacion,cargo,area,contrato_id,activo,creado_en").order("nombre",{ascending:true}),
     sb.from("dot_entregas").select("id,trabajador_id,fecha").order("fecha",{ascending:false}),
     sb.from("dot_entrega_items").select("entrega_id,nombre_item,cantidad")
   ]);
@@ -3854,12 +3858,12 @@ async function renderDotacionAdmin(silent){
 
   const trabs = trabajadoresDelContrato();
   const entregasC = entregasDelContrato();
-  const totalTrab = trabs.length;
+  const totalTrab = trabs.filter(t=>t.activo!==false).length;
   const totalEntregas = entregasC.length;
   const mesActual = hoyLocal().slice(0,7);
   const entregasMes = entregasC.filter(e=>(e.fecha||"").startsWith(mesActual)).length;
   const conEntrega = new Set(entregasC.map(e=>e.trabajador_id));
-  const sinEntregas = trabs.filter(t=>!conEntrega.has(t.id)).length;
+  const sinEntregas = trabs.filter(t=>t.activo!==false && !conEntrega.has(t.id)).length;
   const c = contratoActual();
   const enTodos = contratoActualId==='todos';
 
@@ -3883,10 +3887,12 @@ async function renderDotacionAdmin(silent){
           ${puedeEscribir()?`<button class="btn btn-ghost btn-pc-only" id="btnPredeterminados">${I.pen} Predeterminados</button>`:''}
           ${!enTodos && MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-pc-only" id="btnPlantillaTrab">${I.doc} Plantilla Excel</button>
           <button class="btn btn-ghost btn-pc-only" id="btnCargaTrab">${I.plus} Carga masiva</button>`:''}
+          ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-pc-only" id="btnCorregirCargos">${I.pen} Corregir cargos</button>`:''}
           ${totalEntregas?`<button class="btn btn-ghost btn-pc-only" id="btnZipKardex">${I.doc} Descargar todos (ZIP)</button>
           <button class="btn btn-ghost btn-pc-only" id="btnExcelEpp">${I.doc} Descargar Excel</button>`:''}
           ${!enTodos?`<button class="btn btn-ghost btn-pc-only" id="btnCopiarEnlaceEpp">${I.link} Copiar enlace de entrega remota</button>
           <button class="btn btn-ghost btn-pc-only" id="btnQrEpp">${I.link} QR remoto</button>`:''}
+          ${MIPERFIL.esAdmin?`<button class="btn ${modoSeleccionDot?'btn-primary':'btn-ghost'} btn-pc-only" id="btnModoSeleccionDot">${I.check} ${modoSeleccionDot?'Cancelar selección':'Seleccionar'}</button>`:''}
           ${!enTodos && MIPERFIL.esAdmin?`<button class="btn btn-primary btn-pc-only" id="btnNuevoTrab">${I.plus} Nuevo trabajador</button>`:''}
         </div>
       </div>
@@ -3917,8 +3923,10 @@ async function renderDotacionAdmin(silent){
   const bnt=document.getElementById("btnNuevoTrab"); if(bnt) bnt.onclick = ()=> abrirTrabajadorForm(null);
   const bzk=document.getElementById("btnZipKardex"); if(bzk) bzk.onclick = abrirSeleccionZipDot;
   const bxl=document.getElementById("btnExcelEpp"); if(bxl) bxl.onclick = abrirSeleccionExcelDot;
+  const bcc=document.getElementById("btnCorregirCargos"); if(bcc) bcc.onclick = abrirCorregirCargosDot;
   const bceEpp=document.getElementById("btnCopiarEnlaceEpp"); if(bceEpp) bceEpp.onclick = ()=> copyText(location.href.split("#")[0]+"#/dotacion/entrega/"+contratoActualId, "Enlace de entrega remota copiado");
   const bqrEpp=document.getElementById("btnQrEpp"); if(bqrEpp) bqrEpp.onclick = ()=> mostrarQR(location.href.split("#")[0]+"#/dotacion/entrega/"+contratoActualId, "Entrega remota de EPP — "+(contratoActual()?.nombre||''));
+  const bms=document.getElementById("btnModoSeleccionDot"); if(bms) bms.onclick = ()=>{ modoSeleccionDot = !modoSeleccionDot; seleccionadosDot.clear(); renderDotacionAdmin(); };
   renderDotacionBody();
   if(silent) window.scrollTo(0, scrollY);
 }
@@ -3932,16 +3940,36 @@ function renderDotacionBody(){
         ${I.search}
         <input type="text" id="dotSearch" placeholder="Buscar por nombre, cédula, cargo o área…" value="${esc(dotQuery)}">
       </div>
+      <label class="chk" style="white-space:nowrap"><input type="checkbox" id="chkMostrarInactivosDot" ${dotMostrarInactivos?'checked':''}> Mostrar inactivos</label>
     </div>
+    ${modoSeleccionDot?`
+    <div class="resp-firma" style="margin-bottom:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" id="btnSeleccionarTodosDot">Seleccionar todos</button>
+      <span class="muted-sm" id="contadorSeleccionDot">${seleccionadosDot.size} seleccionado(s)</span>
+      <div style="flex:1;min-width:8px"></div>
+      <button class="btn btn-ghost btn-sm" id="btnMarcarInactivoDot">Marcar como inactivo</button>
+      <button class="btn btn-danger btn-sm" id="btnEliminarSeleccionDot">${I.trash} Eliminar seleccionados</button>
+    </div>`:''}
     <div id="dotGrid"></div>`;
   document.getElementById("dotSearch").oninput = (e)=>{ dotQuery = e.target.value; renderDotTrabajadoresGrid(); };
+  document.getElementById("chkMostrarInactivosDot").onchange = (e)=>{ dotMostrarInactivos = e.target.checked; renderDotTrabajadoresGrid(); };
+  if(modoSeleccionDot){
+    document.getElementById('btnSeleccionarTodosDot').onclick = ()=>{
+      trabajadoresFiltradosDot().forEach(t=>seleccionadosDot.add(t.id));
+      renderDotTrabajadoresGrid();
+      actualizarContadorSeleccionDot();
+    };
+    document.getElementById('btnMarcarInactivoDot').onclick = ()=> marcarInactivosSeleccionDot();
+    document.getElementById('btnEliminarSeleccionDot').onclick = ()=> eliminarSeleccionDot();
+  }
   renderDotTrabajadoresGrid();
 }
 
-function renderDotTrabajadoresGrid(){
-  const host = document.getElementById("dotGrid");
-  if(!host) return;
+/* Lista actualmente visible (contrato + búsqueda + filtro de inactivos) — la usan tanto
+   la grilla como "Seleccionar todos", para que seleccione justo lo que se está viendo. */
+function trabajadoresFiltradosDot(){
   let db = trabajadoresDelContrato();
+  if(!dotMostrarInactivos) db = db.filter(t=>t.activo!==false);
   const q = dotQuery.trim().toLowerCase();
   if(q) db = db.filter(t=>
     (t.nombre||"").toLowerCase().includes(q) ||
@@ -3949,12 +3977,34 @@ function renderDotTrabajadoresGrid(){
     (t.cargo||"").toLowerCase().includes(q) ||
     (t.area||"").toLowerCase().includes(q)
   );
+  return db;
+}
+
+function actualizarContadorSeleccionDot(){
+  const el = document.getElementById('contadorSeleccionDot');
+  if(el) el.textContent = seleccionadosDot.size+' seleccionado(s)';
+}
+
+function renderDotTrabajadoresGrid(){
+  const host = document.getElementById("dotGrid");
+  if(!host) return;
+  const db = trabajadoresFiltradosDot();
   if(!db.length){
     host.innerHTML = `<div class="empty"><div class="ic">${I.box}</div><h3>${trabajadoresDelContrato().length?'Sin resultados':'Sin trabajadores todavía'}</h3>
-      <p>${trabajadoresDelContrato().length?'Prueba con otro término de búsqueda.':'Agrega trabajadores uno por uno o con carga masiva desde Excel.'}</p></div>`;
+      <p>${trabajadoresDelContrato().length?'Prueba con otro término de búsqueda, o marca "Mostrar inactivos".':'Agrega trabajadores uno por uno o con carga masiva desde Excel.'}</p></div>`;
     return;
   }
   host.innerHTML = `<div class="grid">${db.map(trabajadorCard).join("")}</div>`;
+  if(modoSeleccionDot){
+    host.querySelectorAll("[data-sel-trab]").forEach(chk=>{
+      chk.onchange = ()=>{
+        const id = chk.dataset.selTrab;
+        if(chk.checked) seleccionadosDot.add(id); else seleccionadosDot.delete(id);
+        actualizarContadorSeleccionDot();
+      };
+    });
+    return;
+  }
   host.querySelectorAll("[data-trab]").forEach(b=>{
     b.onclick = ()=>{
       const id=b.dataset.id, act=b.dataset.trab;
@@ -3967,15 +4017,64 @@ function renderDotTrabajadoresGrid(){
   });
 }
 
+async function marcarInactivosSeleccionDot(){
+  if(!seleccionadosDot.size){ toast("Selecciona al menos un trabajador","err"); return; }
+  const ids = Array.from(seleccionadosDot);
+  openModal(`<div class="modal" style="max-width:440px">
+    <div class="modal-head"><div><h2>Marcar como inactivos</h2><p>Se marcarán ${ids.length} trabajador(es) como inactivos.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Dejan de aparecer en la vista normal (quedan visibles solo con "Mostrar inactivos"), pero se conserva todo su historial de entregas y firmas. Úsalo para quienes ya salieron de la empresa.</p></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="confMarcarInactivoDot">${I.check} Sí, marcar inactivos</button></div></div>`);
+  document.getElementById('confMarcarInactivoDot').onclick = async ()=>{
+    const btn=document.getElementById("confMarcarInactivoDot"); btn.disabled=true; btn.innerHTML="Guardando…";
+    bloquear("Marcando como inactivos…");
+    try{
+      const { error } = await sb.from("dot_trabajadores").update({ activo:false }).in("id", ids);
+      if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
+      await loadDotacionState();
+      modoSeleccionDot = false; seleccionadosDot.clear();
+      closeModal();
+      toast(`${ids.length} trabajador(es) marcados como inactivos`,"ok");
+      renderDotacionAdmin();
+    } finally { desbloquear(); }
+  };
+}
+
+async function eliminarSeleccionDot(){
+  if(!seleccionadosDot.size){ toast("Selecciona al menos un trabajador","err"); return; }
+  const ids = Array.from(seleccionadosDot);
+  openModal(`<div class="modal" style="max-width:460px">
+    <div class="modal-head"><div><h2>Eliminar trabajadores</h2><p>Esta acción no se puede deshacer.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminarán <b>${ids.length}</b> trabajador(es) del directorio junto con <b>todo su historial de entregas y firmas</b>. Si solo quieres dejar de verlos sin perder su historial, usa "Marcar como inactivo" en vez de esto.</p></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-danger" id="confEliminarSeleccionDot">${I.trash} Sí, eliminar ${ids.length}</button></div></div>`);
+  document.getElementById('confEliminarSeleccionDot').onclick = async ()=>{
+    const btn=document.getElementById("confEliminarSeleccionDot"); btn.disabled=true; btn.innerHTML="Eliminando…";
+    bloquear("Eliminando…");
+    try{
+      const { error } = await sb.from("dot_trabajadores").delete().in("id", ids);
+      if(error){ toast("No se pudo eliminar: "+error.message,"err"); return; }
+      await loadDotacionState();
+      modoSeleccionDot = false; seleccionadosDot.clear();
+      closeModal();
+      toast(`${ids.length} trabajador(es) eliminados`,"ok");
+      renderDotacionAdmin();
+    } finally { desbloquear(); }
+  };
+}
+
 function trabajadorCard(t){
   const entregasT = DOTACION.entregas.filter(e=>e.trabajador_id===t.id);
   const n = entregasT.length;
   const ultima = n ? entregasT.reduce((a,b)=> (a.fecha>b.fecha?a:b)).fecha : null;
   const nombreContrato = contratoActualId==='todos' ? (DOTACION.contratos.find(c=>c.id===t.contrato_id)?.nombre) : null;
-  return `<div class="lcard">
+  const inactivo = t.activo===false;
+  return `<div class="lcard" style="${inactivo?'opacity:.55':''}">
     <div class="lcard-top">
       <span class="tipo">${esc(t.cargo||'Trabajador')}</span>
-      ${n===0?'<span class="badge cerrada"><span class="dot"></span>Sin entregas</span>':''}
+      ${inactivo?'<span class="badge cerrada"><span class="dot"></span>Inactivo</span>' : (n===0?'<span class="badge cerrada"><span class="dot"></span>Sin entregas</span>':'')}
     </div>
     <h3>${esc(t.nombre)}</h3>
     <div class="meta">
@@ -3987,11 +4086,12 @@ function trabajadorCard(t){
     <div class="lcard-foot">
       <div class="attn"><span class="num">${n}</span><span class="lab">entrega${n===1?'':'s'}<br>registrada${n===1?'':'s'}</span></div>
       <div class="card-actions">
+        ${modoSeleccionDot ? `<label class="chk" style="padding:0"><input type="checkbox" data-sel-trab="${t.id}" ${seleccionadosDot.has(t.id)?'checked':''}></label>` : `
         <button class="icon-btn" title="Ver ficha" data-trab="ver" data-id="${t.id}">${I.eye}</button>
         ${n>0?`<button class="icon-btn" title="Descargar kárdex" data-trab="kardex" data-id="${t.id}">${I.pdf}</button>`:''}
         ${puedeEscribir()?`<button class="icon-btn" title="Registrar entrega" data-trab="entregar" data-id="${t.id}">${I.plus}</button>`:''}
         ${MIPERFIL.esAdmin?`<button class="icon-btn" title="Editar" data-trab="editar" data-id="${t.id}">${I.pen}</button>
-        <button class="icon-btn danger" title="Eliminar" data-trab="del" data-id="${t.id}">${I.trash}</button>`:''}
+        <button class="icon-btn danger" title="Eliminar" data-trab="del" data-id="${t.id}">${I.trash}</button>`:''}`}
       </div>
     </div>
   </div>`;
@@ -4022,6 +4122,64 @@ function abrirFormContrato(id, alGuardar){
     if(!c && data) { contratoActualId = data.id; localStorage.setItem('dot_contrato_actual', data.id); }
     toast(c?"Contrato actualizado":"Contrato creado","ok");
     closeModal(); // vuelve a "alGuardar" (gestión de contratos, o directo al panel si era el primero)
+  };
+}
+
+/* ---------- Corregir cargos en bloque — útil cuando la carga masiva trajo el mismo
+   error de tipeo repetido en muchos trabajadores (ej. "OPERARRIO" en vez de "OPERARIO").
+   Renombra el cargo en TODOS los trabajadores que lo tengan escrito exactamente igual,
+   dentro del contrato actual (o de todos, en modo "todos los contratos"). ---------- */
+function abrirCorregirCargosDot(){
+  const trabs = trabajadoresDelContrato();
+  const porCargo = {};
+  trabs.forEach(t=>{
+    const k = (t.cargo||'').trim();
+    porCargo[k] = (porCargo[k]||0) + 1;
+  });
+  const lista = Object.keys(porCargo).sort((a,b)=> porCargo[b]-porCargo[a]);
+  openModal(`<div class="modal" style="max-width:520px">
+    <div class="modal-head"><div><h2>Corregir cargos</h2><p>Renombra un cargo y se corrige de una vez en todos los trabajadores que lo tengan escrito igual.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      ${lista.length ? lista.map(c=>`
+        <div class="cat-row">
+          <span style="flex:1;font-weight:600;font-size:13.5px">${c?esc(c):'<span class="muted-sm">(sin cargo)</span>'} <span class="muted-sm">— ${porCargo[c]} trabajador${porCargo[c]===1?'':'es'}</span></span>
+          <button class="icon-btn" title="Renombrar" data-cargo-edit="${esc(c)}">${I.pen}</button>
+        </div>`).join('') : '<p class="muted-sm">No hay trabajadores en este contrato.</p>'}
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
+  </div>`);
+  document.querySelectorAll('[data-cargo-edit]').forEach(b=>{
+    const cargoActual = b.dataset.cargoEdit;
+    b.onclick = ()=> abrirRenombrarCargoDot(cargoActual, porCargo[cargoActual]);
+  });
+}
+function abrirRenombrarCargoDot(cargoActual, cantidad){
+  openSubModal(`<div class="modal" style="max-width:440px">
+    <div class="modal-head"><div><h2>Renombrar cargo</h2><p>Se corregirá en ${cantidad} trabajador${cantidad===1?'':'es'} de este contrato.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Texto correcto *</label><input id="cargoNuevo" value="${esc(cargoActual)}" placeholder="Cargo"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardarCargo">${I.check} Corregir</button>
+    </div></div>`, ()=> abrirCorregirCargosDot());
+  document.getElementById('btnGuardarCargo').onclick = async ()=>{
+    const nuevo = document.getElementById('cargoNuevo').value.trim();
+    if(!nuevo){ toast("Escribe el texto correcto","err"); return; }
+    if(nuevo === cargoActual){ toast("No cambiaste nada","err"); return; }
+    const btn = document.getElementById('btnGuardarCargo'); btn.disabled=true; btn.innerHTML="Corrigiendo…";
+    bloquear("Corrigiendo cargo…");
+    try{
+      const ids = trabajadoresDelContrato().filter(t=>(t.cargo||'').trim()===cargoActual).map(t=>t.id);
+      const { error } = await sb.from("dot_trabajadores").update({ cargo: nuevo }).in("id", ids);
+      if(error){ toast("No se pudo corregir: "+error.message,"err"); return; }
+      await loadDotacionState();
+      toast(`Cargo corregido en ${ids.length} trabajador(es)`,"ok");
+      closeModal();
+      renderDotacionBody();
+    } finally { desbloquear(); }
   };
 }
 
@@ -5428,12 +5586,16 @@ let dtlEntregaDraft = null;
 /* Filtro de la grilla de trabajadores — "todas" muestra a todos los que la cuenta pueda ver
    (RLS ya limita a las entidades con acceso), sin necesidad de elegir una entidad primero. */
 let dtlFiltroEntidad = localStorage.getItem('dtl_filtro_entidad') || 'todas';
+/* Selección múltiple para marcar inactivos / eliminar en bloque (solo admin) */
+let dtlMostrarInactivos = false;
+let modoSeleccionDtl = false;
+let seleccionadosDtl = new Set();
 const DTL_DECLARACION = "Declaro haber recibido a satisfacción los elementos de dotación relacionados en este documento, en buen estado y de acuerdo con mi talla. Me comprometo a utilizarlos durante el desarrollo de mis labores y a darles el cuidado adecuado.";
 
 async function loadDtlState(){
   const [en, t, e] = await Promise.all([
     sb.from("dtl_entidades").select("id,nombre,activo,creado_en").order("creado_en",{ascending:true}),
-    sb.from("dtl_trabajadores").select("id,nombre,identificacion,cargo,area,entidad_id,fecha_ingreso,correo,creado_en").order("nombre",{ascending:true}),
+    sb.from("dtl_trabajadores").select("id,nombre,identificacion,cargo,area,entidad_id,fecha_ingreso,correo,activo,creado_en").order("nombre",{ascending:true}),
     sb.from("dtl_entregas").select("id,trabajador_id,fecha").order("fecha",{ascending:false})
   ]);
   const err = en.error || t.error || e.error;
@@ -5490,12 +5652,12 @@ async function renderDtlAdmin(silent){
 
   const trabs = trabajadoresDeEntidad();
   const entregasE = entregasDeEntidad();
-  const totalTrab = trabs.length;
+  const totalTrab = trabs.filter(t=>t.activo!==false).length;
   const totalEntregas = entregasE.length;
   const mesActual = hoyLocal().slice(0,7);
   const entregasMes = entregasE.filter(e=>(e.fecha||"").startsWith(mesActual)).length;
   const conEntrega = new Set(entregasE.map(e=>e.trabajador_id));
-  const sinEntregas = trabs.filter(t=>!conEntrega.has(t.id)).length;
+  const sinEntregas = trabs.filter(t=>t.activo!==false && !conEntrega.has(t.id)).length;
 
   const entidadesAcc = DTL.entidades.filter(x=>tieneEntidadDtl(x.id));
   // Si el supervisor solo tiene UNA entidad asignada, "todas las entidades" es lo mismo que
@@ -5526,10 +5688,12 @@ async function renderDtlAdmin(silent){
           ${puedeEscribir()?`<button class="btn btn-ghost btn-pc-only" id="btnPredeterminadosDtl">${I.pen} Predeterminados</button>`:''}
           ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-pc-only" id="btnPlantillaTrabDtl">${I.doc} Plantilla Excel</button>
           <button class="btn btn-ghost btn-pc-only" id="btnCargaTrabDtl">${I.plus} Carga masiva</button>`:''}
+          ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-pc-only" id="btnCorregirCargosDtl">${I.pen} Corregir cargos</button>`:''}
           ${totalEntregas?`<button class="btn btn-ghost btn-pc-only" id="btnZipKardexDtl">${I.doc} Descargar todos (ZIP)</button>
           <button class="btn btn-ghost btn-pc-only" id="btnExcelDtl">${I.doc} Descargar Excel</button>`:''}
           <button class="btn btn-ghost btn-pc-only" id="btnCopiarEnlacePublico">${I.link} Copiar enlace de entrega remota</button>
           <button class="btn btn-ghost btn-pc-only" id="btnQrEnlacePublico">${I.link} QR remoto</button>
+          ${MIPERFIL.esAdmin?`<button class="btn ${modoSeleccionDtl?'btn-primary':'btn-ghost'} btn-pc-only" id="btnModoSeleccionDtl">${I.check} ${modoSeleccionDtl?'Cancelar selección':'Seleccionar'}</button>`:''}
           ${MIPERFIL.esAdmin?`<button class="btn btn-primary btn-pc-only" id="btnNuevoTrabDtl">${I.plus} Nuevo trabajador</button>`:''}
         </div>
       </div>
@@ -5546,7 +5710,16 @@ async function renderDtlAdmin(silent){
           ${I.search}
           <input type="text" id="dtlSearch" placeholder="Buscar por nombre, cédula, cargo o área…" value="${esc(dtlQuery)}">
         </div>
+        <label class="chk" style="white-space:nowrap"><input type="checkbox" id="chkMostrarInactivosDtl" ${dtlMostrarInactivos?'checked':''}> Mostrar inactivos</label>
       </div>
+      ${modoSeleccionDtl?`
+      <div class="resp-firma" style="margin-bottom:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" id="btnSeleccionarTodosDtl">Seleccionar todos</button>
+        <span class="muted-sm" id="contadorSeleccionDtl">${seleccionadosDtl.size} seleccionado(s)</span>
+        <div style="flex:1;min-width:8px"></div>
+        <button class="btn btn-ghost btn-sm" id="btnMarcarInactivoDtl">Marcar como inactivo</button>
+        <button class="btn btn-danger btn-sm" id="btnEliminarSeleccionDtl">${I.trash} Eliminar seleccionados</button>
+      </div>`:''}
       <div id="dtlGrid"></div>
       <input type="file" id="fileTrabajadoresDtl" accept=".xlsx,.xls,.csv" style="display:none">
     </div>`;
@@ -5565,17 +5738,30 @@ async function renderDtlAdmin(silent){
   const bnt=document.getElementById("btnNuevoTrabDtl"); if(bnt) bnt.onclick = ()=> abrirTrabajadorDtlForm(null);
   const bzk=document.getElementById("btnZipKardexDtl"); if(bzk) bzk.onclick = abrirSeleccionZipDtl;
   const bxl=document.getElementById("btnExcelDtl"); if(bxl) bxl.onclick = abrirSeleccionExcelDtl;
+  const bcc=document.getElementById("btnCorregirCargosDtl"); if(bcc) bcc.onclick = abrirCorregirCargosDtl;
   const bce=document.getElementById("btnCopiarEnlacePublico"); if(bce) bce.onclick = ()=> copyText(location.href.split("#")[0]+"#/dotacionlegal/entrega", "Enlace de entrega remota copiado");
   const bqr=document.getElementById("btnQrEnlacePublico"); if(bqr) bqr.onclick = ()=> mostrarQR(location.href.split("#")[0]+"#/dotacionlegal/entrega", "Entrega remota de dotación");
+  const bms=document.getElementById("btnModoSeleccionDtl"); if(bms) bms.onclick = ()=>{ modoSeleccionDtl = !modoSeleccionDtl; seleccionadosDtl.clear(); renderDtlAdmin(); };
   document.getElementById("dtlSearch").oninput = (e)=>{ dtlQuery = e.target.value; renderDtlGrid(); };
+  document.getElementById("chkMostrarInactivosDtl").onchange = (e)=>{ dtlMostrarInactivos = e.target.checked; renderDtlGrid(); };
+  if(modoSeleccionDtl){
+    document.getElementById('btnSeleccionarTodosDtl').onclick = ()=>{
+      trabajadoresFiltradosDtl().forEach(t=>seleccionadosDtl.add(t.id));
+      renderDtlGrid();
+      actualizarContadorSeleccionDtl();
+    };
+    document.getElementById('btnMarcarInactivoDtl').onclick = ()=> marcarInactivosSeleccionDtl();
+    document.getElementById('btnEliminarSeleccionDtl').onclick = ()=> eliminarSeleccionDtl();
+  }
   renderDtlGrid();
   if(silent) window.scrollTo(0, scrollY);
 }
 
-function renderDtlGrid(){
-  const host = document.getElementById("dtlGrid");
-  if(!host) return;
+/* Lista actualmente visible (entidad + búsqueda + filtro de inactivos) — la usan tanto
+   la grilla como "Seleccionar todos". */
+function trabajadoresFiltradosDtl(){
   let db = trabajadoresDeEntidad();
+  if(!dtlMostrarInactivos) db = db.filter(t=>t.activo!==false);
   const q = dtlQuery.trim().toLowerCase();
   if(q) db = db.filter(t=>
     (t.nombre||"").toLowerCase().includes(q) ||
@@ -5583,12 +5769,34 @@ function renderDtlGrid(){
     (t.cargo||"").toLowerCase().includes(q) ||
     (t.area||"").toLowerCase().includes(q)
   );
+  return db;
+}
+
+function actualizarContadorSeleccionDtl(){
+  const el = document.getElementById('contadorSeleccionDtl');
+  if(el) el.textContent = seleccionadosDtl.size+' seleccionado(s)';
+}
+
+function renderDtlGrid(){
+  const host = document.getElementById("dtlGrid");
+  if(!host) return;
+  const db = trabajadoresFiltradosDtl();
   if(!db.length){
     host.innerHTML = `<div class="empty"><div class="ic">${I.box}</div><h3>${trabajadoresDeEntidad().length?'Sin resultados':'Sin trabajadores todavía'}</h3>
-      <p>${trabajadoresDeEntidad().length?'Prueba con otro término de búsqueda.':'Agrega trabajadores uno por uno o con carga masiva desde Excel.'}</p></div>`;
+      <p>${trabajadoresDeEntidad().length?'Prueba con otro término de búsqueda, o marca "Mostrar inactivos".':'Agrega trabajadores uno por uno o con carga masiva desde Excel.'}</p></div>`;
     return;
   }
   host.innerHTML = `<div class="grid">${db.map(trabajadorDtlCard).join("")}</div>`;
+  if(modoSeleccionDtl){
+    host.querySelectorAll("[data-sel-trabdtl]").forEach(chk=>{
+      chk.onchange = ()=>{
+        const id = chk.dataset.selTrabdtl;
+        if(chk.checked) seleccionadosDtl.add(id); else seleccionadosDtl.delete(id);
+        actualizarContadorSeleccionDtl();
+      };
+    });
+    return;
+  }
   host.querySelectorAll("[data-trabdtl]").forEach(b=>{
     b.onclick = ()=>{
       const id=b.dataset.id, act=b.dataset.trabdtl;
@@ -5601,14 +5809,63 @@ function renderDtlGrid(){
   });
 }
 
+async function marcarInactivosSeleccionDtl(){
+  if(!seleccionadosDtl.size){ toast("Selecciona al menos un trabajador","err"); return; }
+  const ids = Array.from(seleccionadosDtl);
+  openModal(`<div class="modal" style="max-width:440px">
+    <div class="modal-head"><div><h2>Marcar como inactivos</h2><p>Se marcarán ${ids.length} trabajador(es) como inactivos.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Dejan de aparecer en la vista normal (quedan visibles solo con "Mostrar inactivos"), pero se conserva todo su historial de entregas y firmas. Úsalo para quienes ya salieron de la empresa.</p></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="confMarcarInactivoDtl">${I.check} Sí, marcar inactivos</button></div></div>`);
+  document.getElementById('confMarcarInactivoDtl').onclick = async ()=>{
+    const btn=document.getElementById("confMarcarInactivoDtl"); btn.disabled=true; btn.innerHTML="Guardando…";
+    bloquear("Marcando como inactivos…");
+    try{
+      const { error } = await sb.from("dtl_trabajadores").update({ activo:false }).in("id", ids);
+      if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
+      await loadDtlState();
+      modoSeleccionDtl = false; seleccionadosDtl.clear();
+      closeModal();
+      toast(`${ids.length} trabajador(es) marcados como inactivos`,"ok");
+      renderDtlAdmin();
+    } finally { desbloquear(); }
+  };
+}
+
+async function eliminarSeleccionDtl(){
+  if(!seleccionadosDtl.size){ toast("Selecciona al menos un trabajador","err"); return; }
+  const ids = Array.from(seleccionadosDtl);
+  openModal(`<div class="modal" style="max-width:460px">
+    <div class="modal-head"><div><h2>Eliminar trabajadores</h2><p>Esta acción no se puede deshacer.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminarán <b>${ids.length}</b> trabajador(es) del directorio junto con <b>todo su historial de entregas y firmas</b>. Si solo quieres dejar de verlos sin perder su historial, usa "Marcar como inactivo" en vez de esto.</p></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-danger" id="confEliminarSeleccionDtl">${I.trash} Sí, eliminar ${ids.length}</button></div></div>`);
+  document.getElementById('confEliminarSeleccionDtl').onclick = async ()=>{
+    const btn=document.getElementById("confEliminarSeleccionDtl"); btn.disabled=true; btn.innerHTML="Eliminando…";
+    bloquear("Eliminando…");
+    try{
+      const { error } = await sb.from("dtl_trabajadores").delete().in("id", ids);
+      if(error){ toast("No se pudo eliminar: "+error.message,"err"); return; }
+      await loadDtlState();
+      modoSeleccionDtl = false; seleccionadosDtl.clear();
+      closeModal();
+      toast(`${ids.length} trabajador(es) eliminados`,"ok");
+      renderDtlAdmin();
+    } finally { desbloquear(); }
+  };
+}
+
 function trabajadorDtlCard(t){
   const entregasT = DTL.entregas.filter(e=>e.trabajador_id===t.id);
   const n = entregasT.length;
   const ultima = n ? entregasT.reduce((a,b)=> (a.fecha>b.fecha?a:b)).fecha : null;
-  return `<div class="lcard">
+  const inactivo = t.activo===false;
+  return `<div class="lcard" style="${inactivo?'opacity:.55':''}">
     <div class="lcard-top">
       <span class="tipo">${esc(t.cargo||'Trabajador')}</span>
-      ${n===0?'<span class="badge cerrada"><span class="dot"></span>Sin entregas</span>':''}
+      ${inactivo?'<span class="badge cerrada"><span class="dot"></span>Inactivo</span>' : (n===0?'<span class="badge cerrada"><span class="dot"></span>Sin entregas</span>':'')}
     </div>
     <h3>${esc(t.nombre)}</h3>
     <div class="meta">
@@ -5620,14 +5877,70 @@ function trabajadorDtlCard(t){
     <div class="lcard-foot">
       <div class="attn"><span class="num">${n}</span><span class="lab">entrega${n===1?'':'s'}<br>registrada${n===1?'':'s'}</span></div>
       <div class="card-actions">
+        ${modoSeleccionDtl ? `<label class="chk" style="padding:0"><input type="checkbox" data-sel-trabdtl="${t.id}" ${seleccionadosDtl.has(t.id)?'checked':''}></label>` : `
         <button class="icon-btn" title="Ver ficha" data-trabdtl="ver" data-id="${t.id}">${I.eye}</button>
         ${n>0?`<button class="icon-btn" title="Descargar kárdex" data-trabdtl="kardex" data-id="${t.id}">${I.pdf}</button>`:''}
         ${puedeEscribir()?`<button class="icon-btn" title="Registrar entrega" data-trabdtl="entregar" data-id="${t.id}">${I.plus}</button>`:''}
         ${MIPERFIL.esAdmin?`<button class="icon-btn" title="Editar" data-trabdtl="editar" data-id="${t.id}">${I.pen}</button>
-        <button class="icon-btn danger" title="Eliminar" data-trabdtl="del" data-id="${t.id}">${I.trash}</button>`:''}
+        <button class="icon-btn danger" title="Eliminar" data-trabdtl="del" data-id="${t.id}">${I.trash}</button>`:''}`}
       </div>
     </div>
   </div>`;
+}
+
+/* ---------- Corregir cargos en bloque (mismo concepto que en EPP) ---------- */
+function abrirCorregirCargosDtl(){
+  const trabs = trabajadoresDeEntidad();
+  const porCargo = {};
+  trabs.forEach(t=>{
+    const k = (t.cargo||'').trim();
+    porCargo[k] = (porCargo[k]||0) + 1;
+  });
+  const lista = Object.keys(porCargo).sort((a,b)=> porCargo[b]-porCargo[a]);
+  openModal(`<div class="modal" style="max-width:520px">
+    <div class="modal-head"><div><h2>Corregir cargos</h2><p>Renombra un cargo y se corrige de una vez en todos los trabajadores que lo tengan escrito igual.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      ${lista.length ? lista.map(c=>`
+        <div class="cat-row">
+          <span style="flex:1;font-weight:600;font-size:13.5px">${c?esc(c):'<span class="muted-sm">(sin cargo)</span>'} <span class="muted-sm">— ${porCargo[c]} trabajador${porCargo[c]===1?'':'es'}</span></span>
+          <button class="icon-btn" title="Renombrar" data-cargo-edit="${esc(c)}">${I.pen}</button>
+        </div>`).join('') : '<p class="muted-sm">No hay trabajadores en este contrato.</p>'}
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
+  </div>`);
+  document.querySelectorAll('[data-cargo-edit]').forEach(b=>{
+    const cargoActual = b.dataset.cargoEdit;
+    b.onclick = ()=> abrirRenombrarCargoDtl(cargoActual, porCargo[cargoActual]);
+  });
+}
+function abrirRenombrarCargoDtl(cargoActual, cantidad){
+  openSubModal(`<div class="modal" style="max-width:440px">
+    <div class="modal-head"><div><h2>Renombrar cargo</h2><p>Se corregirá en ${cantidad} trabajador${cantidad===1?'':'es'}.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Texto correcto *</label><input id="cargoNuevoDtl" value="${esc(cargoActual)}" placeholder="Cargo"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardarCargoDtl">${I.check} Corregir</button>
+    </div></div>`, ()=> abrirCorregirCargosDtl());
+  document.getElementById('btnGuardarCargoDtl').onclick = async ()=>{
+    const nuevo = document.getElementById('cargoNuevoDtl').value.trim();
+    if(!nuevo){ toast("Escribe el texto correcto","err"); return; }
+    if(nuevo === cargoActual){ toast("No cambiaste nada","err"); return; }
+    const btn = document.getElementById('btnGuardarCargoDtl'); btn.disabled=true; btn.innerHTML="Corrigiendo…";
+    bloquear("Corrigiendo cargo…");
+    try{
+      const ids = trabajadoresDeEntidad().filter(t=>(t.cargo||'').trim()===cargoActual).map(t=>t.id);
+      const { error } = await sb.from("dtl_trabajadores").update({ cargo: nuevo }).in("id", ids);
+      if(error){ toast("No se pudo corregir: "+error.message,"err"); return; }
+      await loadDtlState();
+      toast(`Cargo corregido en ${ids.length} trabajador(es)`,"ok");
+      closeModal();
+      renderDtlGrid();
+    } finally { desbloquear(); }
+  };
 }
 
 /* ---------- Entidades ---------- */
