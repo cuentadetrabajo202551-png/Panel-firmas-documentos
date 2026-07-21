@@ -940,7 +940,12 @@ function renderAdmin(){
     </div>
   `;
 
-  const btnNueva = document.getElementById("btnNueva"); if(btnNueva) btnNueva.onclick = openCreateModal;
+  /* OJO: nunca "onclick = openCreateModal" a secas — el navegador le pasaría el
+     objeto Event de clic como primer argumento (sería "l"), y como un Event es
+     "truthy", el modal se abriría en modo EDITAR (título y botón equivocados) en
+     vez de CREAR, y al guardar fallaría con "invalid input syntax for type uuid:
+     undefined" porque el Event no tiene un .id real. Por eso aquí sí se envuelve. */
+  const btnNueva = document.getElementById("btnNueva"); if(btnNueva) btnNueva.onclick = ()=> openCreateModal();
   document.getElementById("search").oninput = (e)=>{ adminQuery = e.target.value; renderGrid(); };
   document.querySelectorAll(".tab").forEach(t=> t.onclick = ()=>{ adminFilter = t.dataset.f; renderAdmin(); });
   document.getElementById("btnLogout").onclick = async ()=>{ await sb.auth.signOut(); STATE.listas=[]; STATE.userEmail=""; router(); };
