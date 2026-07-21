@@ -7373,7 +7373,7 @@ async function abrirPermisosUsuario(perfilId){
         <label class="chk"><input type="checkbox" data-pf-mod="documentos" ${modulos.includes('documentos')?'checked':''}> Documentos y Firmas</label>
         <label class="chk"><input type="checkbox" data-pf-mod="dotacion" ${modulos.includes('dotacion')?'checked':''}> Entrega de EPP</label>
         <div id="permisosDotacion" style="margin-top:10px;padding:12px 14px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;${modulos.includes('dotacion')?'':'display:none'}">
-          <div class="sec-bar" style="margin:0 0 8px"><h2 style="font-size:13px">Contratos permitidos</h2></div>
+          <div class="sec-bar" style="margin:0 0 8px"><h2 style="font-size:13px">Contratos permitidos</h2>${todosLosContratos.length?`<button type="button" class="btn btn-ghost btn-sm" id="btnPfContratoTodos">Marcar todos</button>`:''}</div>
           ${todosLosContratos.length
             ? todosLosContratos.map(c=>`<label class="chk" style="padding:3px 0"><input type="checkbox" data-pf-contrato="${c.id}" ${contratosMarcados.includes(c.id)?'checked':''}> ${esc(c.nombre)}</label>`).join('')
             : '<p class="muted-sm">Aún no hay contratos creados.</p>'}
@@ -7381,7 +7381,7 @@ async function abrirPermisosUsuario(perfilId){
         </div>
         <label class="chk" style="margin-top:8px"><input type="checkbox" data-pf-mod="dotacionlegal" ${modulos.includes('dotacionlegal')?'checked':''}> Dotación</label>
         <div id="permisosDotacionLegal" style="margin-top:10px;padding:12px 14px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;${modulos.includes('dotacionlegal')?'':'display:none'}">
-          <div class="sec-bar" style="margin:0 0 8px"><h2 style="font-size:13px">Contratos permitidos (Dotación)</h2></div>
+          <div class="sec-bar" style="margin:0 0 8px"><h2 style="font-size:13px">Contratos permitidos (Dotación)</h2>${todasLasEntidades.length?`<button type="button" class="btn btn-ghost btn-sm" id="btnPfEntidadTodos">Marcar todos</button>`:''}</div>
           ${todasLasEntidades.length
             ? todasLasEntidades.map(en=>`<label class="chk" style="padding:3px 0"><input type="checkbox" data-pf-entidad="${en.id}" ${entidadesMarcadas.includes(en.id)?'checked':''}> ${esc(en.nombre)}</label>`).join('')
             : '<p class="muted-sm">Aún no hay contratos creados.</p>'}
@@ -7434,6 +7434,22 @@ async function abrirPermisosUsuario(perfilId){
   if(chkDot) chkDot.onchange = (e)=>{ document.getElementById('permisosDotacion').style.display = e.target.checked ? 'block' : 'none'; };
   const chkDtl = document.querySelector('[data-pf-mod="dotacionlegal"]');
   if(chkDtl) chkDtl.onchange = (e)=>{ document.getElementById('permisosDotacionLegal').style.display = e.target.checked ? 'block' : 'none'; };
+  /* "Marcar todos"/"Quitar todos": evita tener que darle clic contrato por contrato
+     cuando alguien necesita ver, por ejemplo, TODA la Dotación de todos los contratos. */
+  const btnPfContratoTodos = document.getElementById('btnPfContratoTodos');
+  if(btnPfContratoTodos) btnPfContratoTodos.onclick = ()=>{
+    const marcar = btnPfContratoTodos.textContent.trim()==='Marcar todos';
+    document.querySelectorAll('[data-pf-contrato]').forEach(chk=> chk.checked = marcar);
+    btnPfContratoTodos.textContent = marcar ? 'Quitar todos' : 'Marcar todos';
+    actualizarResumenAccesoUI();
+  };
+  const btnPfEntidadTodos = document.getElementById('btnPfEntidadTodos');
+  if(btnPfEntidadTodos) btnPfEntidadTodos.onclick = ()=>{
+    const marcar = btnPfEntidadTodos.textContent.trim()==='Marcar todos';
+    document.querySelectorAll('[data-pf-entidad]').forEach(chk=> chk.checked = marcar);
+    btnPfEntidadTodos.textContent = marcar ? 'Quitar todos' : 'Marcar todos';
+    actualizarResumenAccesoUI();
+  };
   document.querySelectorAll('input[name="pfRol"]').forEach(r=> r.addEventListener('change', actualizarResumenAccesoUI));
   document.querySelectorAll('[data-pf-mod],[data-pf-contrato],[data-pf-entidad]').forEach(chk=>{
     chk.addEventListener('change', actualizarResumenAccesoUI);
