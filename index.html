@@ -584,13 +584,13 @@ function puedeEscribir(){ return MIPERFIL.esAdmin || MIPERFIL.rol==='editor'; }
 function puedoTocar(uidCreador){ return MIPERFIL.esAdmin || (MIPERFIL.rol==='editor' && uidCreador===MIPERFIL.uid); }
 /* Igual, pero además exige que no esté cerrado/finalizado (admin sí puede aunque esté cerrado) */
 function puedoTocarCerrable(uidCreador, cerrado){ return MIPERFIL.esAdmin || (MIPERFIL.rol==='editor' && uidCreador===MIPERFIL.uid && !cerrado); }
-/* Solo para EPP y Dotación: cualquier editor puede tocar (editar/eliminar) una entrega
-   de CUALQUIERA mientras no hayan pasado 24h desde que se creó — ya no importa el
-   creador, importa la antigüedad. Pasadas las 24h, ni siquiera el que la creó puede. */
-function puedoTocarReciente(creadoEn){
+/* Solo para EPP y Dotación: un editor puede tocar (editar/eliminar) una entrega
+   solo si ÉL MISMO la creó, y solo mientras no hayan pasado 24h desde que se creó.
+   Entregas remotas (por QR/enlace, sin login) no tienen creador y solo admin puede tocarlas. */
+function puedoTocarReciente(creadoEn, creadoPor){
   if(MIPERFIL.esAdmin) return true;
-  if(MIPERFIL.rol!=='editor' || !creadoEn) return false;
-  return (Date.now() - new Date(creadoEn).getTime()) < 24*60*60*1000;
+  if(MIPERFIL.rol!=='editor' || !creadoEn || !creadoPor) return false;
+  return creadoPor===MIPERFIL.uid && (Date.now() - new Date(creadoEn).getTime()) < 24*60*60*1000;
 }
 function nombreDe(uid){ return uid ? (PERFILES_NOMBRE[uid] || "—") : "—"; }
 
@@ -762,7 +762,11 @@ async function router(){
   const { data:{ session } } = await sb.auth.getSession();
   if(!session){ renderLogin(); return; }
   STATE.userEmail = session.user?.email || "";
-  if(!MIPERFIL.cargado) await cargarMiPerfil();
+  // No basta con "MIPERFIL.cargado" — si la sesión cambió de usuario (ej. alguien cerró sesión
+  // por expiración del token en vez de darle a "Salir", o volvió a iniciar sesión con otra cuenta
+  // sin recargar la página), MIPERFIL podía quedar con los datos del usuario ANTERIOR. Comparar
+  // contra el uid de la sesión real fuerza una recarga cada vez que no coincidan.
+  if(!MIPERFIL.cargado || MIPERFIL.uid !== session.user.id) await cargarMiPerfil();
   if(MIPERFIL.cargado && !MIPERFIL.activo){ renderSinAcceso(""); return; }
 
   if(location.hash.startsWith("#/configuracion")){
@@ -4950,7 +4954,7 @@ async function renderFichaTrabajador(id){
     const t = DOTACION.trabajadores.find(x=>x.id===id);
     if(!t){ toast("Trabajador no encontrado","err"); location.hash="#/dotacion"; return; }
     const { data: entregas } = await sb.from("dot_entregas")
-      .select("id,fecha,responsable_nombre,responsable_cargo,observaciones,creado_en")
+      .select("id,fecha,responsable_nombre,responsable_cargo,observaciones,creado_en,creado_por")
       .eq("trabajador_id", id).order("fecha",{ascending:false});
     const listaEntregas = entregas || [];
     const idsEnt = listaEntregas.map(e=>e.id);
@@ -4966,7 +4970,7 @@ async function renderFichaTrabajador(id){
         <td>${fmtDate(e.fecha)}</td>
         <td>${its||'—'}</td>
         <td>${esc(e.responsable_nombre||'—')}</td>
-        <td>${puedoTocarReciente(e.creado_en)?`<button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntrega('${e.id}','${t.id}')">${I.pen}</button>
+        <td>${puedoTocarReciente(e.creado_en, e.creado_por)?`<button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntrega('${e.id}','${t.id}')">${I.pen}</button>
         <button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntrega('${e.id}','${t.id}')">${I.trash}</button>`:''}</td>
       </tr>`;
     }).join('');
@@ -6620,7 +6624,7 @@ async function renderFichaTrabajadorDtl(id){
     const t = DTL.trabajadores.find(x=>x.id===id);
     if(!t){ toast("Trabajador no encontrado","err"); location.hash="#/dotacionlegal"; return; }
     const { data: entregas } = await sb.from("dtl_entregas")
-      .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,via,creado_en")
+      .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,via,creado_en,creado_por")
       .eq("trabajador_id", id).order("fecha",{ascending:false});
     const listaEntregas = entregas || [];
 
@@ -6634,7 +6638,7 @@ async function renderFichaTrabajadorDtl(id){
         <td>${fmtDate(e.fecha)}</td>
         <td>${partes.join(', ')||'—'}</td>
         <td>${esc(e.responsable_nombre||(e.via==='remoto'?'(entrega remota)':'—'))}</td>
-        <td>${puedoTocarReciente(e.creado_en)?`<button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntregaDtl('${e.id}','${t.id}')">${I.pen}</button>
+        <td>${puedoTocarReciente(e.creado_en, e.creado_por)?`<button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntregaDtl('${e.id}','${t.id}')">${I.pen}</button>
         <button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntregaDtl('${e.id}','${t.id}')">${I.trash}</button>`:''}</td>
       </tr>`;
     }).join('');
@@ -7287,8 +7291,11 @@ async function renderConfiguracion(silent){
       <div style="margin-bottom:20px;padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
         <p style="margin-bottom:8px"><b>Administrador</b> — acceso total a todo, sin restricciones, en los 4 módulos.</p>
         <p style="margin-bottom:8px"><b>Editor en Asistencia y Documentos y Firmas</b> — crea, y solo edita/elimina lo que él mismo creó; nunca puede tocar una lista cerrada o un documento finalizado, así sea suyo.</p>
-        <p style="margin-bottom:8px"><b>Editor en EPP y Dotación</b> — ve todo el directorio y todas las entregas; puede registrar entregas nuevas libremente; puede editar o eliminar cualquier entrega (no solo las que él creó) <b>durante las primeras 24 horas</b> desde que se registró — pasado ese plazo, ni siquiera el que la creó puede tocarla, solo un administrador. <b>No puede agregar, editar ni eliminar trabajadores</b> del directorio (tampoco por carga masiva de Excel) — el directorio de trabajadores es solo de administrador.</p>
+        <p style="margin-bottom:8px"><b>Editor en EPP y Dotación</b> — ve todo el directorio y todas las entregas; puede registrar entregas nuevas libremente; solo puede editar o eliminar <b>las entregas que él mismo registró</b>, y solo <b>durante las primeras 24 horas</b> desde que las creó — pasado ese plazo, ni él puede tocarlas, solo un administrador. <b>No puede agregar, editar ni eliminar trabajadores</b> del directorio (tampoco por carga masiva de Excel) — el directorio de trabajadores es solo de administrador.</p>
         <p><b>Visualizador</b> — en cualquier módulo, solo puede ver lo que sus módulos/contratos le permitan; nunca crea, edita ni elimina nada.</p>
+      </div>
+      <div style="margin-bottom:20px;padding:14px 16px;background:var(--danger-soft);border:1px solid #f6cdd4;border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
+        <p style="margin:0"><b style="color:var(--danger)">⚠ Aviso — entregas remotas (enlace/QR):</b> las entregas que un trabajador registra solo por el enlace o código QR (sin que un supervisor haya iniciado sesión) no quedan asociadas a ningún editor como "creador". Por eso, con la regla de arriba, <b>ningún editor puede editar ni eliminar una entrega remota</b> — solo un administrador puede hacerlo, sin importar cuánto tiempo haya pasado.</p>
       </div>
       <div class="sec-bar"><h2>Ajustes generales</h2></div>
       <div style="margin-bottom:20px;padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px">
@@ -7488,7 +7495,15 @@ document.addEventListener("visibilitychange", ()=>{
 
 /* ---------- Si la sesión se cierra, volver al login ---------- */
 sb.auth.onAuthStateChange((event)=>{
-  if(event === "SIGNED_OUT" && !esRutaPublica()) renderLogin();
+  if(event === "SIGNED_OUT" && !esRutaPublica()){
+    // Igual que en "Salir" (wireLogout): si la sesión se cerró sola (ej. token expirado) en vez
+    // de por el botón, hay que limpiar MIPERFIL/STATE aquí también — si no, quedan con los datos
+    // del usuario anterior y el siguiente que inicie sesión en esta misma pestaña los hereda.
+    MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], editarCatalogo:false, nombre:"", uid:null };
+    PERFILES_NOMBRE = {};
+    STATE.listas = []; STATE.userEmail = "";
+    renderLogin();
+  }
 });
 
 /* ---------- Arranque ---------- */
