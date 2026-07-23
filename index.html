@@ -99,8 +99,49 @@ input,textarea,select{font-family:inherit;font-size:14px;color:var(--ink)}
   input,textarea,select{font-size:16px!important}
 }
 
+/* ---------- Menú lateral (PC/tablet, ≥761px) ---------- */
+.sidebar{
+  position:fixed;top:0;left:0;bottom:0;width:232px;z-index:60;
+  background:var(--card);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;
+}
+.sb-brand{display:flex;align-items:center;justify-content:center;padding:22px 18px;border-bottom:1px solid var(--line-2)}
+.sb-brand img{height:42px;width:auto;display:block;border-radius:6px;flex:none}
+.sb-nav{display:flex;flex-direction:column;gap:2px;padding:14px 12px;flex:1;overflow-y:auto}
+.sb-nav a{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;font-size:14px;font-weight:700;color:var(--ink-2);text-decoration:none;transition:.15s}
+.sb-nav a:hover{background:var(--brand-soft);color:var(--brand-deep)}
+.sb-nav a.active{background:var(--brand);color:#fff;box-shadow:0 2px 8px rgba(29,51,199,.25)}
+.sb-logout{
+  flex:none;width:34px;height:34px;border-radius:10px;display:grid;place-items:center;
+  background:var(--card);color:var(--ink-2);border:1px solid var(--line);transition:.15s;
+}
+.sb-logout:hover{border-color:var(--danger);color:var(--danger);background:var(--danger-soft)}
+.sb-logout svg{width:16px;height:16px;display:block}
+.topheader{
+  position:sticky;top:0;z-index:50;margin-left:232px;
+  background:rgba(255,255,255,.82);backdrop-filter:saturate(160%) blur(14px);
+  border-bottom:1px solid var(--line);padding:14px 26px;
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+}
+.th-title{font-family:var(--display);font-weight:700;font-size:17px;letter-spacing:-.01em;color:var(--ink)}
+.th-account{display:flex;align-items:center;gap:14px;flex:none}
+.th-config{font-size:13.5px;font-weight:700;color:var(--ink-2);text-decoration:none;white-space:nowrap;padding:6px 4px;border-radius:8px;transition:.15s}
+.th-config:hover,.th-config.active{color:var(--brand-deep)}
+@media(min-width:761px){
+  .mobile-topbar{display:none}
+}
+@media(max-width:760px){
+  .sidebar{display:none}
+  .topheader{display:none}
+}
+
 /* ---------- Layout ---------- */
 .wrap{max-width:1180px;margin:0 auto;padding:34px 26px 80px}
+/* Va DESPUÉS de la regla de arriba a propósito: ".wrap{margin:0 auto}" es la
+   misma especificidad, así que si este ajuste fuera ANTES, el "margin:0 auto"
+   ganaría por venir después en el CSS y el contenido quedaría oculto bajo el
+   menú lateral. */
+@media(min-width:761px){ .wrap{margin-left:232px} }
 .page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:26px}
 .page-head h1{font-family:var(--display);font-size:32px;font-weight:700;letter-spacing:-.02em}
 .page-head p{color:var(--ink-3);font-size:14.5px;margin-top:4px;font-weight:500}
@@ -122,6 +163,58 @@ input,textarea,select{font-family:inherit;font-size:14px;color:var(--ink)}
 @media(max-width:760px){.stats.cinco{grid-template-columns:1fr 1fr}}
 .stat .label{font-size:12.5px;color:var(--ink-3);font-weight:600;letter-spacing:.02em;text-transform:uppercase}
 .stat .value{font-family:var(--display);font-size:30px;font-weight:700;margin-top:6px;letter-spacing:-.02em}
+
+/* ---------- Cabecera compacta: ícono del módulo + estadísticas en línea junto al título
+   (EPP/Dotación) — reemplaza la fila de 4 tarjetas grandes por unas más chicas dentro
+   del mismo renglón del título, para que ocupen menos espacio vertical. ---------- */
+/* .ph-grid: cuadrícula real de 2 columnas × 2 filas (título/estadísticas arriba,
+   subtítulo/accesos rápidos abajo) — como es una grilla, la fila 2 automáticamente
+   toma la altura que necesite y AMBOS lados (subtítulo y accesos rápidos) arrancan
+   exactamente en el mismo borde superior de esa fila, sin importar que el título
+   sea más corto o más largo que las estadísticas. Orden en el HTML (así se reparten
+   solas en la grilla): h1, hstat-row, p, ph-quicklinks. En celular se cae a bloque
+   simple (columna 2 y la fila de abajo quedan ocultas por dot-pc-only de todos modos). */
+.ph-grid{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:20px;row-gap:8px;align-items:start}
+@media(max-width:760px){.ph-grid{display:block}}
+.ph-icon{width:50px;height:50px;border-radius:14px;background:var(--brand-soft);color:var(--brand-deep);display:grid;place-items:center;flex:none}
+.ph-icon svg{width:23px;height:23px}
+.hstat-row{display:flex;gap:10px;flex-wrap:wrap}
+.hstat{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px}
+.hstat-ic{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;flex:none}
+.hstat-ic svg{width:16px;height:16px}
+.hstat-ic.c-blue{background:var(--brand-soft);color:var(--brand-deep)}
+.hstat-ic.c-green{background:var(--green-soft);color:#0f6e56}
+.hstat-ic.c-amber{background:#faeeda;color:#854f0b}
+.hstat .label{font-size:10px;color:var(--ink-3);font-weight:700;letter-spacing:.02em;text-transform:uppercase;line-height:1.25;white-space:nowrap}
+.hstat .value{font-family:var(--display);font-size:19px;font-weight:700;letter-spacing:-.01em;margin-top:1px}
+.field-label-sm{font-size:11.5px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.02em;margin-bottom:6px}
+.ph-quicklinks{display:flex;gap:8px;justify-self:end}
+/* Contrato activo / Acciones principales / Herramientas: tres cajas apiladas,
+   cada una con su rótulo chico arriba. Dentro de Acciones/Herramientas, tarjetas
+   chicas en cuadrícula de 4 por fila — SOLO ícono + título (sin descripción, para
+   que ocupen lo menos posible). Las que necesitan un contrato específico (no
+   "Todos los contratos") NO desaparecen: quedan en gris y sin poder darles clic
+   (atributo disabled nativo), para que nada se mueva de sitio al cambiar el filtro. */
+.panel-section{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px}
+.panel-section .section-label{font-size:11px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.02em;margin-bottom:8px}
+.action-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+@media(max-width:1100px){.action-grid{grid-template-columns:repeat(2,1fr)}}
+.action-card{
+  display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);
+  border-radius:9px;padding:7px 10px;cursor:pointer;transition:.15s;text-align:left;width:100%;
+}
+.action-card:hover{border-color:var(--brand-soft2);box-shadow:var(--shadow-sm)}
+.action-card .ac-ic{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;background:var(--brand-soft);color:var(--brand-deep);flex:none}
+.action-card .ac-ic svg{width:13px;height:13px}
+.action-card .ac-title{flex:1;min-width:0;font-size:12.5px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.action-card .ac-chevron{color:var(--ink-3);flex:none;font-size:15px;line-height:1}
+.action-card.primary{background:var(--brand);border-color:var(--brand)}
+.action-card.primary .ac-ic{background:rgba(255,255,255,.18);color:#fff}
+.action-card.primary .ac-title{color:#fff}
+.action-card.primary .ac-chevron{color:#fff}
+.action-card:disabled,.icon-btn:disabled{opacity:.4;cursor:not-allowed}
+.action-card:disabled:hover{border-color:var(--line);box-shadow:none}
+.search-sm{flex:none!important;width:320px;max-width:calc(100vw - 40px)}
 
 /* ---------- Toolbar ---------- */
 .toolbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:22px}
@@ -182,6 +275,7 @@ input,textarea,select{font-family:inherit;font-size:14px;color:var(--ink)}
 .attn .num{font-family:var(--display);font-size:22px;font-weight:700;color:var(--brand)}
 .attn .lab{font-size:12px;color:var(--ink-3);font-weight:600;line-height:1.1}
 .card-actions{display:flex;gap:7px}
+.lcard-sel{width:17px;height:17px;flex:none;accent-color:var(--brand);cursor:pointer}
 .icon-btn{
   width:38px;height:38px;border-radius:10px;display:grid;place-items:center;
   background:var(--brand-soft);color:var(--brand-deep);transition:.15s;border:1px solid transparent;
@@ -320,6 +414,7 @@ table.dt tr:hover td{background:#fafbfe}
 .login-foot{margin-top:20px;padding-top:18px;border-top:1px solid var(--line-2);font-size:12px;color:var(--ink-3)}
 .logout-btn{background:var(--card);color:var(--ink-2);border:1px solid var(--line);border-radius:10px;padding:8px 14px;font-weight:700;font-size:13px;display:inline-flex;align-items:center;gap:7px;transition:.15s}
 .logout-btn:hover{border-color:var(--danger);color:var(--danger);background:var(--danger-soft)}
+.logout-btn svg{width:16px;height:16px;flex:none}
 .user-chip{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-2);font-weight:600;background:var(--brand-soft);padding:7px 13px;border-radius:999px;border:1px solid var(--brand-soft2);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* ---------- Constructor de plantillas (módulo Documentos) ---------- */
@@ -511,7 +606,8 @@ const I = {
   qr:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v7h-7"/></svg>',
   back:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>',
   trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>',
-  box:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>'
+  box:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>',
+  building:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><rect x="8" y="3" width="8" height="18"/><path d="M4 21V9h4M20 21V9h-4"/><path d="M11 21v-3h2v3"/><path d="M10.5 7h1M13.5 7h1M10.5 11h1M13.5 11h1M10.5 15h1M13.5 15h1"/></svg>'
 };
 
 /* ============================================================
@@ -772,6 +868,9 @@ async function router(){
   if(location.hash.startsWith("#/configuracion")){
     if(!MIPERFIL.esAdmin){ renderSinAcceso("Configuración"); return; }
     await renderConfiguracion();
+  } else if(location.hash.startsWith("#/auditoria")){
+    if(!MIPERFIL.esAdmin){ renderSinAcceso("Auditoría"); return; }
+    await renderAuditoria();
   } else if(location.hash.startsWith("#/docs")){
     if(!tieneModulo('documentos')){ renderSinAcceso("Documentos y Firmas"); return; }
     const mPlant = location.hash.match(/^#\/docs\/plantilla\/(.+)$/);
@@ -855,9 +954,37 @@ function renderLogin(){
 /* ============================================================
    TOPBAR COMPARTIDO  (navegación entre módulos)
    ============================================================ */
+/* incluirConfig=false en el menú lateral (Configuración se movió arriba a la derecha,
+   junto a la cuenta); incluirConfig=true en la barra móvil, que no cambió. */
+function navLinksHTML(active, claseActiva, incluirConfig){
+  return `
+    ${tieneModulo('asistencia')?`<a href="#/" class="${active==='asistencia'?claseActiva:''}">📋 Asistencia</a>`:''}
+    ${tieneModulo('documentos')?`<a href="#/docs" class="${active==='docs'?claseActiva:''}">📄 Documentos y Firmas</a>`:''}
+    ${tieneModulo('dotacion')?`<a href="#/dotacion" class="${active==='dotacion'?claseActiva:''}">🦺 EPP</a>`:''}
+    ${tieneModulo('dotacionlegal')?`<a href="#/dotacionlegal" class="${active==='dotacionlegal'?claseActiva:''}">📦 Dotación</a>`:''}
+    ${MIPERFIL.esAdmin?`<a href="#/auditoria" class="${active==='auditoria'?claseActiva:''}">📜 Auditoría</a>`:''}
+    ${incluirConfig && MIPERFIL.esAdmin?`<a href="#/configuracion" class="${active==='configuracion'?claseActiva:''}">⚙️ Configuración</a>`:''}
+  `;
+}
+/* Menú lateral fijo para PC/tablet (≥761px) + cabecera del contenido (título a la
+   izquierda, Configuración + cuenta + Salir a la derecha). En celular (≤760px)
+   ".sidebar"/".topheader" se ocultan por CSS y en su lugar se ve ".mobile-topbar"
+   (la barra horizontal de siempre, sin cambios, con Configuración en el menú). */
 function topbar(active){
   return `
-    <div class="topbar"><div class="topbar-inner">
+    <div class="sidebar">
+      <div class="sb-brand"><img src="${LOGO}" alt="Don Aseo Ltda."></div>
+      <nav class="sb-nav">${navLinksHTML(active,'active',false)}</nav>
+    </div>
+    <div class="topheader">
+      <div class="th-title">Sistema de Asistencia Digital</div>
+      <div class="th-account">
+        ${MIPERFIL.esAdmin?`<a href="#/configuracion" class="th-config ${active==='configuracion'?'active':''}">⚙️ Configuración</a>`:''}
+        ${STATE.userEmail?`<span class="user-chip" title="${esc(STATE.userEmail)}">${I.user} ${esc(STATE.userEmail)}</span>`:""}
+        <button class="sb-logout" data-role="logout" title="Salir">${I.lock}</button>
+      </div>
+    </div>
+    <div class="topbar mobile-topbar"><div class="topbar-inner">
       <img src="${LOGO}" class="brand-logo" alt="Don Aseo Ltda.">
       <div class="brand-divider"></div>
       <div class="brand-text">
@@ -865,26 +992,21 @@ function topbar(active){
         <div class="t2">Don Aseo Ltda. · NIT 812.000.152-7</div>
         <div class="brand-accent"></div>
       </div>
-      <nav class="topnav">
-        ${tieneModulo('asistencia')?`<a href="#/" class="${active==='asistencia'?'active':''}">Asistencia</a>`:''}
-        ${tieneModulo('documentos')?`<a href="#/docs" class="${active==='docs'?'active':''}">📄 Documentos y Firmas</a>`:''}
-        ${tieneModulo('dotacion')?`<a href="#/dotacion" class="${active==='dotacion'?'active':''}">🦺 EPP</a>`:''}
-        ${tieneModulo('dotacionlegal')?`<a href="#/dotacionlegal" class="${active==='dotacionlegal'?'active':''}">📦 Dotación</a>`:''}
-        ${MIPERFIL.esAdmin?`<a href="#/configuracion" class="${active==='configuracion'?'active':''}">⚙️ Configuración</a>`:''}
-      </nav>
+      <nav class="topnav">${navLinksHTML(active,'active',true)}</nav>
       <div class="topbar-spacer"></div>
       ${STATE.userEmail?`<span class="user-chip" title="${esc(STATE.userEmail)}">${I.user} ${esc(STATE.userEmail)}</span>`:""}
-      <button class="logout-btn" id="btnLogout">${I.lock} Salir</button>
+      <button class="logout-btn" data-role="logout">${I.lock} Salir</button>
     </div></div>`;
 }
 function wireLogout(){
-  const b = document.getElementById("btnLogout");
-  if(b) b.onclick = async ()=>{
-    await sb.auth.signOut(); STATE.listas=[]; STATE.userEmail="";
-    MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], editarCatalogo:false, nombre:"", uid:null };
-    PERFILES_NOMBRE = {};
-    location.hash=""; router();
-  };
+  document.querySelectorAll('[data-role="logout"]').forEach(b=>{
+    b.onclick = async ()=>{
+      await sb.auth.signOut(); STATE.listas=[]; STATE.userEmail="";
+      MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], editarCatalogo:false, nombre:"", uid:null };
+      PERFILES_NOMBRE = {};
+      location.hash=""; router();
+    };
+  });
 }
 
 /* ============================================================
@@ -948,7 +1070,7 @@ function renderAdmin(){
   const btnNueva = document.getElementById("btnNueva"); if(btnNueva) btnNueva.onclick = ()=> openCreateModal();
   document.getElementById("search").oninput = (e)=>{ adminQuery = e.target.value; renderGrid(); };
   document.querySelectorAll(".tab").forEach(t=> t.onclick = ()=>{ adminFilter = t.dataset.f; renderAdmin(); });
-  document.getElementById("btnLogout").onclick = async ()=>{ await sb.auth.signOut(); STATE.listas=[]; STATE.userEmail=""; router(); };
+  wireLogout();
   renderGrid();
 }
 
@@ -3791,7 +3913,6 @@ let entregaDraft = null;
 let contratoActualId = localStorage.getItem('dot_contrato_actual') || null; // null hasta que se carguen los contratos; "todos" = vista combinada
 /* Selección múltiple para marcar inactivos / eliminar en bloque (solo admin) */
 let dotMostrarInactivos = false;
-let modoSeleccionDot = false;
 let seleccionadosDot = new Set();
 
 async function loadDotacionState(){
@@ -3871,46 +3992,57 @@ async function renderDotacionAdmin(silent){
   const totalEntregas = entregasC.length;
   const mesActual = hoyLocal().slice(0,7);
   const entregasMes = entregasC.filter(e=>(e.fecha||"").startsWith(mesActual)).length;
-  const conEntrega = new Set(entregasC.map(e=>e.trabajador_id));
-  const sinEntregas = trabs.filter(t=>t.activo!==false && !conEntrega.has(t.id)).length;
   const c = contratoActual();
   const enTodos = contratoActualId==='todos';
 
   document.getElementById("app").innerHTML = `
     ${topbar('dotacion')}
     <div class="wrap">
-      <div class="page-head">
-        <div>
-          <h1>Entrega de EPP</h1>
-          <p>Registra la entrega de elementos de protección personal, con firma digital en el momento.</p>
-          <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
-            <select id="selContrato" style="font-weight:700;font-size:13.5px;padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--brand-deep);max-width:calc(100vw - 40px);min-width:0;box-sizing:border-box;text-overflow:ellipsis;white-space:nowrap;overflow:hidden">
-              ${DOTACION.contratos.filter(x=>tieneContratoDotacion(x.id)).map(x=>`<option value="${x.id}" ${x.id===contratoActualId?'selected':''}>${esc(x.nombre)}${x.activo?'':' (archivado)'}</option>`).join('')}
-              ${MIPERFIL.esAdmin?`<option value="todos" ${enTodos?'selected':''}>— Todos los contratos —</option>`:''}
-            </select>
-            ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-sm btn-pc-only" id="btnGestionContratos">${I.pen} Gestionar contratos</button>`:''}
-          </div>
+      <div class="page-head ph-grid">
+        <h1>Entrega de EPP</h1>
+        <div class="hstat-row dot-pc-only">
+          <div class="hstat"><div class="hstat-ic c-blue">${I.users}</div><div><div class="label">Trabajadores</div><div class="value">${totalTrab}</div></div></div>
+          <div class="hstat"><div class="hstat-ic c-green">${I.check}</div><div><div class="label">Entregas registradas</div><div class="value">${totalEntregas}</div></div></div>
+          <div class="hstat"><div class="hstat-ic c-amber">${I.cal}</div><div><div class="label">Entregas este mes</div><div class="value">${entregasMes}</div></div></div>
         </div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap">
-          ${!enTodos?`<button class="btn btn-ghost btn-pc-only" id="btnCatalogo">${I.box} Catálogo de ítems</button>`:''}
-          ${puedeEscribir()?`<button class="btn btn-ghost btn-pc-only" id="btnPredeterminados">${I.pen} Predeterminados</button>`:''}
-          ${!enTodos && MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-pc-only" id="btnPlantillaTrab">${I.doc} Plantilla Excel</button>
-          <button class="btn btn-ghost btn-pc-only" id="btnCargaTrab">${I.plus} Carga masiva</button>`:''}
-          ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-pc-only" id="btnCorregirCargos">${I.pen} Corregir cargos</button>`:''}
-          ${totalEntregas?`<button class="btn btn-ghost btn-pc-only" id="btnZipKardex">${I.doc} Descargar todos (ZIP)</button>
-          <button class="btn btn-ghost btn-pc-only" id="btnExcelEpp">${I.doc} Descargar Excel</button>`:''}
-          ${!enTodos?`<button class="btn btn-ghost btn-pc-only" id="btnCopiarEnlaceEpp">${I.link} Copiar enlace de entrega remota</button>
-          <button class="btn btn-ghost btn-pc-only" id="btnQrEpp">${I.link} QR remoto</button>`:''}
-          ${MIPERFIL.esAdmin?`<button class="btn ${modoSeleccionDot?'btn-primary':'btn-ghost'} btn-pc-only" id="btnModoSeleccionDot">${I.check} ${modoSeleccionDot?'Cancelar selección':'Seleccionar'}</button>`:''}
-          ${!enTodos && MIPERFIL.esAdmin?`<button class="btn btn-primary btn-pc-only" id="btnNuevoTrab">${I.plus} Nuevo trabajador</button>`:''}
+        <p style="color:var(--ink-3);font-size:14.5px;font-weight:500;margin:0;white-space:nowrap">Registra la entrega de elementos de protección personal, con firma digital en el momento.</p>
+        <div class="ph-quicklinks dot-pc-only">
+          <button class="icon-btn" title="Copiar enlace de entrega remota${enTodos?' (elige un contrato específico)':''}" id="btnCopiarEnlaceEpp" ${enTodos?'disabled':''}>${I.link}</button>
+          <button class="icon-btn" title="QR remoto${enTodos?' (elige un contrato específico)':''}" id="btnQrEpp" ${enTodos?'disabled':''}>${I.qr}</button>
+          ${totalEntregas?`<button class="icon-btn" title="Descargar todos (ZIP)" id="btnZipKardex" style="font-size:10px;font-weight:800;letter-spacing:.02em">ZIP</button>`:''}
         </div>
       </div>
 
-      <div class="stats dot-pc-only">
-        <div class="stat s-total"><div class="label">Trabajadores</div><div class="value">${totalTrab}</div></div>
-        <div class="stat s-act"><div class="label">Entregas registradas</div><div class="value">${totalEntregas}</div></div>
-        <div class="stat s-asi"><div class="label">Entregas este mes</div><div class="value">${entregasMes}</div></div>
-        <div class="stat s-clo"><div class="label">Sin entregas aún</div><div class="value">${sinEntregas}</div></div>
+      <div class="panel-section">
+        <div class="section-label">Contrato activo</div>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+          <div class="ph-icon">${I.building}</div>
+          <select id="selContrato" style="font-weight:700;font-size:13.5px;padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--brand-deep);width:240px;max-width:calc(100vw - 40px);box-sizing:border-box;text-overflow:ellipsis;white-space:nowrap;overflow:hidden">
+            ${DOTACION.contratos.filter(x=>tieneContratoDotacion(x.id)).map(x=>`<option value="${x.id}" ${x.id===contratoActualId?'selected':''}>${esc(x.nombre)}${x.activo?'':' (archivado)'}</option>`).join('')}
+            ${MIPERFIL.esAdmin?`<option value="todos" ${enTodos?'selected':''}>— Todos los contratos —</option>`:''}
+          </select>
+          ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-pc-only" id="btnGestionContratos">${I.pen} Gestionar contratos</button>`:''}
+        </div>
+      </div>
+
+      ${MIPERFIL.esAdmin?`
+      <div class="panel-section dot-pc-only">
+        <div class="section-label">Acciones principales</div>
+        <div class="action-grid">
+          <button class="action-card" id="btnNuevoTrab"><div class="ac-ic">${I.plus}</div><span class="ac-title">Nuevo trabajador</span><span class="ac-chevron">›</span></button>
+          <button class="action-card" id="btnCargaTrab"><div class="ac-ic">${I.plus}</div><span class="ac-title">Carga masiva</span><span class="ac-chevron">›</span></button>
+          <button class="action-card" id="btnPlantillaTrab"><div class="ac-ic">${I.doc}</div><span class="ac-title">Plantilla Excel</span><span class="ac-chevron">›</span></button>
+        </div>
+      </div>`:''}
+
+      <div class="panel-section dot-pc-only">
+        <div class="section-label">Herramientas</div>
+        <div class="action-grid">
+          <button class="action-card" id="btnCatalogo" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.box}</div><span class="ac-title">Catálogo de ítems</span><span class="ac-chevron">›</span></button>
+          ${puedeEscribir()?`<button class="action-card" id="btnPredeterminados" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.pen}</div><span class="ac-title">Firmas</span><span class="ac-chevron">›</span></button>`:''}
+          ${MIPERFIL.esAdmin?`<button class="action-card" id="btnCorregirCargos"><div class="ac-ic">${I.pen}</div><span class="ac-title">Corregir cargos</span><span class="ac-chevron">›</span></button>`:''}
+          ${totalTrab?`<button class="action-card" id="btnExcelEpp"><div class="ac-ic">${I.doc}</div><span class="ac-title">Descargar Excel</span><span class="ac-chevron">›</span></button>`:''}
+        </div>
       </div>
 
       <div id="dotBody"></div>
@@ -3927,15 +4059,14 @@ async function renderDotacionAdmin(silent){
   const bcat=document.getElementById("btnCatalogo"); if(bcat) bcat.onclick = abrirCatalogoModal;
   const bpd=document.getElementById("btnPredeterminados"); if(bpd) bpd.onclick = abrirPredeterminadosModal;
   const bpt=document.getElementById("btnPlantillaTrab"); if(bpt) bpt.onclick = descargarPlantillaTrabajadoresDot;
-  const bct=document.getElementById("btnCargaTrab"); if(bct) bct.onclick = ()=> document.getElementById("fileTrabajadores").click();
+  const bct=document.getElementById("btnCargaTrab"); if(bct) bct.onclick = abrirCargaMasivaDot;
   document.getElementById("fileTrabajadores").onchange = (e)=>{ const f=e.target.files[0]; if(f) cargarTrabajadoresExcelDot(f); e.target.value=""; };
   const bnt=document.getElementById("btnNuevoTrab"); if(bnt) bnt.onclick = ()=> abrirTrabajadorForm(null);
   const bzk=document.getElementById("btnZipKardex"); if(bzk) bzk.onclick = abrirSeleccionZipDot;
-  const bxl=document.getElementById("btnExcelEpp"); if(bxl) bxl.onclick = abrirSeleccionExcelDot;
+  const bxl=document.getElementById("btnExcelEpp"); if(bxl) bxl.onclick = descargarExcelDot;
   const bcc=document.getElementById("btnCorregirCargos"); if(bcc) bcc.onclick = abrirCorregirCargosDot;
   const bceEpp=document.getElementById("btnCopiarEnlaceEpp"); if(bceEpp) bceEpp.onclick = ()=> copyText(location.href.split("#")[0]+"#/dotacion/entrega/"+contratoActualId, "Enlace de entrega remota copiado");
   const bqrEpp=document.getElementById("btnQrEpp"); if(bqrEpp) bqrEpp.onclick = ()=> mostrarQR(location.href.split("#")[0]+"#/dotacion/entrega/"+contratoActualId, "Entrega remota de EPP — "+(contratoActual()?.nombre||''));
-  const bms=document.getElementById("btnModoSeleccionDot"); if(bms) bms.onclick = ()=>{ modoSeleccionDot = !modoSeleccionDot; seleccionadosDot.clear(); renderDotacionAdmin(); };
   renderDotacionBody();
   if(silent) window.scrollTo(0, scrollY);
 }
@@ -3945,37 +4076,37 @@ function renderDotacionBody(){
   if(!host) return;
   host.innerHTML = `
     <div class="toolbar">
-      <div class="search">
+      <div class="search search-sm">
         ${I.search}
         <input type="text" id="dotSearch" placeholder="Buscar por nombre, cédula, cargo o área…" value="${esc(dotQuery)}">
       </div>
+      ${MIPERFIL.esAdmin?`<label class="chk" style="white-space:nowrap"><input type="checkbox" id="chkTodosDot"> Todos</label>`:''}
       <label class="chk" style="white-space:nowrap"><input type="checkbox" id="chkMostrarInactivosDot" ${dotMostrarInactivos?'checked':''}> Mostrar inactivos</label>
     </div>
-    ${modoSeleccionDot?`
-    <div class="resp-firma" style="margin-bottom:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <button class="btn btn-ghost btn-sm" id="btnSeleccionarTodosDot">Seleccionar todos</button>
+    <div class="resp-firma" id="barraSeleccionDot" style="margin-bottom:16px;align-items:center;gap:12px;flex-wrap:wrap;display:${seleccionadosDot.size?'flex':'none'}">
       <span class="muted-sm" id="contadorSeleccionDot">${seleccionadosDot.size} seleccionado(s)</span>
       <div style="flex:1;min-width:8px"></div>
       <button class="btn btn-ghost btn-sm" id="btnMarcarInactivoDot">Marcar como inactivo</button>
       <button class="btn btn-danger btn-sm" id="btnEliminarSeleccionDot">${I.trash} Eliminar seleccionados</button>
-    </div>`:''}
+    </div>
     <div id="dotGrid"></div>`;
   document.getElementById("dotSearch").oninput = (e)=>{ dotQuery = e.target.value; renderDotTrabajadoresGrid(); };
   document.getElementById("chkMostrarInactivosDot").onchange = (e)=>{ dotMostrarInactivos = e.target.checked; renderDotTrabajadoresGrid(); };
-  if(modoSeleccionDot){
-    document.getElementById('btnSeleccionarTodosDot').onclick = ()=>{
-      trabajadoresFiltradosDot().forEach(t=>seleccionadosDot.add(t.id));
-      renderDotTrabajadoresGrid();
-      actualizarContadorSeleccionDot();
-    };
-    document.getElementById('btnMarcarInactivoDot').onclick = ()=> marcarInactivosSeleccionDot();
-    document.getElementById('btnEliminarSeleccionDot').onclick = ()=> eliminarSeleccionDot();
-  }
+  const chkTodosDot = document.getElementById("chkTodosDot");
+  if(chkTodosDot) chkTodosDot.onchange = (e)=>{
+    const visibles = trabajadoresFiltradosDot();
+    if(e.target.checked) visibles.forEach(t=>seleccionadosDot.add(t.id));
+    else visibles.forEach(t=>seleccionadosDot.delete(t.id));
+    renderDotTrabajadoresGrid();
+    actualizarBarraSeleccionDot();
+  };
+  document.getElementById('btnMarcarInactivoDot').onclick = ()=> marcarInactivosSeleccionDot();
+  document.getElementById('btnEliminarSeleccionDot').onclick = ()=> eliminarSeleccionDot();
   renderDotTrabajadoresGrid();
 }
 
 /* Lista actualmente visible (contrato + búsqueda + filtro de inactivos) — la usan tanto
-   la grilla como "Seleccionar todos", para que seleccione justo lo que se está viendo. */
+   la grilla como la casilla "Todos", para que seleccione justo lo que se está viendo. */
 function trabajadoresFiltradosDot(){
   let db = trabajadoresDelContrato();
   if(!dotMostrarInactivos) db = db.filter(t=>t.activo!==false);
@@ -3994,6 +4125,19 @@ function actualizarContadorSeleccionDot(){
   if(el) el.textContent = seleccionadosDot.size+' seleccionado(s)';
 }
 
+/* Se llama cada vez que cambia la selección (una tarjeta o la casilla "Todos"): muestra/oculta
+   la barra de acciones en bloque y sincroniza la casilla "Todos" sin recargar toda la grilla. */
+function actualizarBarraSeleccionDot(){
+  const barra = document.getElementById('barraSeleccionDot');
+  if(barra) barra.style.display = seleccionadosDot.size ? 'flex' : 'none';
+  actualizarContadorSeleccionDot();
+  const chkTodos = document.getElementById('chkTodosDot');
+  if(chkTodos){
+    const visibles = trabajadoresFiltradosDot();
+    chkTodos.checked = visibles.length>0 && visibles.every(t=>seleccionadosDot.has(t.id));
+  }
+}
+
 function renderDotTrabajadoresGrid(){
   const host = document.getElementById("dotGrid");
   if(!host) return;
@@ -4001,19 +4145,17 @@ function renderDotTrabajadoresGrid(){
   if(!db.length){
     host.innerHTML = `<div class="empty"><div class="ic">${I.box}</div><h3>${trabajadoresDelContrato().length?'Sin resultados':'Sin trabajadores todavía'}</h3>
       <p>${trabajadoresDelContrato().length?'Prueba con otro término de búsqueda, o marca "Mostrar inactivos".':'Agrega trabajadores uno por uno o con carga masiva desde Excel.'}</p></div>`;
+    actualizarBarraSeleccionDot();
     return;
   }
   host.innerHTML = `<div class="grid">${db.map(trabajadorCard).join("")}</div>`;
-  if(modoSeleccionDot){
-    host.querySelectorAll("[data-sel-trab]").forEach(chk=>{
-      chk.onchange = ()=>{
-        const id = chk.dataset.selTrab;
-        if(chk.checked) seleccionadosDot.add(id); else seleccionadosDot.delete(id);
-        actualizarContadorSeleccionDot();
-      };
-    });
-    return;
-  }
+  host.querySelectorAll("[data-sel-trab]").forEach(chk=>{
+    chk.onchange = ()=>{
+      const id = chk.dataset.selTrab;
+      if(chk.checked) seleccionadosDot.add(id); else seleccionadosDot.delete(id);
+      actualizarBarraSeleccionDot();
+    };
+  });
   host.querySelectorAll("[data-trab]").forEach(b=>{
     b.onclick = ()=>{
       const id=b.dataset.id, act=b.dataset.trab;
@@ -4024,6 +4166,7 @@ function renderDotTrabajadoresGrid(){
       else if(act==="del") eliminarTrabajador(id);
     };
   });
+  actualizarBarraSeleccionDot();
 }
 
 async function marcarInactivosSeleccionDot(){
@@ -4042,7 +4185,7 @@ async function marcarInactivosSeleccionDot(){
       const { error } = await sb.from("dot_trabajadores").update({ activo:false }).in("id", ids);
       if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
       await loadDotacionState();
-      modoSeleccionDot = false; seleccionadosDot.clear();
+      seleccionadosDot.clear();
       closeModal();
       toast(`${ids.length} trabajador(es) marcados como inactivos`,"ok");
       renderDotacionAdmin();
@@ -4066,7 +4209,7 @@ async function eliminarSeleccionDot(){
       const { error } = await sb.from("dot_trabajadores").delete().in("id", ids);
       if(error){ toast("No se pudo eliminar: "+error.message,"err"); return; }
       await loadDotacionState();
-      modoSeleccionDot = false; seleccionadosDot.clear();
+      seleccionadosDot.clear();
       closeModal();
       toast(`${ids.length} trabajador(es) eliminados`,"ok");
       renderDotacionAdmin();
@@ -4078,11 +4221,14 @@ function trabajadorCard(t){
   const entregasT = DOTACION.entregas.filter(e=>e.trabajador_id===t.id);
   const n = entregasT.length;
   const ultima = n ? entregasT.reduce((a,b)=> (a.fecha>b.fecha?a:b)).fecha : null;
-  const nombreContrato = contratoActualId==='todos' ? (DOTACION.contratos.find(c=>c.id===t.contrato_id)?.nombre) : null;
+  const nombreContrato = DOTACION.contratos.find(c=>c.id===t.contrato_id)?.nombre;
   const inactivo = t.activo===false;
   return `<div class="lcard" style="${inactivo?'opacity:.55':''}">
     <div class="lcard-top">
-      <span class="tipo">${esc(t.cargo||'Trabajador')}</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        ${MIPERFIL.esAdmin?`<input type="checkbox" class="lcard-sel" data-sel-trab="${t.id}" ${seleccionadosDot.has(t.id)?'checked':''}>`:''}
+        <span class="tipo">${esc(t.cargo||'Trabajador')}</span>
+      </div>
       ${inactivo?'<span class="badge cerrada"><span class="dot"></span>Inactivo</span>' : (n===0?'<span class="badge cerrada"><span class="dot"></span>Sin entregas</span>':'')}
     </div>
     <h3>${esc(t.nombre)}</h3>
@@ -4095,12 +4241,11 @@ function trabajadorCard(t){
     <div class="lcard-foot">
       <div class="attn"><span class="num">${n}</span><span class="lab">entrega${n===1?'':'s'}<br>registrada${n===1?'':'s'}</span></div>
       <div class="card-actions">
-        ${modoSeleccionDot ? `<label class="chk" style="padding:0"><input type="checkbox" data-sel-trab="${t.id}" ${seleccionadosDot.has(t.id)?'checked':''}></label>` : `
         <button class="icon-btn" title="Ver ficha" data-trab="ver" data-id="${t.id}">${I.eye}</button>
         ${n>0?`<button class="icon-btn" title="Descargar kárdex" data-trab="kardex" data-id="${t.id}">${I.pdf}</button>`:''}
         ${puedeEscribir()?`<button class="icon-btn" title="Registrar entrega" data-trab="entregar" data-id="${t.id}">${I.plus}</button>`:''}
         ${MIPERFIL.esAdmin?`<button class="icon-btn" title="Editar" data-trab="editar" data-id="${t.id}">${I.pen}</button>
-        <button class="icon-btn danger" title="Eliminar" data-trab="del" data-id="${t.id}">${I.trash}</button>`:''}`}
+        <button class="icon-btn danger" title="Eliminar" data-trab="del" data-id="${t.id}">${I.trash}</button>`:''}
       </div>
     </div>
   </div>`;
@@ -4306,6 +4451,38 @@ function eliminarTrabajador(id){
 }
 
 /* ---------- Carga masiva de trabajadores desde Excel ---------- */
+/* El Excel de EPP no trae columna de contrato (a diferencia de Dotación, donde cada
+   fila trae su propio contrato y se crea solo si no existe) — así que aquí, antes de
+   abrir el explorador de archivos, se pregunta a cuál contrato se va a cargar. Si
+   todavía no existe el contrato, primero hay que crearlo (con "Crear contrato nuevo")
+   y automáticamente se vuelve a esta misma pantalla para continuar. */
+function abrirCargaMasivaDot(){
+  const hay = DOTACION.contratos.length > 0;
+  openModal(`<div class="modal" style="max-width:440px">
+    <div class="modal-head"><div><h2>Carga masiva de trabajadores</h2><p>Elige a qué contrato vas a cargar el Excel.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      ${hay?`<div class="field"><label>Contrato *</label>
+        <select id="cmContratoDot">${DOTACION.contratos.map(c=>`<option value="${c.id}" ${c.id===contratoActualId?'selected':''}>${esc(c.nombre)}</option>`).join('')}</select>
+      </div>` : `<p class="muted-sm">Aún no tienes ningún contrato creado — crea uno primero para poder cargar trabajadores.</p>`}
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="btnCmDotNuevoContrato">${I.plus} Crear contrato nuevo</button>
+      ${hay?`<button class="btn btn-primary" id="btnCmDotContinuar">${I.check} Continuar</button>`:''}
+    </div></div>`);
+  document.getElementById('btnCmDotNuevoContrato').onclick = ()=> abrirFormContrato(null, ()=> abrirCargaMasivaDot());
+  const btnContinuar = document.getElementById('btnCmDotContinuar');
+  if(btnContinuar) btnContinuar.onclick = async ()=>{
+    const elegido = document.getElementById('cmContratoDot').value;
+    if(!elegido){ toast("Elige un contrato","err"); return; }
+    contratoActualId = elegido;
+    localStorage.setItem('dot_contrato_actual', elegido);
+    closeModal();
+    await renderDotacionAdmin();
+    const fi = document.getElementById("fileTrabajadores");
+    if(fi) fi.click();
+  };
+}
 function descargarPlantillaTrabajadoresDot(){
   if(!window.XLSX){ toast("No se pudo cargar el generador de Excel (revisa tu conexión)","err"); return; }
   const datos = [
@@ -5497,35 +5674,12 @@ async function descargarZipKardexSeleccion(contratoIds){
 }
 
 /* Selección de contratos para el Excel de entregas de EPP — mismo modal que el ZIP, distinta acción. */
-function abrirSeleccionExcelDot(){
-  const preseleccion = contratoActualId!=='todos' ? [contratoActualId] : [];
-  openModal(`<div class="modal" style="max-width:480px">
-    <div class="modal-head"><div><h2>Descargar Excel de entregas</h2><p>Elige qué contratos incluir. Una fila por entrega, con fecha, ítems y responsable.</p></div>
-      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body">
-      <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
-        <button class="btn btn-ghost btn-sm" id="btnExcelDotTodos">Seleccionar todos</button>
-      </div>
-      <div id="excelDotLista">
-        ${DOTACION.contratos.length
-          ? DOTACION.contratos.map(c=>`<label class="chk" style="padding:4px 0"><input type="checkbox" data-excel-contrato="${c.id}" ${preseleccion.includes(c.id)?'checked':''}> ${esc(c.nombre)}${c.activo?'':' (archivado)'}</label>`).join('')
-          : '<p class="muted-sm">No hay contratos creados.</p>'}
-      </div>
-    </div>
-    <div class="modal-foot">
-      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" id="btnExcelDotDescargar">${I.doc} Descargar Excel</button>
-    </div>
-  </div>`);
-  document.getElementById('btnExcelDotTodos').onclick = ()=>{
-    document.querySelectorAll('[data-excel-contrato]').forEach(chk=>chk.checked=true);
-  };
-  document.getElementById('btnExcelDotDescargar').onclick = ()=>{
-    const ids = Array.from(document.querySelectorAll('[data-excel-contrato]:checked')).map(el=>el.dataset.excelContrato);
-    if(!ids.length){ toast("Elige al menos un contrato","err"); return; }
-    closeModal();
-    descargarExcelDotSeleccion(ids);
-  };
+/* Ya no pregunta qué contrato(s) incluir: descarga directo el contrato activo del
+   selector de arriba, o todos si el selector está en "Todos los contratos". */
+function descargarExcelDot(){
+  const ids = contratoActualId==='todos' ? DOTACION.contratos.map(c=>c.id) : [contratoActualId];
+  if(!ids.length){ toast("No hay contratos para exportar","err"); return; }
+  descargarExcelDotSeleccion(ids);
 }
 
 /* Excel de entregas de EPP: una fila por entrega (nombre/identificación/cargo/área + fecha/ítems/responsable).
@@ -5597,7 +5751,6 @@ let dtlEntregaDraft = null;
 let dtlFiltroEntidad = localStorage.getItem('dtl_filtro_entidad') || 'todas';
 /* Selección múltiple para marcar inactivos / eliminar en bloque (solo admin) */
 let dtlMostrarInactivos = false;
-let modoSeleccionDtl = false;
 let seleccionadosDtl = new Set();
 const DTL_DECLARACION = "Declaro haber recibido a satisfacción los elementos de dotación relacionados en este documento, en buen estado y de acuerdo con mi talla. Me comprometo a utilizarlos durante el desarrollo de mis labores y a darles el cuidado adecuado.";
 
@@ -5665,8 +5818,6 @@ async function renderDtlAdmin(silent){
   const totalEntregas = entregasE.length;
   const mesActual = hoyLocal().slice(0,7);
   const entregasMes = entregasE.filter(e=>(e.fecha||"").startsWith(mesActual)).length;
-  const conEntrega = new Set(entregasE.map(e=>e.trabajador_id));
-  const sinEntregas = trabs.filter(t=>t.activo!==false && !conEntrega.has(t.id)).length;
 
   const entidadesAcc = DTL.entidades.filter(x=>tieneEntidadDtl(x.id));
   // Si el supervisor solo tiene UNA entidad asignada, "todas las entidades" es lo mismo que
@@ -5681,54 +5832,66 @@ async function renderDtlAdmin(silent){
   document.getElementById("app").innerHTML = `
     ${topbar('dotacionlegal')}
     <div class="wrap">
-      <div class="page-head">
-        <div>
-          <h1>Dotación</h1>
-          <p>Entrega de dotación legal (pantalones, camisas y botas), con firma digital. Todos los trabajadores, de todos los contratos, en un solo lugar.</p>
-          <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
-            <select id="selFiltroEntidad" style="font-weight:700;font-size:13.5px;padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--brand-deep);max-width:calc(100vw - 40px);min-width:0;box-sizing:border-box;text-overflow:ellipsis;white-space:nowrap;overflow:hidden">
-              ${puedeVerTodas?`<option value="todas" ${dtlFiltroEntidad==='todas'?'selected':''}>Todos los contratos</option>`:''}
-              ${entidadesAcc.map(x=>`<option value="${x.id}" ${x.id===dtlFiltroEntidad?'selected':''}>${esc(x.nombre)}${x.activo?'':' (archivado)'}</option>`).join('')}
-            </select>
-            ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-sm btn-pc-only" id="btnGestionEntidades">${I.pen} Gestionar contratos</button>`:''}
-          </div>
+      <div class="page-head ph-grid">
+        <h1>Dotación</h1>
+        <div class="hstat-row dot-pc-only">
+          <div class="hstat"><div class="hstat-ic c-blue">${I.users}</div><div><div class="label">Trabajadores</div><div class="value">${totalTrab}</div></div></div>
+          <div class="hstat"><div class="hstat-ic c-green">${I.check}</div><div><div class="label">Entregas registradas</div><div class="value">${totalEntregas}</div></div></div>
+          <div class="hstat"><div class="hstat-ic c-amber">${I.cal}</div><div><div class="label">Entregas este mes</div><div class="value">${entregasMes}</div></div></div>
         </div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap">
-          ${puedeEscribir()?`<button class="btn btn-ghost btn-pc-only" id="btnPredeterminadosDtl">${I.pen} Predeterminados</button>`:''}
-          ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-pc-only" id="btnPlantillaTrabDtl">${I.doc} Plantilla Excel</button>
-          <button class="btn btn-ghost btn-pc-only" id="btnCargaTrabDtl">${I.plus} Carga masiva</button>`:''}
-          ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-pc-only" id="btnCorregirCargosDtl">${I.pen} Corregir cargos</button>`:''}
-          ${totalEntregas?`<button class="btn btn-ghost btn-pc-only" id="btnZipKardexDtl">${I.doc} Descargar todos (ZIP)</button>
-          <button class="btn btn-ghost btn-pc-only" id="btnExcelDtl">${I.doc} Descargar Excel</button>`:''}
-          <button class="btn btn-ghost btn-pc-only" id="btnCopiarEnlacePublico">${I.link} Copiar enlace de entrega remota</button>
-          <button class="btn btn-ghost btn-pc-only" id="btnQrEnlacePublico">${I.link} QR remoto</button>
-          ${MIPERFIL.esAdmin?`<button class="btn ${modoSeleccionDtl?'btn-primary':'btn-ghost'} btn-pc-only" id="btnModoSeleccionDtl">${I.check} ${modoSeleccionDtl?'Cancelar selección':'Seleccionar'}</button>`:''}
-          ${MIPERFIL.esAdmin?`<button class="btn btn-primary btn-pc-only" id="btnNuevoTrabDtl">${I.plus} Nuevo trabajador</button>`:''}
+        <p style="color:var(--ink-3);font-size:14.5px;font-weight:500;margin:0;white-space:nowrap">Entrega de dotación legal (pantalones, camisas y botas), con firma digital. Todos los trabajadores, de todos los contratos, en un solo lugar.</p>
+        <div class="ph-quicklinks dot-pc-only">
+          <button class="icon-btn" title="Copiar enlace de entrega remota" id="btnCopiarEnlacePublico">${I.link}</button>
+          <button class="icon-btn" title="QR remoto" id="btnQrEnlacePublico">${I.qr}</button>
+          ${totalEntregas?`<button class="icon-btn" title="Descargar todos (ZIP)" id="btnZipKardexDtl" style="font-size:10px;font-weight:800;letter-spacing:.02em">ZIP</button>`:''}
         </div>
       </div>
 
-      <div class="stats dot-pc-only">
-        <div class="stat s-total"><div class="label">Trabajadores</div><div class="value">${totalTrab}</div></div>
-        <div class="stat s-act"><div class="label">Entregas registradas</div><div class="value">${totalEntregas}</div></div>
-        <div class="stat s-asi"><div class="label">Entregas este mes</div><div class="value">${entregasMes}</div></div>
-        <div class="stat s-clo"><div class="label">Sin entregas aún</div><div class="value">${sinEntregas}</div></div>
+      <div class="panel-section">
+        <div class="section-label">Contrato activo</div>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+          <div class="ph-icon">${I.building}</div>
+          <select id="selFiltroEntidad" style="font-weight:700;font-size:13.5px;padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--brand-deep);width:240px;max-width:calc(100vw - 40px);box-sizing:border-box;text-overflow:ellipsis;white-space:nowrap;overflow:hidden">
+            ${puedeVerTodas?`<option value="todas" ${dtlFiltroEntidad==='todas'?'selected':''}>Todos los contratos</option>`:''}
+            ${entidadesAcc.map(x=>`<option value="${x.id}" ${x.id===dtlFiltroEntidad?'selected':''}>${esc(x.nombre)}${x.activo?'':' (archivado)'}</option>`).join('')}
+          </select>
+          ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-pc-only" id="btnGestionEntidades">${I.pen} Gestionar contratos</button>`:''}
+        </div>
+      </div>
+
+      ${MIPERFIL.esAdmin?`
+      <div class="panel-section dot-pc-only">
+        <div class="section-label">Acciones principales</div>
+        <div class="action-grid">
+          <button class="action-card" id="btnNuevoTrabDtl"><div class="ac-ic">${I.plus}</div><span class="ac-title">Nuevo trabajador</span><span class="ac-chevron">›</span></button>
+          <button class="action-card" id="btnCargaTrabDtl"><div class="ac-ic">${I.plus}</div><span class="ac-title">Carga masiva</span><span class="ac-chevron">›</span></button>
+          <button class="action-card" id="btnPlantillaTrabDtl"><div class="ac-ic">${I.doc}</div><span class="ac-title">Plantilla Excel</span><span class="ac-chevron">›</span></button>
+        </div>
+      </div>`:''}
+
+      <div class="panel-section dot-pc-only">
+        <div class="section-label">Herramientas</div>
+        <div class="action-grid">
+          ${puedeEscribir()?`<button class="action-card" id="btnPredeterminadosDtl" ${dtlFiltroEntidad==='todas'?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.pen}</div><span class="ac-title">Firmas</span><span class="ac-chevron">›</span></button>`:''}
+          ${MIPERFIL.esAdmin?`<button class="action-card" id="btnCorregirCargosDtl"><div class="ac-ic">${I.pen}</div><span class="ac-title">Corregir cargos</span><span class="ac-chevron">›</span></button>`:''}
+          ${totalTrab?`<button class="action-card" id="btnExcelDtl"><div class="ac-ic">${I.doc}</div><span class="ac-title">Descargar Excel</span><span class="ac-chevron">›</span></button>`:''}
+        </div>
       </div>
 
       <div class="toolbar">
-        <div class="search">
+        <div class="search search-sm">
           ${I.search}
           <input type="text" id="dtlSearch" placeholder="Buscar por nombre, cédula, cargo o área…" value="${esc(dtlQuery)}">
         </div>
+        ${MIPERFIL.esAdmin?`<label class="chk" style="white-space:nowrap"><input type="checkbox" id="chkTodosDtl"> Todos</label>`:''}
         <label class="chk" style="white-space:nowrap"><input type="checkbox" id="chkMostrarInactivosDtl" ${dtlMostrarInactivos?'checked':''}> Mostrar inactivos</label>
       </div>
-      ${modoSeleccionDtl?`
-      <div class="resp-firma" style="margin-bottom:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-        <button class="btn btn-ghost btn-sm" id="btnSeleccionarTodosDtl">Seleccionar todos</button>
+      <div class="resp-firma" id="barraSeleccionDtl" style="margin-bottom:16px;align-items:center;gap:12px;flex-wrap:wrap;display:${seleccionadosDtl.size?'flex':'none'}">
         <span class="muted-sm" id="contadorSeleccionDtl">${seleccionadosDtl.size} seleccionado(s)</span>
         <div style="flex:1;min-width:8px"></div>
         <button class="btn btn-ghost btn-sm" id="btnMarcarInactivoDtl">Marcar como inactivo</button>
         <button class="btn btn-danger btn-sm" id="btnEliminarSeleccionDtl">${I.trash} Eliminar seleccionados</button>
-      </div>`:''}
+      </div>
       <div id="dtlGrid"></div>
       <input type="file" id="fileTrabajadoresDtl" accept=".xlsx,.xls,.csv" style="display:none">
     </div>`;
@@ -5746,28 +5909,28 @@ async function renderDtlAdmin(silent){
   document.getElementById("fileTrabajadoresDtl").onchange = (e)=>{ const f=e.target.files[0]; if(f) cargarTrabajadoresExcelDtl(f); e.target.value=""; };
   const bnt=document.getElementById("btnNuevoTrabDtl"); if(bnt) bnt.onclick = ()=> abrirTrabajadorDtlForm(null);
   const bzk=document.getElementById("btnZipKardexDtl"); if(bzk) bzk.onclick = abrirSeleccionZipDtl;
-  const bxl=document.getElementById("btnExcelDtl"); if(bxl) bxl.onclick = abrirSeleccionExcelDtl;
+  const bxl=document.getElementById("btnExcelDtl"); if(bxl) bxl.onclick = descargarExcelDtl;
   const bcc=document.getElementById("btnCorregirCargosDtl"); if(bcc) bcc.onclick = abrirCorregirCargosDtl;
   const bce=document.getElementById("btnCopiarEnlacePublico"); if(bce) bce.onclick = ()=> copyText(location.href.split("#")[0]+"#/dotacionlegal/entrega", "Enlace de entrega remota copiado");
   const bqr=document.getElementById("btnQrEnlacePublico"); if(bqr) bqr.onclick = ()=> mostrarQR(location.href.split("#")[0]+"#/dotacionlegal/entrega", "Entrega remota de dotación");
-  const bms=document.getElementById("btnModoSeleccionDtl"); if(bms) bms.onclick = ()=>{ modoSeleccionDtl = !modoSeleccionDtl; seleccionadosDtl.clear(); renderDtlAdmin(); };
   document.getElementById("dtlSearch").oninput = (e)=>{ dtlQuery = e.target.value; renderDtlGrid(); };
   document.getElementById("chkMostrarInactivosDtl").onchange = (e)=>{ dtlMostrarInactivos = e.target.checked; renderDtlGrid(); };
-  if(modoSeleccionDtl){
-    document.getElementById('btnSeleccionarTodosDtl').onclick = ()=>{
-      trabajadoresFiltradosDtl().forEach(t=>seleccionadosDtl.add(t.id));
-      renderDtlGrid();
-      actualizarContadorSeleccionDtl();
-    };
-    document.getElementById('btnMarcarInactivoDtl').onclick = ()=> marcarInactivosSeleccionDtl();
-    document.getElementById('btnEliminarSeleccionDtl').onclick = ()=> eliminarSeleccionDtl();
-  }
+  const chkTodosDtl = document.getElementById("chkTodosDtl");
+  if(chkTodosDtl) chkTodosDtl.onchange = (e)=>{
+    const visibles = trabajadoresFiltradosDtl();
+    if(e.target.checked) visibles.forEach(t=>seleccionadosDtl.add(t.id));
+    else visibles.forEach(t=>seleccionadosDtl.delete(t.id));
+    renderDtlGrid();
+    actualizarBarraSeleccionDtl();
+  };
+  document.getElementById('btnMarcarInactivoDtl').onclick = ()=> marcarInactivosSeleccionDtl();
+  document.getElementById('btnEliminarSeleccionDtl').onclick = ()=> eliminarSeleccionDtl();
   renderDtlGrid();
   if(silent) window.scrollTo(0, scrollY);
 }
 
 /* Lista actualmente visible (entidad + búsqueda + filtro de inactivos) — la usan tanto
-   la grilla como "Seleccionar todos". */
+   la grilla como la casilla "Todos". */
 function trabajadoresFiltradosDtl(){
   let db = trabajadoresDeEntidad();
   if(!dtlMostrarInactivos) db = db.filter(t=>t.activo!==false);
@@ -5786,6 +5949,19 @@ function actualizarContadorSeleccionDtl(){
   if(el) el.textContent = seleccionadosDtl.size+' seleccionado(s)';
 }
 
+/* Se llama cada vez que cambia la selección: muestra/oculta la barra de acciones en
+   bloque y sincroniza la casilla "Todos" sin recargar toda la grilla. */
+function actualizarBarraSeleccionDtl(){
+  const barra = document.getElementById('barraSeleccionDtl');
+  if(barra) barra.style.display = seleccionadosDtl.size ? 'flex' : 'none';
+  actualizarContadorSeleccionDtl();
+  const chkTodos = document.getElementById('chkTodosDtl');
+  if(chkTodos){
+    const visibles = trabajadoresFiltradosDtl();
+    chkTodos.checked = visibles.length>0 && visibles.every(t=>seleccionadosDtl.has(t.id));
+  }
+}
+
 function renderDtlGrid(){
   const host = document.getElementById("dtlGrid");
   if(!host) return;
@@ -5793,19 +5969,17 @@ function renderDtlGrid(){
   if(!db.length){
     host.innerHTML = `<div class="empty"><div class="ic">${I.box}</div><h3>${trabajadoresDeEntidad().length?'Sin resultados':'Sin trabajadores todavía'}</h3>
       <p>${trabajadoresDeEntidad().length?'Prueba con otro término de búsqueda, o marca "Mostrar inactivos".':'Agrega trabajadores uno por uno o con carga masiva desde Excel.'}</p></div>`;
+    actualizarBarraSeleccionDtl();
     return;
   }
   host.innerHTML = `<div class="grid">${db.map(trabajadorDtlCard).join("")}</div>`;
-  if(modoSeleccionDtl){
-    host.querySelectorAll("[data-sel-trabdtl]").forEach(chk=>{
-      chk.onchange = ()=>{
-        const id = chk.dataset.selTrabdtl;
-        if(chk.checked) seleccionadosDtl.add(id); else seleccionadosDtl.delete(id);
-        actualizarContadorSeleccionDtl();
-      };
-    });
-    return;
-  }
+  host.querySelectorAll("[data-sel-trabdtl]").forEach(chk=>{
+    chk.onchange = ()=>{
+      const id = chk.dataset.selTrabdtl;
+      if(chk.checked) seleccionadosDtl.add(id); else seleccionadosDtl.delete(id);
+      actualizarBarraSeleccionDtl();
+    };
+  });
   host.querySelectorAll("[data-trabdtl]").forEach(b=>{
     b.onclick = ()=>{
       const id=b.dataset.id, act=b.dataset.trabdtl;
@@ -5816,6 +5990,7 @@ function renderDtlGrid(){
       else if(act==="del") eliminarTrabajadorDtl(id);
     };
   });
+  actualizarBarraSeleccionDtl();
 }
 
 async function marcarInactivosSeleccionDtl(){
@@ -5834,7 +6009,7 @@ async function marcarInactivosSeleccionDtl(){
       const { error } = await sb.from("dtl_trabajadores").update({ activo:false }).in("id", ids);
       if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
       await loadDtlState();
-      modoSeleccionDtl = false; seleccionadosDtl.clear();
+      seleccionadosDtl.clear();
       closeModal();
       toast(`${ids.length} trabajador(es) marcados como inactivos`,"ok");
       renderDtlAdmin();
@@ -5858,7 +6033,7 @@ async function eliminarSeleccionDtl(){
       const { error } = await sb.from("dtl_trabajadores").delete().in("id", ids);
       if(error){ toast("No se pudo eliminar: "+error.message,"err"); return; }
       await loadDtlState();
-      modoSeleccionDtl = false; seleccionadosDtl.clear();
+      seleccionadosDtl.clear();
       closeModal();
       toast(`${ids.length} trabajador(es) eliminados`,"ok");
       renderDtlAdmin();
@@ -5873,7 +6048,10 @@ function trabajadorDtlCard(t){
   const inactivo = t.activo===false;
   return `<div class="lcard" style="${inactivo?'opacity:.55':''}">
     <div class="lcard-top">
-      <span class="tipo">${esc(t.cargo||'Trabajador')}</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        ${MIPERFIL.esAdmin?`<input type="checkbox" class="lcard-sel" data-sel-trabdtl="${t.id}" ${seleccionadosDtl.has(t.id)?'checked':''}>`:''}
+        <span class="tipo">${esc(t.cargo||'Trabajador')}</span>
+      </div>
       ${inactivo?'<span class="badge cerrada"><span class="dot"></span>Inactivo</span>' : (n===0?'<span class="badge cerrada"><span class="dot"></span>Sin entregas</span>':'')}
     </div>
     <h3>${esc(t.nombre)}</h3>
@@ -5886,12 +6064,11 @@ function trabajadorDtlCard(t){
     <div class="lcard-foot">
       <div class="attn"><span class="num">${n}</span><span class="lab">entrega${n===1?'':'s'}<br>registrada${n===1?'':'s'}</span></div>
       <div class="card-actions">
-        ${modoSeleccionDtl ? `<label class="chk" style="padding:0"><input type="checkbox" data-sel-trabdtl="${t.id}" ${seleccionadosDtl.has(t.id)?'checked':''}></label>` : `
         <button class="icon-btn" title="Ver ficha" data-trabdtl="ver" data-id="${t.id}">${I.eye}</button>
         ${n>0?`<button class="icon-btn" title="Descargar kárdex" data-trabdtl="kardex" data-id="${t.id}">${I.pdf}</button>`:''}
         ${puedeEscribir()?`<button class="icon-btn" title="Registrar entrega" data-trabdtl="entregar" data-id="${t.id}">${I.plus}</button>`:''}
         ${MIPERFIL.esAdmin?`<button class="icon-btn" title="Editar" data-trabdtl="editar" data-id="${t.id}">${I.pen}</button>
-        <button class="icon-btn danger" title="Eliminar" data-trabdtl="del" data-id="${t.id}">${I.trash}</button>`:''}`}
+        <button class="icon-btn danger" title="Eliminar" data-trabdtl="del" data-id="${t.id}">${I.trash}</button>`:''}
       </div>
     </div>
   </div>`;
@@ -7019,35 +7196,12 @@ async function descargarZipKardexDtlSeleccion(entidadIds){
 }
 
 /* Selección de contratos para el Excel de entregas de Dotación — mismo modal que el ZIP, distinta acción. */
-function abrirSeleccionExcelDtl(){
-  const preseleccion = dtlFiltroEntidad!=='todas' ? [dtlFiltroEntidad] : [];
-  openModal(`<div class="modal" style="max-width:480px">
-    <div class="modal-head"><div><h2>Descargar Excel de entregas</h2><p>Elige qué contratos incluir. Una fila por entrega, con fecha, ítems y responsable.</p></div>
-      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body">
-      <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
-        <button class="btn btn-ghost btn-sm" id="btnExcelDtlTodos">Seleccionar todos</button>
-      </div>
-      <div id="excelDtlLista">
-        ${DTL.entidades.length
-          ? DTL.entidades.map(en=>`<label class="chk" style="padding:4px 0"><input type="checkbox" data-excel-entidad="${en.id}" ${preseleccion.includes(en.id)?'checked':''}> ${esc(en.nombre)}</label>`).join('')
-          : '<p class="muted-sm">No hay contratos creados.</p>'}
-      </div>
-    </div>
-    <div class="modal-foot">
-      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" id="btnExcelDtlDescargar">${I.doc} Descargar Excel</button>
-    </div>
-  </div>`);
-  document.getElementById('btnExcelDtlTodos').onclick = ()=>{
-    document.querySelectorAll('[data-excel-entidad]').forEach(chk=>chk.checked=true);
-  };
-  document.getElementById('btnExcelDtlDescargar').onclick = ()=>{
-    const ids = Array.from(document.querySelectorAll('[data-excel-entidad]:checked')).map(el=>el.dataset.excelEntidad);
-    if(!ids.length){ toast("Elige al menos un contrato","err"); return; }
-    closeModal();
-    descargarExcelDtlSeleccion(ids);
-  };
+/* Ya no pregunta qué contrato(s) incluir: descarga directo el contrato activo del
+   selector de arriba, o todos si el selector está en "Todos los contratos". */
+function descargarExcelDtl(){
+  const ids = dtlFiltroEntidad==='todas' ? DTL.entidades.map(en=>en.id) : [dtlFiltroEntidad];
+  if(!ids.length){ toast("No hay contratos para exportar","err"); return; }
+  descargarExcelDtlSeleccion(ids);
 }
 
 /* Excel de entregas de Dotación: una fila por entrega (nombre/identificación/cargo/área + fecha/ítems/responsable).
@@ -7248,6 +7402,106 @@ async function confirmarEntregaDtlPublica(){
 
 function renderDtlPublicoExito(){
   document.getElementById("app").innerHTML = pantallaFirmaOk("¡Listo!", "Tu entrega de dotación quedó registrada correctamente.");
+}
+
+/* ============================================================
+   MÓDULO AUDITORÍA · Bitácora de movimientos (solo administradores)
+   Los registros los crean SOLOS los triggers de la base de datos
+   (CAMBIOS_SQL_25.sql) en cuanto pasa algo en dot_entregas/dtl_entregas/
+   asis_listas/doc_documentos — aquí solo se consultan y se filtran.
+   ============================================================ */
+let auditFiltroDesde = '';
+let auditFiltroHasta = '';
+let auditFiltroModulo = 'todos';
+let auditFiltroAccion = 'todos';
+
+async function renderAuditoria(silent){
+  const scrollY = window.scrollY;
+  document.getElementById("app").innerHTML = `
+    ${topbar('auditoria')}
+    <div class="wrap">
+      <div class="page-head">
+        <div><h1>Auditoría</h1><p>Entregas de EPP y Dotación, listas de asistencia y documentos — quién hizo qué y cuándo. No incluye cada vez que alguien firma, solo movimientos administrativos.</p></div>
+      </div>
+      <div class="panel-section">
+        <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end">
+          <div><div class="field-label-sm">Desde</div><input type="date" id="audDesde" value="${esc(auditFiltroDesde)}" style="padding:7px 10px;border:1px solid var(--line);border-radius:9px"></div>
+          <div><div class="field-label-sm">Hasta</div><input type="date" id="audHasta" value="${esc(auditFiltroHasta)}" style="padding:7px 10px;border:1px solid var(--line);border-radius:9px"></div>
+          <div><div class="field-label-sm">Módulo</div>
+            <select id="audModulo" style="padding:7px 10px;border:1px solid var(--line);border-radius:9px;font-weight:600">
+              <option value="todos">Todos</option>
+              <option value="epp">EPP</option>
+              <option value="dotacion">Dotación</option>
+              <option value="asistencia">Asistencia</option>
+              <option value="documentos">Documentos</option>
+            </select>
+          </div>
+          <div><div class="field-label-sm">Acción</div>
+            <select id="audAccion" style="padding:7px 10px;border:1px solid var(--line);border-radius:9px;font-weight:600">
+              <option value="todos">Todas</option>
+              <option value="crear">Creaciones</option>
+              <option value="editar">Ediciones</option>
+              <option value="eliminar">Eliminaciones</option>
+            </select>
+          </div>
+          <button class="btn btn-primary btn-sm" id="btnAudFiltrar">${I.search} Filtrar</button>
+          <button class="btn btn-ghost btn-sm" id="btnAudLimpiar">Limpiar filtros</button>
+        </div>
+      </div>
+      <div id="audLista"></div>
+    </div>`;
+  wireLogout();
+  document.getElementById('audModulo').value = auditFiltroModulo;
+  document.getElementById('audAccion').value = auditFiltroAccion;
+  document.getElementById('btnAudFiltrar').onclick = ()=>{
+    auditFiltroDesde = document.getElementById('audDesde').value;
+    auditFiltroHasta = document.getElementById('audHasta').value;
+    auditFiltroModulo = document.getElementById('audModulo').value;
+    auditFiltroAccion = document.getElementById('audAccion').value;
+    cargarBitacora();
+  };
+  document.getElementById('btnAudLimpiar').onclick = ()=>{
+    auditFiltroDesde=''; auditFiltroHasta=''; auditFiltroModulo='todos'; auditFiltroAccion='todos';
+    renderAuditoria();
+  };
+  await cargarBitacora();
+  if(silent) window.scrollTo(0, scrollY);
+}
+
+async function cargarBitacora(){
+  const host = document.getElementById('audLista');
+  if(!host) return;
+  host.innerHTML = `<div class="empty"><h3>Cargando…</h3></div>`;
+  let q = sb.from("acc_bitacora").select("*").order("ocurrido_en",{ascending:false}).limit(300);
+  if(auditFiltroDesde) q = q.gte("ocurrido_en", auditFiltroDesde+"T00:00:00");
+  if(auditFiltroHasta) q = q.lte("ocurrido_en", auditFiltroHasta+"T23:59:59");
+  if(auditFiltroModulo!=='todos') q = q.eq("modulo", auditFiltroModulo);
+  if(auditFiltroAccion!=='todos') q = q.eq("accion", auditFiltroAccion);
+  const { data, error } = await q;
+  if(error){
+    host.innerHTML = `<div class="empty"><h3>No se pudo cargar</h3><p>${esc(error.message)}</p></div>`;
+    return;
+  }
+  if(!data || !data.length){
+    host.innerHTML = `<div class="empty"><h3>Sin movimientos</h3><p>No hay registros para los filtros elegidos.</p></div>`;
+    return;
+  }
+  const modLabel = { epp:'EPP', dotacion:'Dotación', asistencia:'Asistencia', documentos:'Documentos' };
+  const accLabel = { crear:'Creación', editar:'Edición', eliminar:'Eliminación' };
+  const accBadge = { crear:'activa', editar:'cerrada', eliminar:'venc' };
+  const hayFiltros = auditFiltroDesde || auditFiltroHasta || auditFiltroModulo!=='todos' || auditFiltroAccion!=='todos';
+  host.innerHTML = `<div class="table-wrap"><table class="dt">
+    <thead><tr><th>Fecha y hora</th><th>Módulo</th><th>Acción</th><th>Detalle</th><th>Quién</th></tr></thead>
+    <tbody>${data.map(r=>`
+      <tr>
+        <td style="white-space:nowrap">${fmtDateTime(r.ocurrido_en)}</td>
+        <td><span class="tipo">${esc(modLabel[r.modulo]||r.modulo)}</span></td>
+        <td><span class="badge ${accBadge[r.accion]||'cerrada'}"><span class="dot"></span>${esc(accLabel[r.accion]||r.accion)}</span></td>
+        <td>${esc(r.descripcion)}</td>
+        <td>${r.actor_uid ? esc(nombreDe(r.actor_uid)) : '<span class="muted-sm">Enlace remoto (sin sesión)</span>'}</td>
+      </tr>`).join('')}</tbody>
+  </table></div>
+  <p class="muted-sm" style="margin-top:10px">Mostrando los ${data.length} movimientos más recientes${hayFiltros?' que cumplen los filtros':''}${data.length===300?' (hay más — usa los filtros de fecha para ver más atrás)':''}.</p>`;
 }
 
 /* ============================================================
@@ -7511,6 +7765,7 @@ document.addEventListener("visibilitychange", ()=>{
   if(location.hash === "#/dotacion" && tieneModulo('dotacion')){ renderDotacionAdmin(true); return; }
   if(location.hash === "#/dotacionlegal" && tieneModulo('dotacionlegal')){ renderDtlAdmin(true); return; }
   if(location.hash === "#/configuracion" && MIPERFIL.esAdmin){ renderConfiguracion(true); return; }
+  if(location.hash === "#/auditoria" && MIPERFIL.esAdmin){ renderAuditoria(true); return; }
   router();   // re-renderiza el módulo activo (asistencia, documentos, dotación o configuración)
 });
 
