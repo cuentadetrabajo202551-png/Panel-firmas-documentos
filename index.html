@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Sistema de Asistencia Digital · Don Aseo Ltda.</title>
+<title>Sistema de Evidencias Digitales · Don Aseo Ltda.</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -105,7 +105,11 @@ input,textarea,select{font-family:inherit;font-size:14px;color:var(--ink)}
   background:var(--card);border-right:1px solid var(--line);
   display:flex;flex-direction:column;
 }
-.sb-brand{display:flex;align-items:center;justify-content:center;padding:22px 18px;border-bottom:1px solid var(--line-2)}
+/* Altura fija en sb-brand y topheader (misma cifra en ambos) para que sus líneas
+   inferiores queden a la misma altura — son dos cajas independientes (sidebar fijo
+   + cabecera del contenido), no un mismo contenedor flex, así que si no se igualan
+   explícito el título queda más arriba que el logo (padding/contenido distintos). */
+.sb-brand{display:flex;align-items:center;justify-content:center;padding:22px 18px;border-bottom:1px solid var(--line-2);height:86px}
 .sb-brand img{height:42px;width:auto;display:block;border-radius:6px;flex:none}
 .sb-nav{display:flex;flex-direction:column;gap:2px;padding:14px 12px;flex:1;overflow-y:auto}
 .sb-nav a{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;font-size:14px;font-weight:700;color:var(--ink-2);text-decoration:none;transition:.15s}
@@ -122,6 +126,7 @@ input,textarea,select{font-family:inherit;font-size:14px;color:var(--ink)}
   background:rgba(255,255,255,.82);backdrop-filter:saturate(160%) blur(14px);
   border-bottom:1px solid var(--line);padding:14px 26px;
   display:flex;align-items:center;justify-content:space-between;gap:16px;
+  height:86px;
 }
 .th-title{font-family:var(--display);font-weight:700;font-size:17px;letter-spacing:-.01em;color:var(--ink)}
 .th-account{display:flex;align-items:center;gap:14px;flex:none}
@@ -197,19 +202,18 @@ input,textarea,select{font-family:inherit;font-size:14px;color:var(--ink)}
    (atributo disabled nativo), para que nada se mueva de sitio al cambiar el filtro. */
 .panel-section{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px}
 .panel-section .section-label{font-size:11px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.02em;margin-bottom:8px}
-.action-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
-@media(max-width:1100px){.action-grid{grid-template-columns:repeat(2,1fr)}}
+/* Sin ac-ic (ícono): se quitó para que las tarjetas sean más angostas y quepan
+   hasta 5 por fila — minmax define el ancho mínimo cómodo para el título más
+   largo ("Catálogo de ítems"); auto-fit reparte el resto entre las que haya. */
+.action-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:6px}
 .action-card{
-  display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);
-  border-radius:9px;padding:7px 10px;cursor:pointer;transition:.15s;text-align:left;width:100%;
+  display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);
+  border-radius:9px;padding:8px 10px;cursor:pointer;transition:.15s;text-align:left;width:100%;
 }
 .action-card:hover{border-color:var(--brand-soft2);box-shadow:var(--shadow-sm)}
-.action-card .ac-ic{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;background:var(--brand-soft);color:var(--brand-deep);flex:none}
-.action-card .ac-ic svg{width:13px;height:13px}
-.action-card .ac-title{flex:1;min-width:0;font-size:12.5px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.action-card .ac-title{flex:1;min-width:0;font-size:12px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .action-card .ac-chevron{color:var(--ink-3);flex:none;font-size:15px;line-height:1}
 .action-card.primary{background:var(--brand);border-color:var(--brand)}
-.action-card.primary .ac-ic{background:rgba(255,255,255,.18);color:#fff}
 .action-card.primary .ac-title{color:#fff}
 .action-card.primary .ac-chevron{color:#fff}
 .action-card:disabled,.icon-btn:disabled{opacity:.4;cursor:not-allowed}
@@ -927,7 +931,7 @@ function renderLogin(){
     <div class="login-wrap">
       <form class="login-card" id="loginForm" autocomplete="on">
         <img src="${LOGO}" class="login-logo" alt="Don Aseo Ltda.">
-        <h1>Sistema de Asistencia</h1>
+        <h1>Sistema de Evidencias Digitales</h1>
         <p>Ingresa con tu cuenta del SIG Don Aseo Ltda.</p>
         <div class="field">
           <label>Correo electrónico</label>
@@ -987,7 +991,7 @@ function topbar(active){
       <nav class="sb-nav">${navLinksHTML(active,'active',false)}</nav>
     </div>
     <div class="topheader">
-      <div class="th-title">Sistema de Asistencia Digital</div>
+      <div class="th-title">Sistema de Evidencias Digitales</div>
       <div class="th-account">
         ${MIPERFIL.esAdmin?`<a href="#/configuracion" class="th-config ${active==='configuracion'?'active':''}">⚙️ Configuración</a>`:''}
         ${STATE.userEmail?`<span class="user-chip" title="${esc(STATE.userEmail)}">${I.user} ${esc(STATE.userEmail)}</span>`:""}
@@ -998,7 +1002,7 @@ function topbar(active){
       <img src="${LOGO}" class="brand-logo" alt="Don Aseo Ltda.">
       <div class="brand-divider"></div>
       <div class="brand-text">
-        <div class="t1">Sistema de Asistencia Digital</div>
+        <div class="t1">Sistema de Evidencias Digitales</div>
         <div class="t2">Don Aseo Ltda. · NIT 812.000.152-7</div>
         <div class="brand-accent"></div>
       </div>
@@ -4039,19 +4043,19 @@ async function renderDotacionAdmin(silent){
       <div class="panel-section dot-pc-only">
         <div class="section-label">Acciones principales</div>
         <div class="action-grid">
-          <button class="action-card" id="btnNuevoTrab"><div class="ac-ic">${I.plus}</div><span class="ac-title">Nuevo trabajador</span><span class="ac-chevron">›</span></button>
-          <button class="action-card" id="btnCargaTrab"><div class="ac-ic">${I.plus}</div><span class="ac-title">Carga masiva</span><span class="ac-chevron">›</span></button>
-          <button class="action-card" id="btnPlantillaTrab"><div class="ac-ic">${I.doc}</div><span class="ac-title">Plantilla Excel</span><span class="ac-chevron">›</span></button>
+          <button class="action-card" id="btnNuevoTrab"><span class="ac-title">Nuevo trabajador</span><span class="ac-chevron">›</span></button>
+          <button class="action-card" id="btnCargaTrab"><span class="ac-title">Carga masiva</span><span class="ac-chevron">›</span></button>
+          <button class="action-card" id="btnPlantillaTrab"><span class="ac-title">Plantilla Excel</span><span class="ac-chevron">›</span></button>
         </div>
       </div>`:''}
 
       <div class="panel-section dot-pc-only">
         <div class="section-label">Herramientas</div>
         <div class="action-grid">
-          <button class="action-card" id="btnCatalogo" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.box}</div><span class="ac-title">Catálogo de ítems</span><span class="ac-chevron">›</span></button>
-          ${puedeEscribir()?`<button class="action-card" id="btnPredeterminados" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.pen}</div><span class="ac-title">Firmas</span><span class="ac-chevron">›</span></button>`:''}
-          ${MIPERFIL.esAdmin?`<button class="action-card" id="btnCorregirCargos"><div class="ac-ic">${I.pen}</div><span class="ac-title">Corregir cargos</span><span class="ac-chevron">›</span></button>`:''}
-          ${totalTrab?`<button class="action-card" id="btnExcelEpp"><div class="ac-ic">${I.doc}</div><span class="ac-title">Descargar Excel</span><span class="ac-chevron">›</span></button>`:''}
+          <button class="action-card" id="btnCatalogo" ${enTodos?'disabled title="Elige un contrato específico"':''}><span class="ac-title">Catálogo de ítems</span><span class="ac-chevron">›</span></button>
+          ${puedeEscribir()?`<button class="action-card" id="btnPredeterminados" ${enTodos?'disabled title="Elige un contrato específico"':''}><span class="ac-title">Firmas</span><span class="ac-chevron">›</span></button>`:''}
+          ${MIPERFIL.esAdmin?`<button class="action-card" id="btnCorregirCargos"><span class="ac-title">Corregir cargos</span><span class="ac-chevron">›</span></button>`:''}
+          ${totalTrab?`<button class="action-card" id="btnExcelEpp"><span class="ac-title">Descargar Excel</span><span class="ac-chevron">›</span></button>`:''}
         </div>
       </div>
 
@@ -4090,6 +4094,7 @@ function renderDotacionBody(){
         ${I.search}
         <input type="text" id="dotSearch" placeholder="Buscar por nombre, cédula, cargo o área…" value="${esc(dotQuery)}">
       </div>
+      <button class="btn btn-ghost btn-sm" id="btnEntregasHoyDot" style="white-space:nowrap">${I.cal} Entregas de hoy</button>
       ${MIPERFIL.esAdmin?`<label class="chk" style="white-space:nowrap"><input type="checkbox" id="chkTodosDot"> Todos</label>`:''}
       <label class="chk" style="white-space:nowrap"><input type="checkbox" id="chkMostrarInactivosDot" ${dotMostrarInactivos?'checked':''}> Mostrar inactivos</label>
     </div>
@@ -4101,6 +4106,7 @@ function renderDotacionBody(){
       <button class="btn btn-danger btn-sm" id="btnEliminarSeleccionDot">${I.trash} Eliminar seleccionados</button>
     </div>
     <div id="dotGrid"></div>`;
+  document.getElementById("btnEntregasHoyDot").onclick = abrirEntregasHoyDot;
   document.getElementById("dotSearch").oninput = (e)=>{ dotQuery = e.target.value; renderDotTrabajadoresGrid(); };
   document.getElementById("chkMostrarInactivosDot").onchange = (e)=>{ dotMostrarInactivos = e.target.checked; renderDotTrabajadoresGrid(); };
   const chkTodosDot = document.getElementById("chkTodosDot");
@@ -4219,21 +4225,42 @@ async function marcarInactivosSeleccionDot(){
   };
 }
 
+/* Si al borrar trabajadores un contrato queda en CERO trabajadores, el contrato
+   también se borra — pedido explícito del usuario: un contrato vacío no tiene
+   razón para seguir en el selector. Requiere CAMBIOS_SQL_26.sql (agrega "on
+   delete cascade" en catálogo/firmas predeterminadas, si no la borrada del
+   contrato falla porque esas tablas todavía lo referencian). */
+async function borrarContratosVaciosDot(contratoIdsTocados){
+  const ids = [...new Set(contratoIdsTocados)].filter(Boolean);
+  if(!ids.length) return;
+  const { data: restantes } = await sb.from("dot_trabajadores").select("contrato_id").in("contrato_id", ids);
+  const conGente = new Set((restantes||[]).map(r=>r.contrato_id));
+  const vacios = ids.filter(cid=>!conGente.has(cid));
+  if(!vacios.length) return;
+  const nombres = vacios.map(cid=>DOTACION.contratos.find(c=>c.id===cid)?.nombre).filter(Boolean);
+  const { error } = await sb.from("dot_contratos").delete().in("id", vacios);
+  if(error){ console.warn(error); toast("No se pudo borrar el contrato que quedó vacío: "+error.message,"err"); return; }
+  if(vacios.includes(contratoActualId)){ contratoActualId='todos'; localStorage.setItem('dot_contrato_actual','todos'); }
+  toast(`${nombres.length===1?`Contrato "${nombres[0]}" eliminado`:nombres.length+' contratos eliminados'} por quedar sin trabajadores`,"ok");
+}
+
 async function eliminarSeleccionDot(){
   if(!seleccionadosDot.size){ toast("Selecciona al menos un trabajador","err"); return; }
   const ids = Array.from(seleccionadosDot);
   openModal(`<div class="modal" style="max-width:460px">
     <div class="modal-head"><div><h2>Eliminar trabajadores</h2><p>Esta acción no se puede deshacer.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminarán <b>${ids.length}</b> trabajador(es) del directorio junto con <b>todo su historial de entregas y firmas</b>. Si solo quieres dejar de verlos sin perder su historial, usa "Marcar como inactivo" en vez de esto.</p></div>
+    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminarán <b>${ids.length}</b> trabajador(es) del directorio junto con <b>todo su historial de entregas y firmas</b>. Si solo quieres dejar de verlos sin perder su historial, usa "Marcar como inactivo" en vez de esto. Si algún contrato queda sin trabajadores, también se elimina.</p></div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-danger" id="confEliminarSeleccionDot">${I.trash} Sí, eliminar ${ids.length}</button></div></div>`);
   document.getElementById('confEliminarSeleccionDot').onclick = async ()=>{
     const btn=document.getElementById("confEliminarSeleccionDot"); btn.disabled=true; btn.innerHTML="Eliminando…";
     bloquear("Eliminando…");
     try{
+      const contratosTocados = ids.map(id=>DOTACION.trabajadores.find(t=>t.id===id)?.contrato_id);
       const { error } = await porLotes(ids, lote=> sb.from("dot_trabajadores").delete().in("id", lote));
       if(error){ toast("No se pudo eliminar: "+error.message,"err"); return; }
+      await borrarContratosVaciosDot(contratosTocados);
       await loadDotacionState();
       seleccionadosDot.clear();
       closeModal();
@@ -4241,6 +4268,34 @@ async function eliminarSeleccionDot(){
       renderDotacionAdmin();
     } finally { desbloquear(); }
   };
+}
+
+/* "Entregas de hoy" — pensado para que el admin no tenga que hacer scroll ni
+   buscar quién recibió algo hoy: usa DOTACION.entregas (ya cargado, liviano) solo
+   para saber CUÁLES entregas son de hoy, y trae el detalle (hora/responsable/vía)
+   bajo demanda, solo de esas — nunca carga esas columnas para el listado completo. */
+async function abrirEntregasHoyDot(){
+  const hoy = hoyLocal();
+  const idsHoy = DOTACION.entregas.filter(e=>e.fecha===hoy).map(e=>e.id);
+  openModal(`<div class="modal" style="max-width:520px">
+    <div class="modal-head"><div><h2>Entregas de hoy</h2><p>${fmtDate(hoy)}</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body" id="entregasHoyDotBody"><div class="empty"><h3>Cargando…</h3></div></div>
+  </div>`);
+  const host = document.getElementById('entregasHoyDotBody');
+  if(!idsHoy.length){ host.innerHTML = `<div class="empty"><div class="ic">${I.box}</div><h3>Sin entregas hoy</h3><p>Todavía no se ha registrado ninguna entrega de EPP hoy.</p></div>`; return; }
+  const { data, error } = await sb.from("dot_entregas").select("id,trabajador_id,creado_en,responsable_nombre,via").in("id", idsHoy).order("creado_en",{ascending:false});
+  if(error){ host.innerHTML = `<div class="empty"><h3>No se pudo cargar</h3><p>${esc(error.message)}</p></div>`; return; }
+  host.innerHTML = `<div style="display:flex;flex-direction:column;gap:8px">${data.map(e=>{
+    const t = DOTACION.trabajadores.find(x=>x.id===e.trabajador_id);
+    const contrato = DOTACION.contratos.find(c=>c.id===t?.contrato_id)?.nombre;
+    const hora = e.creado_en ? new Date(e.creado_en).toLocaleTimeString("es-CO",{hour:'2-digit',minute:'2-digit'}) : '—';
+    return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--line);border-radius:9px">
+      <div><div style="font-weight:700;font-size:13.5px">${esc(t?.nombre||'—')}${contrato?` <span class="muted-sm" style="font-weight:600">· ${esc(contrato)}</span>`:''}</div>
+        <div class="muted-sm">${e.via==='remoto'?'Por enlace remoto':'Entregado por '+esc(e.responsable_nombre||'—')}</div></div>
+      <span class="muted-sm" style="white-space:nowrap">${hora}</span>
+    </div>`;
+  }).join('')}</div>`;
 }
 
 function trabajadorCard(t){
@@ -4482,8 +4537,10 @@ function eliminarTrabajador(id){
       <button class="btn btn-danger" id="confDelTrab">${I.trash} Sí, eliminar</button></div></div>`);
   document.getElementById("confDelTrab").onclick = async ()=>{
     const btn=document.getElementById("confDelTrab"); btn.disabled=true; btn.innerHTML="Eliminando…";
+    const contratoId = t?.contrato_id;
     const { error } = await sb.from("dot_trabajadores").delete().eq("id", id);
     if(error){ btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`; toast("No se pudo eliminar: "+error.message,"err"); return; }
+    await borrarContratosVaciosDot([contratoId]);
     await loadDotacionState();
     closeModal(); toast("Trabajador eliminado","ok"); renderDotacionAdmin();
   };
@@ -5902,18 +5959,18 @@ async function renderDtlAdmin(silent){
       <div class="panel-section dot-pc-only">
         <div class="section-label">Acciones principales</div>
         <div class="action-grid">
-          <button class="action-card" id="btnNuevoTrabDtl"><div class="ac-ic">${I.plus}</div><span class="ac-title">Nuevo trabajador</span><span class="ac-chevron">›</span></button>
-          <button class="action-card" id="btnCargaTrabDtl"><div class="ac-ic">${I.plus}</div><span class="ac-title">Carga masiva</span><span class="ac-chevron">›</span></button>
-          <button class="action-card" id="btnPlantillaTrabDtl"><div class="ac-ic">${I.doc}</div><span class="ac-title">Plantilla Excel</span><span class="ac-chevron">›</span></button>
+          <button class="action-card" id="btnNuevoTrabDtl"><span class="ac-title">Nuevo trabajador</span><span class="ac-chevron">›</span></button>
+          <button class="action-card" id="btnCargaTrabDtl"><span class="ac-title">Carga masiva</span><span class="ac-chevron">›</span></button>
+          <button class="action-card" id="btnPlantillaTrabDtl"><span class="ac-title">Plantilla Excel</span><span class="ac-chevron">›</span></button>
         </div>
       </div>`:''}
 
       <div class="panel-section dot-pc-only">
         <div class="section-label">Herramientas</div>
         <div class="action-grid">
-          ${puedeEscribir()?`<button class="action-card" id="btnPredeterminadosDtl" ${dtlFiltroEntidad==='todas'?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.pen}</div><span class="ac-title">Firmas</span><span class="ac-chevron">›</span></button>`:''}
-          ${MIPERFIL.esAdmin?`<button class="action-card" id="btnCorregirCargosDtl"><div class="ac-ic">${I.pen}</div><span class="ac-title">Corregir cargos</span><span class="ac-chevron">›</span></button>`:''}
-          ${totalTrab?`<button class="action-card" id="btnExcelDtl"><div class="ac-ic">${I.doc}</div><span class="ac-title">Descargar Excel</span><span class="ac-chevron">›</span></button>`:''}
+          ${puedeEscribir()?`<button class="action-card" id="btnPredeterminadosDtl" ${dtlFiltroEntidad==='todas'?'disabled title="Elige un contrato específico"':''}><span class="ac-title">Firmas</span><span class="ac-chevron">›</span></button>`:''}
+          ${MIPERFIL.esAdmin?`<button class="action-card" id="btnCorregirCargosDtl"><span class="ac-title">Corregir cargos</span><span class="ac-chevron">›</span></button>`:''}
+          ${totalTrab?`<button class="action-card" id="btnExcelDtl"><span class="ac-title">Descargar Excel</span><span class="ac-chevron">›</span></button>`:''}
         </div>
       </div>
 
@@ -5922,6 +5979,7 @@ async function renderDtlAdmin(silent){
           ${I.search}
           <input type="text" id="dtlSearch" placeholder="Buscar por nombre, cédula, cargo o área…" value="${esc(dtlQuery)}">
         </div>
+        <button class="btn btn-ghost btn-sm" id="btnEntregasHoyDtl" style="white-space:nowrap">${I.cal} Entregas de hoy</button>
         ${MIPERFIL.esAdmin?`<label class="chk" style="white-space:nowrap"><input type="checkbox" id="chkTodosDtl"> Todos</label>`:''}
         <label class="chk" style="white-space:nowrap"><input type="checkbox" id="chkMostrarInactivosDtl" ${dtlMostrarInactivos?'checked':''}> Mostrar inactivos</label>
       </div>
@@ -5953,6 +6011,7 @@ async function renderDtlAdmin(silent){
   const bcc=document.getElementById("btnCorregirCargosDtl"); if(bcc) bcc.onclick = abrirCorregirCargosDtl;
   const bce=document.getElementById("btnCopiarEnlacePublico"); if(bce) bce.onclick = ()=> copyText(location.href.split("#")[0]+"#/dotacionlegal/entrega", "Enlace de entrega remota copiado");
   const bqr=document.getElementById("btnQrEnlacePublico"); if(bqr) bqr.onclick = ()=> mostrarQR(location.href.split("#")[0]+"#/dotacionlegal/entrega", "Entrega remota de dotación");
+  document.getElementById("btnEntregasHoyDtl").onclick = abrirEntregasHoyDtl;
   document.getElementById("dtlSearch").oninput = (e)=>{ dtlQuery = e.target.value; renderDtlGrid(); };
   document.getElementById("chkMostrarInactivosDtl").onchange = (e)=>{ dtlMostrarInactivos = e.target.checked; renderDtlGrid(); };
   const chkTodosDtl = document.getElementById("chkTodosDtl");
@@ -6072,21 +6131,38 @@ async function marcarInactivosSeleccionDtl(){
   };
 }
 
+/* Igual que borrarContratosVaciosDot pero para Dotación (dtl_entidades). */
+async function borrarContratosVaciosDtl(entidadIdsTocadas){
+  const ids = [...new Set(entidadIdsTocadas)].filter(Boolean);
+  if(!ids.length) return;
+  const { data: restantes } = await sb.from("dtl_trabajadores").select("entidad_id").in("entidad_id", ids);
+  const conGente = new Set((restantes||[]).map(r=>r.entidad_id));
+  const vacias = ids.filter(eid=>!conGente.has(eid));
+  if(!vacias.length) return;
+  const nombres = vacias.map(eid=>DTL.entidades.find(x=>x.id===eid)?.nombre).filter(Boolean);
+  const { error } = await sb.from("dtl_entidades").delete().in("id", vacias);
+  if(error){ console.warn(error); toast("No se pudo borrar el contrato que quedó vacío: "+error.message,"err"); return; }
+  if(vacias.includes(dtlFiltroEntidad)){ dtlFiltroEntidad='todas'; localStorage.setItem('dtl_filtro_entidad','todas'); }
+  toast(`${nombres.length===1?`Contrato "${nombres[0]}" eliminado`:nombres.length+' contratos eliminados'} por quedar sin trabajadores`,"ok");
+}
+
 async function eliminarSeleccionDtl(){
   if(!seleccionadosDtl.size){ toast("Selecciona al menos un trabajador","err"); return; }
   const ids = Array.from(seleccionadosDtl);
   openModal(`<div class="modal" style="max-width:460px">
     <div class="modal-head"><div><h2>Eliminar trabajadores</h2><p>Esta acción no se puede deshacer.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminarán <b>${ids.length}</b> trabajador(es) del directorio junto con <b>todo su historial de entregas y firmas</b>. Si solo quieres dejar de verlos sin perder su historial, usa "Marcar como inactivo" en vez de esto.</p></div>
+    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminarán <b>${ids.length}</b> trabajador(es) del directorio junto con <b>todo su historial de entregas y firmas</b>. Si solo quieres dejar de verlos sin perder su historial, usa "Marcar como inactivo" en vez de esto. Si algún contrato queda sin trabajadores, también se elimina.</p></div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-danger" id="confEliminarSeleccionDtl">${I.trash} Sí, eliminar ${ids.length}</button></div></div>`);
   document.getElementById('confEliminarSeleccionDtl').onclick = async ()=>{
     const btn=document.getElementById("confEliminarSeleccionDtl"); btn.disabled=true; btn.innerHTML="Eliminando…";
     bloquear("Eliminando…");
     try{
+      const entidadesTocadas = ids.map(id=>DTL.trabajadores.find(t=>t.id===id)?.entidad_id);
       const { error } = await porLotes(ids, lote=> sb.from("dtl_trabajadores").delete().in("id", lote));
       if(error){ toast("No se pudo eliminar: "+error.message,"err"); return; }
+      await borrarContratosVaciosDtl(entidadesTocadas);
       await loadDtlState();
       seleccionadosDtl.clear();
       closeModal();
@@ -6094,6 +6170,32 @@ async function eliminarSeleccionDtl(){
       renderDtlAdmin();
     } finally { desbloquear(); }
   };
+}
+
+/* "Entregas de hoy" — mismo patrón que abrirEntregasHoyDot (EPP): filtra en memoria
+   cuáles son de hoy y solo trae el detalle pesado (hora/responsable/vía) de esas. */
+async function abrirEntregasHoyDtl(){
+  const hoy = hoyLocal();
+  const idsHoy = DTL.entregas.filter(e=>e.fecha===hoy).map(e=>e.id);
+  openModal(`<div class="modal" style="max-width:520px">
+    <div class="modal-head"><div><h2>Entregas de hoy</h2><p>${fmtDate(hoy)}</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body" id="entregasHoyDtlBody"><div class="empty"><h3>Cargando…</h3></div></div>
+  </div>`);
+  const host = document.getElementById('entregasHoyDtlBody');
+  if(!idsHoy.length){ host.innerHTML = `<div class="empty"><div class="ic">${I.box}</div><h3>Sin entregas hoy</h3><p>Todavía no se ha registrado ninguna entrega de dotación hoy.</p></div>`; return; }
+  const { data, error } = await sb.from("dtl_entregas").select("id,trabajador_id,creado_en,responsable_nombre,via").in("id", idsHoy).order("creado_en",{ascending:false});
+  if(error){ host.innerHTML = `<div class="empty"><h3>No se pudo cargar</h3><p>${esc(error.message)}</p></div>`; return; }
+  host.innerHTML = `<div style="display:flex;flex-direction:column;gap:8px">${data.map(e=>{
+    const t = DTL.trabajadores.find(x=>x.id===e.trabajador_id);
+    const contrato = nombreEntidadDtl(t?.entidad_id);
+    const hora = e.creado_en ? new Date(e.creado_en).toLocaleTimeString("es-CO",{hour:'2-digit',minute:'2-digit'}) : '—';
+    return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--line);border-radius:9px">
+      <div><div style="font-weight:700;font-size:13.5px">${esc(t?.nombre||'—')}${contrato&&contrato!=='—'?` <span class="muted-sm" style="font-weight:600">· ${esc(contrato)}</span>`:''}</div>
+        <div class="muted-sm">${e.via==='remoto'?'Por enlace remoto':'Entregado por '+esc(e.responsable_nombre||'—')}</div></div>
+      <span class="muted-sm" style="white-space:nowrap">${hora}</span>
+    </div>`;
+  }).join('')}</div>`;
 }
 
 function trabajadorDtlCard(t){
@@ -6326,8 +6428,10 @@ function eliminarTrabajadorDtl(id){
       <button class="btn btn-danger" id="confDelTrabDtl">${I.trash} Sí, eliminar</button></div></div>`);
   document.getElementById("confDelTrabDtl").onclick = async ()=>{
     const btn=document.getElementById("confDelTrabDtl"); btn.disabled=true; btn.innerHTML="Eliminando…";
+    const entidadId = t?.entidad_id;
     const { error } = await sb.from("dtl_trabajadores").delete().eq("id", id);
     if(error){ btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`; toast("No se pudo eliminar: "+error.message,"err"); return; }
+    await borrarContratosVaciosDtl([entidadId]);
     await loadDtlState();
     closeModal(); toast("Trabajador eliminado","ok");
     renderDtlAdmin();
