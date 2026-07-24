@@ -140,32 +140,6 @@ input,textarea,select{font-family:inherit;font-size:14px;color:var(--ink)}
   .topheader{display:none}
 }
 
-/* ---------- Banda de novedades (entregas recientes de EPP/Dotación) ---------- */
-.nov-bar{
-  margin-left:232px;display:flex;align-items:stretch;border-bottom:1px solid var(--line);
-  background:linear-gradient(90deg,var(--brand-soft),#fff 65%);
-}
-@media(max-width:760px){ .nov-bar{margin-left:0} }
-.nov-tag{
-  flex:none;display:flex;align-items:center;gap:6px;padding:0 14px;font-size:10.5px;font-weight:800;
-  letter-spacing:.04em;text-transform:uppercase;color:var(--brand-deep);background:var(--brand-soft2);
-  border-right:1px solid var(--line);white-space:nowrap;
-}
-.nov-tag svg{width:13px;height:13px}
-.nov-viewport{flex:1;min-width:0;overflow:hidden;position:relative;height:32px}
-.nov-viewport::before,.nov-viewport::after{content:"";position:absolute;top:0;bottom:0;width:26px;z-index:2;pointer-events:none}
-.nov-viewport::before{left:0;background:linear-gradient(90deg,var(--brand-soft),transparent)}
-.nov-viewport::after{right:0;background:linear-gradient(270deg,#fff,transparent)}
-.nov-track{position:absolute;top:0;left:0;height:32px;display:flex;align-items:center;gap:36px;white-space:nowrap;padding-left:100%;animation:novDesliza 30s linear infinite}
-@media(prefers-reduced-motion:reduce){ .nov-track{animation:none;padding-left:14px} }
-@keyframes novDesliza{from{transform:translateX(0)}to{transform:translateX(-100%)}}
-.nov-item{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:var(--ink-2)}
-.nov-item b{color:var(--ink);font-weight:700}
-.nov-item .nov-t{color:var(--ink-3);font-weight:600}
-.nov-dot{width:5px;height:5px;border-radius:50%;flex:none}
-.nov-dot-epp{background:var(--brand)}
-.nov-dot-dotacion{background:var(--green)}
-
 /* ---------- Layout ---------- */
 .wrap{max-width:1180px;margin:0 auto;padding:34px 26px 80px}
 /* Va DESPUÉS de la regla de arriba a propósito: ".wrap{margin:0 auto}" es la
@@ -666,7 +640,7 @@ if(window.emailjs){ try{ emailjs.init({ publicKey: EMAILJS_KEY }); }catch(e){ tr
 let STATE = { listas: [], userEmail: "" };
 
 /* ---------- Permisos del usuario logueado (roles/módulos/contratos) ---------- */
-let MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], veNovedades:false, nombre:"", uid:null };
+let MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], nombre:"", uid:null };
 /* Mapa uid -> nombre/correo, para mostrar "Creado por: X" sin exponer toda acc_perfiles */
 let PERFILES_NOMBRE = {};
 
@@ -681,10 +655,10 @@ async function cargarAppConfig(){
 async function cargarMiPerfil(){
   await cargarAppConfig();
   const { data:{ session } } = await sb.auth.getSession();
-  if(!session){ MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], veNovedades:false, nombre:"", uid:null }; return; }
+  if(!session){ MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], nombre:"", uid:null }; return; }
   const uid = session.user.id;
   const [{ data:p }, { data:pm }, { data:pc }, { data:pe }, { data:pn }] = await Promise.all([
-    sb.from("acc_perfiles").select("es_admin,activo,nombre,rol,ve_novedades").eq("id",uid).maybeSingle(),
+    sb.from("acc_perfiles").select("es_admin,activo,nombre,rol").eq("id",uid).maybeSingle(),
     sb.from("acc_perfil_modulos").select("modulo").eq("perfil_id",uid),
     sb.from("acc_perfil_contratos").select("contrato_id").eq("perfil_id",uid),
     sb.from("acc_perfil_entidades").select("entidad_id").eq("perfil_id",uid),
@@ -698,61 +672,11 @@ async function cargarMiPerfil(){
     modulos: (pm||[]).map(x=>x.modulo),
     contratos: (pc||[]).map(x=>x.contrato_id),
     entidadesDtl: (pe||[]).map(x=>x.entidad_id),
-    veNovedades: !!(p && p.ve_novedades),
     nombre: (p && p.nombre) || session.user.email || "",
     uid
   };
   PERFILES_NOMBRE = {};
   (pn||[]).forEach(x=>{ PERFILES_NOMBRE[x.id] = x.nombre || x.email || "—"; });
-}
-
-/* ---------- Banda de novedades (entregas recientes de EPP/Dotación) ----------
-   Visible siempre para admin; para cualquier otro usuario, solo si el admin se lo
-   activó en Configuración (acc_perfiles.ve_novedades) — y aun así, solo ve
-   novedades de los módulos que YA tiene habilitados (lo filtra la propia RPC
-   acc_novedades_recientes en el servidor, no confiar en el filtro del cliente).
-   No reutiliza acc_bitacora (esa es exclusiva de Auditoría/admin, sección 7.47/7.55)
-   — usa una RPC aparte, de solo lectura, con lo mínimo (quién, qué, dónde, cuándo). */
-let NOVEDADES = [];
-let _novTimer = null;
-async function cargarNovedades(){
-  if(!(MIPERFIL.esAdmin || MIPERFIL.veNovedades)){ NOVEDADES = []; renderNovedadesBar(); return; }
-  const { data, error } = await sb.rpc("acc_novedades_recientes");
-  if(error){ console.warn(error); return; }   // falla silenciosa — la banda es un extra, no algo crítico
-  NOVEDADES = data || [];
-  renderNovedadesBar();
-}
-function iniciarNovedades(){
-  if(_novTimer){ clearInterval(_novTimer); _novTimer=null; }
-  if(!(MIPERFIL.esAdmin || MIPERFIL.veNovedades)){ NOVEDADES = []; renderNovedadesBar(); return; }
-  cargarNovedades();
-  _novTimer = setInterval(()=>{ if(!document.hidden) cargarNovedades(); }, 20000);
-}
-function detenerNovedades(){
-  if(_novTimer){ clearInterval(_novTimer); _novTimer=null; }
-  NOVEDADES = [];
-}
-function tiempoRelativoCorto(iso){
-  const seg = Math.max(0, Math.round((Date.now() - new Date(iso).getTime())/1000));
-  if(seg < 60) return "hace un momento";
-  const min = Math.round(seg/60);
-  if(min < 60) return `hace ${min} min`;
-  const hr = Math.round(min/60);
-  if(hr < 24) return `hace ${hr} h`;
-  return `hace ${Math.round(hr/24)} d`;
-}
-/* Repinta la banda con lo que YA está en NOVEDADES (no pide datos) — se llama desde
-   wireLogout() porque topbar() se reconstruye entera en cada navegación, y con ella
-   un #novedadesBar nuevo que hay que volver a llenar con el estado ya cargado. */
-function renderNovedadesBar(){
-  const host = document.getElementById('novedadesBar');
-  if(!host) return;
-  if(!NOVEDADES.length){ host.style.display = 'none'; host.innerHTML = ''; return; }
-  host.style.display = '';
-  const modLabel = { epp:'EPP', dotacion:'Dotación' };
-  const item = n => `<span class="nov-item"><span class="nov-dot nov-dot-${esc(n.modulo)}"></span><b>${esc(n.trabajador)}</b> recibió ${modLabel[n.modulo]||esc(n.modulo)}${n.lugar?` — ${esc(n.lugar)}`:''} <span class="nov-t">· ${tiempoRelativoCorto(n.creado_en)}</span></span>`;
-  const html = NOVEDADES.map(item).join('');
-  host.innerHTML = `<div class="nov-tag">${I.cal} Hoy</div><div class="nov-viewport"><div class="nov-track">${html}${html}</div></div>`;
 }
 function tieneModulo(m){ return MIPERFIL.esAdmin || (MIPERFIL.activo && MIPERFIL.modulos.includes(m)); }
 function tieneContratoDotacion(id){ return MIPERFIL.esAdmin || MIPERFIL.contratos.includes(id); }
@@ -955,7 +879,7 @@ async function router(){
   // por expiración del token en vez de darle a "Salir", o volvió a iniciar sesión con otra cuenta
   // sin recargar la página), MIPERFIL podía quedar con los datos del usuario ANTERIOR. Comparar
   // contra el uid de la sesión real fuerza una recarga cada vez que no coincidan.
-  if(!MIPERFIL.cargado || MIPERFIL.uid !== session.user.id){ await cargarMiPerfil(); iniciarNovedades(); }
+  if(!MIPERFIL.cargado || MIPERFIL.uid !== session.user.id) await cargarMiPerfil();
   if(MIPERFIL.cargado && !MIPERFIL.activo){ renderSinAcceso(""); return; }
 
   if(location.hash.startsWith("#/configuracion")){
@@ -1089,23 +1013,17 @@ function topbar(active){
       <div class="topbar-spacer"></div>
       ${STATE.userEmail?`<span class="user-chip" title="${esc(STATE.userEmail)}">${I.user} ${esc(STATE.userEmail)}</span>`:""}
       <button class="logout-btn" data-role="logout">${I.lock} Salir</button>
-    </div></div>
-    <div id="novedadesBar" class="nov-bar" style="display:none"></div>`;
+    </div></div>`;
 }
 function wireLogout(){
   document.querySelectorAll('[data-role="logout"]').forEach(b=>{
     b.onclick = async ()=>{
       await sb.auth.signOut(); STATE.listas=[]; STATE.userEmail="";
-      MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], veNovedades:false, nombre:"", uid:null };
+      MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], nombre:"", uid:null };
       PERFILES_NOMBRE = {};
-      detenerNovedades();
       location.hash=""; router();
     };
   });
-  // topbar() se regenera entera en cada navegación (nuevo #novedadesBar cada vez) —
-  // este es el mismo gancho que ya se llama después de CADA render, así que sirve
-  // para repintar la banda con lo que ya se tenga en memoria sin pedir datos de nuevo.
-  renderNovedadesBar();
 }
 
 /* ============================================================
@@ -7943,7 +7861,7 @@ async function abrirPermisosUsuario(perfilId){
   let perfil, modulos, contratosMarcados, todosLosContratos, entidadesMarcadas, todasLasEntidades;
   try{
     const [{ data:p }, { data:pm }, { data:pc }, { data:cs }, { data:pe }, { data:es }] = await Promise.all([
-      sb.from("acc_perfiles").select("id,email,nombre,es_admin,activo,rol,ve_novedades").eq("id",perfilId).maybeSingle(),
+      sb.from("acc_perfiles").select("id,email,nombre,es_admin,activo,rol").eq("id",perfilId).maybeSingle(),
       sb.from("acc_perfil_modulos").select("modulo").eq("perfil_id",perfilId),
       sb.from("acc_perfil_contratos").select("contrato_id").eq("perfil_id",perfilId),
       sb.from("dot_contratos").select("id,nombre").order("nombre",{ascending:true}),
@@ -7967,8 +7885,6 @@ async function abrirPermisosUsuario(perfilId){
         <div class="sec-bar" style="margin-top:14px"><h2 style="font-size:14px">Rol</h2></div>
         <label class="chk"><input type="radio" name="pfRol" value="editor" ${perfil.rol!=='visualizador'?'checked':''}> <b>Editor</b> — en Asistencia/Documentos: crea y edita solo lo suyo, nunca lo cerrado/finalizado. En EPP/Dotación: ve y registra todo, edita/elimina cualquier entrega de las últimas 24h, pero no toca el directorio de trabajadores (agregar/editar/eliminar es solo admin)</label>
         <label class="chk"><input type="radio" name="pfRol" value="visualizador" ${perfil.rol==='visualizador'?'checked':''}> <b>Visualizador</b> — solo puede ver lo que sus módulos/contratos le permitan; no crea, edita ni elimina nada</label>
-        <div class="sec-bar" style="margin-top:14px"><h2 style="font-size:14px">Banda de novedades</h2></div>
-        <label class="chk"><input type="checkbox" id="pfNovedades" ${perfil.ve_novedades?'checked':''}> Puede ver la banda de entregas recientes (junto al título) — solo le mostrará novedades de los módulos que le marques abajo</label>
         <div class="sec-bar" style="margin-top:14px"><h2 style="font-size:14px">Módulos</h2></div>
         <label class="chk"><input type="checkbox" data-pf-mod="asistencia" ${modulos.includes('asistencia')?'checked':''}> Asistencia</label>
         <label class="chk"><input type="checkbox" data-pf-mod="documentos" ${modulos.includes('documentos')?'checked':''}> Documentos y Firmas</label>
@@ -8064,13 +7980,11 @@ async function guardarPermisosUsuario(perfilId){
   const entidadesMarcadas = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-entidad]:checked')).map(el=>el.dataset.pfEntidad);
   const rolSeleccionado = document.querySelector('input[name="pfRol"]:checked');
   const rol = rolSeleccionado ? rolSeleccionado.value : 'editor';
-  const chkNov = document.getElementById('pfNovedades');
-  const veNovedades = chkNov ? chkNov.checked : false;
 
   const btn = document.getElementById('btnGuardarPermisos'); btn.disabled=true; btn.innerHTML="Guardando…";
   bloquear("Guardando permisos…");
   try{
-    const { error:e1 } = await sb.from("acc_perfiles").update({ es_admin: esAdmin, rol, ve_novedades: veNovedades }).eq("id", perfilId);
+    const { error:e1 } = await sb.from("acc_perfiles").update({ es_admin: esAdmin, rol }).eq("id", perfilId);
     if(e1){ toast("No se pudo guardar: "+e1.message,"err"); return; }
 
     // Reemplazo simple: borra lo que había y vuelve a insertar lo marcado (evita comparar/diferenciar)
@@ -8091,7 +8005,7 @@ async function guardarPermisosUsuario(perfilId){
     }
     toast("Permisos actualizados","ok");
     closeModal();
-    if(perfilId === MIPERFIL.uid){ await cargarMiPerfil(); iniciarNovedades(); }   // si te editaste a ti mismo, refresca tus propios permisos
+    if(perfilId === MIPERFIL.uid){ await cargarMiPerfil(); }   // si te editaste a ti mismo, refresca tus propios permisos
     renderConfiguracion();
   } finally { desbloquear(); }
 }
@@ -8117,10 +8031,9 @@ sb.auth.onAuthStateChange((event)=>{
     // Igual que en "Salir" (wireLogout): si la sesión se cerró sola (ej. token expirado) en vez
     // de por el botón, hay que limpiar MIPERFIL/STATE aquí también — si no, quedan con los datos
     // del usuario anterior y el siguiente que inicie sesión en esta misma pestaña los hereda.
-    MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], veNovedades:false, nombre:"", uid:null };
+    MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], nombre:"", uid:null };
     PERFILES_NOMBRE = {};
     STATE.listas = []; STATE.userEmail = "";
-    detenerNovedades();
     renderLogin();
   }
 });
