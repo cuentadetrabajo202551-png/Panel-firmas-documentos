@@ -202,18 +202,19 @@ input,textarea,select{font-family:inherit;font-size:14px;color:var(--ink)}
    (atributo disabled nativo), para que nada se mueva de sitio al cambiar el filtro. */
 .panel-section{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px}
 .panel-section .section-label{font-size:11px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.02em;margin-bottom:8px}
-/* Sin ac-ic (ícono): se quitó para que las tarjetas sean más angostas y quepan
-   hasta 5 por fila — minmax define el ancho mínimo cómodo para el título más
-   largo ("Catálogo de ítems"); auto-fit reparte el resto entre las que haya. */
-.action-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:6px}
+.action-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+@media(max-width:1100px){.action-grid{grid-template-columns:repeat(2,1fr)}}
 .action-card{
-  display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);
-  border-radius:9px;padding:8px 10px;cursor:pointer;transition:.15s;text-align:left;width:100%;
+  display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);
+  border-radius:9px;padding:7px 10px;cursor:pointer;transition:.15s;text-align:left;width:100%;
 }
 .action-card:hover{border-color:var(--brand-soft2);box-shadow:var(--shadow-sm)}
-.action-card .ac-title{flex:1;min-width:0;font-size:12px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.action-card .ac-ic{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;background:var(--brand-soft);color:var(--brand-deep);flex:none}
+.action-card .ac-ic svg{width:13px;height:13px}
+.action-card .ac-title{flex:1;min-width:0;font-size:12.5px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .action-card .ac-chevron{color:var(--ink-3);flex:none;font-size:15px;line-height:1}
 .action-card.primary{background:var(--brand);border-color:var(--brand)}
+.action-card.primary .ac-ic{background:rgba(255,255,255,.18);color:#fff}
 .action-card.primary .ac-title{color:#fff}
 .action-card.primary .ac-chevron{color:#fff}
 .action-card:disabled,.icon-btn:disabled{opacity:.4;cursor:not-allowed}
@@ -4000,7 +4001,7 @@ async function renderDotacionAdmin(silent){
         <p>Pídele al administrador que te dé acceso a un contrato desde Configuración.</p>
       </div></div>`;
     wireLogout();
-    const bpc=document.getElementById("btnPrimerContrato"); if(bpc) bpc.onclick = ()=> abrirFormContrato(null, ()=> renderDotacionAdmin());
+    const bpc=document.getElementById("btnPrimerContrato"); if(bpc) bpc.onclick = ()=> abrirFormContrato(null, ()=> renderDotacionAdmin(), true);
     const bcmv=document.getElementById("btnCargaMasivaVacioDot"); if(bcmv) bcmv.onclick = abrirCargaMasivaDot;
     const bpv=document.getElementById("btnPlantillaVacioDot"); if(bpv) bpv.onclick = descargarPlantillaTrabajadoresDot;
     return;
@@ -4049,19 +4050,19 @@ async function renderDotacionAdmin(silent){
       <div class="panel-section dot-pc-only">
         <div class="section-label">Acciones principales</div>
         <div class="action-grid">
-          <button class="action-card" id="btnNuevoTrab"><span class="ac-title">Nuevo trabajador</span><span class="ac-chevron">›</span></button>
-          <button class="action-card" id="btnCargaTrab"><span class="ac-title">Carga masiva</span><span class="ac-chevron">›</span></button>
-          <button class="action-card" id="btnPlantillaTrab"><span class="ac-title">Plantilla Excel</span><span class="ac-chevron">›</span></button>
+          <button class="action-card" id="btnNuevoTrab"><div class="ac-ic">${I.plus}</div><span class="ac-title">Nuevo trabajador</span><span class="ac-chevron">›</span></button>
+          <button class="action-card" id="btnCargaTrab"><div class="ac-ic">${I.plus}</div><span class="ac-title">Carga masiva</span><span class="ac-chevron">›</span></button>
+          <button class="action-card" id="btnPlantillaTrab"><div class="ac-ic">${I.doc}</div><span class="ac-title">Plantilla Excel</span><span class="ac-chevron">›</span></button>
         </div>
       </div>`:''}
 
       <div class="panel-section dot-pc-only">
         <div class="section-label">Herramientas</div>
         <div class="action-grid">
-          <button class="action-card" id="btnCatalogo" ${enTodos?'disabled title="Elige un contrato específico"':''}><span class="ac-title">Catálogo de ítems</span><span class="ac-chevron">›</span></button>
-          ${puedeEscribir()?`<button class="action-card" id="btnPredeterminados" ${enTodos?'disabled title="Elige un contrato específico"':''}><span class="ac-title">Firmas</span><span class="ac-chevron">›</span></button>`:''}
-          ${MIPERFIL.esAdmin?`<button class="action-card" id="btnCorregirCargos"><span class="ac-title">Corregir cargos</span><span class="ac-chevron">›</span></button>`:''}
-          ${totalTrab?`<button class="action-card" id="btnExcelEpp"><span class="ac-title">Descargar Excel</span><span class="ac-chevron">›</span></button>`:''}
+          <button class="action-card" id="btnCatalogo" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.box}</div><span class="ac-title">Catálogo de ítems</span><span class="ac-chevron">›</span></button>
+          ${puedeEscribir()?`<button class="action-card" id="btnPredeterminados" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.pen}</div><span class="ac-title">Firmas</span><span class="ac-chevron">›</span></button>`:''}
+          ${MIPERFIL.esAdmin?`<button class="action-card" id="btnCorregirCargos"><div class="ac-ic">${I.pen}</div><span class="ac-title">Corregir cargos</span><span class="ac-chevron">›</span></button>`:''}
+          ${totalTrab?`<button class="action-card" id="btnExcelEpp"><div class="ac-ic">${I.doc}</div><span class="ac-title">Descargar Excel</span><span class="ac-chevron">›</span></button>`:''}
         </div>
       </div>
 
@@ -4339,9 +4340,13 @@ function trabajadorCard(t){
 }
 
 /* ---------- Contratos (clientes) ---------- */
-function abrirFormContrato(id, alGuardar){
+/* comoRaiz=true: se abre SIN modal "padre" al que volver (ej. desde la pantalla
+   vacía "Crea tu primer contrato") — la X/Cancelar debe cerrar de una, no intentar
+   volver a ningún lado. Sin esto, openSubModal deja pendiente un "volver" que la
+   primera X consume sin cerrar nada (hay que darle una segunda vez). */
+function abrirFormContrato(id, alGuardar, comoRaiz){
   const c = id ? DOTACION.contratos.find(x=>x.id===id) : null;
-  openSubModal(`<div class="modal" style="max-width:440px">
+  const html = `<div class="modal" style="max-width:440px">
     <div class="modal-head"><div><h2>${c?'Renombrar contrato':'Nuevo contrato'}</h2><p>Ej. "Hospital de Medellín", "Colegio San José"…</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
@@ -4350,7 +4355,8 @@ function abrirFormContrato(id, alGuardar){
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" id="btnGuardarContrato">${I.check} Guardar</button>
-    </div></div>`, ()=>{ if(alGuardar) alGuardar(); else abrirGestionContratos(); });
+    </div></div>`;
+  if(comoRaiz) openModal(html); else openSubModal(html, ()=>{ if(alGuardar) alGuardar(); else abrirGestionContratos(); });
   document.getElementById('btnGuardarContrato').onclick = async ()=>{
     const nombre = document.getElementById('ctNombre').value.trim();
     if(!nombre){ toast("Escribe el nombre del contrato","err"); return; }
@@ -4362,7 +4368,8 @@ function abrirFormContrato(id, alGuardar){
     await loadDotacionState();
     if(!c && data) { contratoActualId = data.id; localStorage.setItem('dot_contrato_actual', data.id); }
     toast(c?"Contrato actualizado":"Contrato creado","ok");
-    closeModal(); // vuelve a "alGuardar" (gestión de contratos, o directo al panel si era el primero)
+    closeModal(); // no-comoRaiz: vuelve a "alGuardar" (gestión de contratos) solo por el _modalVolver
+    if(comoRaiz && alGuardar) alGuardar(); // comoRaiz no deja _modalVolver puesto, así que aquí se llama directo
   };
 }
 
@@ -5915,7 +5922,7 @@ async function renderDtlAdmin(silent){
         <p>Pídele al administrador que te dé acceso a un contrato desde Configuración.</p>
       </div></div>`;
     wireLogout();
-    const bpe=document.getElementById("btnPrimeraEntidad"); if(bpe) bpe.onclick = ()=> abrirFormEntidadDtl(null, ()=> renderDtlAdmin());
+    const bpe=document.getElementById("btnPrimeraEntidad"); if(bpe) bpe.onclick = ()=> abrirFormEntidadDtl(null, ()=> renderDtlAdmin(), true);
     const bcmv=document.getElementById("btnCargaMasivaVacioDtl"); if(bcmv) bcmv.onclick = ()=> document.getElementById("fileTrabajadoresDtlVacio").click();
     const bpv=document.getElementById("btnPlantillaVacioDtl"); if(bpv) bpv.onclick = descargarPlantillaTrabajadoresDtl;
     const fiv=document.getElementById("fileTrabajadoresDtlVacio"); if(fiv) fiv.onchange = (e)=>{ const f=e.target.files[0]; if(f) cargarTrabajadoresExcelDtl(f); e.target.value=""; };
@@ -5973,18 +5980,18 @@ async function renderDtlAdmin(silent){
       <div class="panel-section dot-pc-only">
         <div class="section-label">Acciones principales</div>
         <div class="action-grid">
-          <button class="action-card" id="btnNuevoTrabDtl"><span class="ac-title">Nuevo trabajador</span><span class="ac-chevron">›</span></button>
-          <button class="action-card" id="btnCargaTrabDtl"><span class="ac-title">Carga masiva</span><span class="ac-chevron">›</span></button>
-          <button class="action-card" id="btnPlantillaTrabDtl"><span class="ac-title">Plantilla Excel</span><span class="ac-chevron">›</span></button>
+          <button class="action-card" id="btnNuevoTrabDtl"><div class="ac-ic">${I.plus}</div><span class="ac-title">Nuevo trabajador</span><span class="ac-chevron">›</span></button>
+          <button class="action-card" id="btnCargaTrabDtl"><div class="ac-ic">${I.plus}</div><span class="ac-title">Carga masiva</span><span class="ac-chevron">›</span></button>
+          <button class="action-card" id="btnPlantillaTrabDtl"><div class="ac-ic">${I.doc}</div><span class="ac-title">Plantilla Excel</span><span class="ac-chevron">›</span></button>
         </div>
       </div>`:''}
 
       <div class="panel-section dot-pc-only">
         <div class="section-label">Herramientas</div>
         <div class="action-grid">
-          ${puedeEscribir()?`<button class="action-card" id="btnPredeterminadosDtl" ${dtlFiltroEntidad==='todas'?'disabled title="Elige un contrato específico"':''}><span class="ac-title">Firmas</span><span class="ac-chevron">›</span></button>`:''}
-          ${MIPERFIL.esAdmin?`<button class="action-card" id="btnCorregirCargosDtl"><span class="ac-title">Corregir cargos</span><span class="ac-chevron">›</span></button>`:''}
-          ${totalTrab?`<button class="action-card" id="btnExcelDtl"><span class="ac-title">Descargar Excel</span><span class="ac-chevron">›</span></button>`:''}
+          ${puedeEscribir()?`<button class="action-card" id="btnPredeterminadosDtl" ${dtlFiltroEntidad==='todas'?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.pen}</div><span class="ac-title">Firmas</span><span class="ac-chevron">›</span></button>`:''}
+          ${MIPERFIL.esAdmin?`<button class="action-card" id="btnCorregirCargosDtl"><div class="ac-ic">${I.pen}</div><span class="ac-title">Corregir cargos</span><span class="ac-chevron">›</span></button>`:''}
+          ${totalTrab?`<button class="action-card" id="btnExcelDtl"><div class="ac-ic">${I.doc}</div><span class="ac-title">Descargar Excel</span><span class="ac-chevron">›</span></button>`:''}
         </div>
       </div>
 
@@ -6346,9 +6353,11 @@ function renderEntidadesDtlLista(){
     };
   });
 }
-function abrirFormEntidadDtl(id, alGuardar){
+/* comoRaiz=true: igual que en abrirFormContrato — se abre sin modal "padre" al que
+   volver (ej. desde "Crea tu primer contrato"), así la X/Cancelar cierra de una. */
+function abrirFormEntidadDtl(id, alGuardar, comoRaiz){
   const x = id ? DTL.entidades.find(e=>e.id===id) : null;
-  openSubModal(`<div class="modal" style="max-width:440px">
+  const html = `<div class="modal" style="max-width:440px">
     <div class="modal-head"><div><h2>${x?'Renombrar contrato':'Nuevo contrato'}</h2><p>Ej. "Sede Bogotá", "Hospital San Rafael"…</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
@@ -6357,7 +6366,8 @@ function abrirFormEntidadDtl(id, alGuardar){
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" id="btnGuardarEntidad">${I.check} Guardar</button>
-    </div></div>`, ()=> alGuardar ? alGuardar() : abrirGestionEntidadesDtl());
+    </div></div>`;
+  if(comoRaiz) openModal(html); else openSubModal(html, ()=> alGuardar ? alGuardar() : abrirGestionEntidadesDtl());
   document.getElementById('btnGuardarEntidad').onclick = async ()=>{
     const nombre = document.getElementById('entNombre').value.trim();
     if(!nombre){ toast("Ponle un nombre","err"); return; }
@@ -6369,7 +6379,7 @@ function abrirFormEntidadDtl(id, alGuardar){
     await loadDtlState();
     toast(x?"Contrato actualizado":"Contrato creado","ok");
     closeModal();
-    if(alGuardar) alGuardar();
+    if(comoRaiz && alGuardar) alGuardar();
   };
 }
 
