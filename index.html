@@ -1536,7 +1536,8 @@ let publicCount = 0;
 
 async function renderPublic(id){
   document.body.style.overflow="";
-  const { data:row, error:loadErr } = await sb.from("asis_listas").select("*").eq("id", id).maybeSingle();
+  const { data:filasPub, error:loadErr } = await sb.rpc("asis_lista_publica", { p_id: id });
+  const row = filasPub && filasPub[0];
   const l = row ? rowToList(row) : null;
   publicList = l;
 
@@ -1797,7 +1798,8 @@ function mostrarYaRegistrado(documento){
 async function renderFirmaResponsable(id){
   document.body.style.overflow="";
   const host = document.getElementById("app");
-  const { data:row } = await sb.from("asis_listas").select("id,actividad,fecha,lugar,responsable_nombre,responsable_cargo,responsable_firma").eq("id", id).maybeSingle();
+  const { data:filasResp } = await sb.rpc("asis_lista_responsable_publica", { p_id: id });
+  const row = filasResp && filasResp[0];
   if(!row){
     host.innerHTML = `<div class="pub-wrap"><div class="pub-card"><div class="locked-screen">
       <div class="ic">${I.lockBig}</div><h2>Enlace no válido</h2>
@@ -4867,7 +4869,7 @@ function eliminarItemCatalogo(id){
 }
 
 /* ---------- Predeterminados: plantillas de responsable (nombre + cargo + firma guardada) ---------- */
-const PREDET_MAX = 3;
+const PREDET_MAX = 5;
 
 async function abrirPredeterminadosModal(){
   bloquear("Cargando predeterminados…");
@@ -6629,7 +6631,7 @@ async function cargarTrabajadoresExcelDtl(file){
 }
 
 /* ---------- Predeterminados (firma del responsable, por entidad) ---------- */
-const PREDET_DTL_MAX = 3;
+const PREDET_DTL_MAX = 5;
 let predetDtlEntidadId = null;
 async function abrirPredeterminadosDtlModal(){
   const entidadesAcc = DTL.entidades.filter(x=>tieneEntidadDtl(x.id));
