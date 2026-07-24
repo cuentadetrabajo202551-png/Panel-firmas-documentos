@@ -637,7 +637,7 @@ if(window.emailjs){ try{ emailjs.init({ publicKey: EMAILJS_KEY }); }catch(e){ tr
 let STATE = { listas: [], userEmail: "" };
 
 /* ---------- Permisos del usuario logueado (roles/módulos/contratos) ---------- */
-let MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], editarCatalogo:false, nombre:"", uid:null };
+let MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], nombre:"", uid:null };
 /* Mapa uid -> nombre/correo, para mostrar "Creado por: X" sin exponer toda acc_perfiles */
 let PERFILES_NOMBRE = {};
 
@@ -652,10 +652,10 @@ async function cargarAppConfig(){
 async function cargarMiPerfil(){
   await cargarAppConfig();
   const { data:{ session } } = await sb.auth.getSession();
-  if(!session){ MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], editarCatalogo:false, nombre:"", uid:null }; return; }
+  if(!session){ MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], nombre:"", uid:null }; return; }
   const uid = session.user.id;
   const [{ data:p }, { data:pm }, { data:pc }, { data:pe }, { data:pn }] = await Promise.all([
-    sb.from("acc_perfiles").select("es_admin,activo,dotacion_editar_catalogo,nombre,rol").eq("id",uid).maybeSingle(),
+    sb.from("acc_perfiles").select("es_admin,activo,nombre,rol").eq("id",uid).maybeSingle(),
     sb.from("acc_perfil_modulos").select("modulo").eq("perfil_id",uid),
     sb.from("acc_perfil_contratos").select("contrato_id").eq("perfil_id",uid),
     sb.from("acc_perfil_entidades").select("entidad_id").eq("perfil_id",uid),
@@ -669,7 +669,6 @@ async function cargarMiPerfil(){
     modulos: (pm||[]).map(x=>x.modulo),
     contratos: (pc||[]).map(x=>x.contrato_id),
     entidadesDtl: (pe||[]).map(x=>x.entidad_id),
-    editarCatalogo: !!(p && p.dotacion_editar_catalogo),
     nombre: (p && p.nombre) || session.user.email || "",
     uid
   };
@@ -1017,7 +1016,7 @@ function wireLogout(){
   document.querySelectorAll('[data-role="logout"]').forEach(b=>{
     b.onclick = async ()=>{
       await sb.auth.signOut(); STATE.listas=[]; STATE.userEmail="";
-      MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], editarCatalogo:false, nombre:"", uid:null };
+      MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], nombre:"", uid:null };
       PERFILES_NOMBRE = {};
       location.hash=""; router();
     };
@@ -3933,7 +3932,7 @@ let seleccionadosDot = new Set();
 async function loadDotacionState(){
   const [co, t, e, ei] = await Promise.all([
     sb.from("dot_contratos").select("id,nombre,activo,creado_en").order("creado_en",{ascending:true}),
-    sb.from("dot_trabajadores").select("id,nombre,identificacion,cargo,area,contrato_id,activo,creado_en").order("nombre",{ascending:true}),
+    sb.from("dot_trabajadores").select("id,nombre,identificacion,cargo,area,contrato_id,activo,inactivo_por_archivo,creado_en").order("nombre",{ascending:true}),
     sb.from("dot_entregas").select("id,trabajador_id,fecha").order("fecha",{ascending:false}),
     sb.from("dot_entrega_items").select("entrega_id,nombre_item,cantidad")
   ]);
@@ -4059,7 +4058,7 @@ async function renderDotacionAdmin(silent){
       <div class="panel-section dot-pc-only">
         <div class="section-label">Herramientas</div>
         <div class="action-grid">
-          <button class="action-card" id="btnCatalogo" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.box}</div><span class="ac-title">Catálogo de ítems</span><span class="ac-chevron">›</span></button>
+          ${MIPERFIL.esAdmin?`<button class="action-card" id="btnCatalogo" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.box}</div><span class="ac-title">Catálogo de ítems</span><span class="ac-chevron">›</span></button>`:''}
           ${puedeEscribir()?`<button class="action-card" id="btnPredeterminados" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.pen}</div><span class="ac-title">Firmas</span><span class="ac-chevron">›</span></button>`:''}
           ${MIPERFIL.esAdmin?`<button class="action-card" id="btnCorregirCargos"><div class="ac-ic">${I.pen}</div><span class="ac-title">Corregir cargos</span><span class="ac-chevron">›</span></button>`:''}
           ${totalTrab?`<button class="action-card" id="btnExcelEpp"><div class="ac-ic">${I.doc}</div><span class="ac-title">Descargar Excel</span><span class="ac-chevron">›</span></button>`:''}
@@ -4101,7 +4100,7 @@ function renderDotacionBody(){
         ${I.search}
         <input type="text" id="dotSearch" placeholder="Buscar por nombre, cédula, cargo o área…" value="${esc(dotQuery)}">
       </div>
-      <button class="btn btn-ghost btn-sm" id="btnEntregasHoyDot" style="white-space:nowrap">${I.cal} Entregas de hoy</button>
+      ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-sm" id="btnEntregasHoyDot" style="white-space:nowrap">${I.cal} Entregas de hoy</button>`:''}
       ${MIPERFIL.esAdmin?`<label class="chk" style="white-space:nowrap"><input type="checkbox" id="chkTodosDot"> Todos</label>`:''}
       <label class="chk" style="white-space:nowrap"><input type="checkbox" id="chkMostrarInactivosDot" ${dotMostrarInactivos?'checked':''}> Mostrar inactivos</label>
     </div>
@@ -4113,7 +4112,7 @@ function renderDotacionBody(){
       <button class="btn btn-danger btn-sm" id="btnEliminarSeleccionDot">${I.trash} Eliminar seleccionados</button>
     </div>
     <div id="dotGrid"></div>`;
-  document.getElementById("btnEntregasHoyDot").onclick = abrirEntregasHoyDot;
+  const behd=document.getElementById("btnEntregasHoyDot"); if(behd) behd.onclick = abrirEntregasHoyDot;
   document.getElementById("dotSearch").oninput = (e)=>{ dotQuery = e.target.value; renderDotTrabajadoresGrid(); };
   document.getElementById("chkMostrarInactivosDot").onchange = (e)=>{ dotMostrarInactivos = e.target.checked; renderDotTrabajadoresGrid(); };
   const chkTodosDot = document.getElementById("chkTodosDot");
@@ -4199,7 +4198,7 @@ async function reactivarSeleccionDot(){
   const ids = Array.from(seleccionadosDot);
   bloquear("Reactivando…");
   try{
-    const { error } = await porLotes(ids, lote=> sb.from("dot_trabajadores").update({ activo:true }).in("id", lote));
+    const { error } = await porLotes(ids, lote=> sb.from("dot_trabajadores").update({ activo:true, inactivo_por_archivo:false }).in("id", lote));
     if(error){ toast("No se pudo reactivar: "+error.message,"err"); return; }
     await loadDotacionState();
     seleccionadosDot.clear();
@@ -4221,7 +4220,7 @@ async function marcarInactivosSeleccionDot(){
     const btn=document.getElementById("confMarcarInactivoDot"); btn.disabled=true; btn.innerHTML="Guardando…";
     bloquear("Marcando como inactivos…");
     try{
-      const { error } = await porLotes(ids, lote=> sb.from("dot_trabajadores").update({ activo:false }).in("id", lote));
+      const { error } = await porLotes(ids, lote=> sb.from("dot_trabajadores").update({ activo:false, inactivo_por_archivo:false }).in("id", lote));
       if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
       await loadDotacionState();
       seleccionadosDot.clear();
@@ -4467,21 +4466,34 @@ function renderContratosLista(){
       const archivando = c.activo;
       const { error } = await sb.from("dot_contratos").update({activo: !c.activo}).eq("id", c.id);
       if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
-      let nInactivados = 0;
+      let nTocados = 0;
       if(archivando){
         // Al archivar un contrato, sus trabajadores dejan de tener sentido en la vista
         // normal — se marcan inactivos igual que si el admin los hubiera seleccionado
-        // uno por uno (se conserva todo su historial de entregas y firmas).
+        // uno por uno (se conserva todo su historial de entregas y firmas). Se marcan
+        // con inactivo_por_archivo:true para poder reactivar EXACTAMENTE a estos (y no a
+        // alguien que ya estaba inactivo por otra razón desde antes de archivar).
         const idsTrab = DOTACION.trabajadores.filter(t=>t.contrato_id===c.id && t.activo!==false).map(t=>t.id);
-        nInactivados = idsTrab.length;
-        if(nInactivados){
-          const { error: e2 } = await porLotes(idsTrab, lote=> sb.from("dot_trabajadores").update({activo:false}).in("id", lote));
+        nTocados = idsTrab.length;
+        if(nTocados){
+          const { error: e2 } = await porLotes(idsTrab, lote=> sb.from("dot_trabajadores").update({activo:false, inactivo_por_archivo:true}).in("id", lote));
           if(e2){ toast("Contrato archivado, pero no se pudo marcar a los trabajadores como inactivos: "+e2.message,"err"); }
+        }
+      } else {
+        // Al reactivar, solo se reactivan los que quedaron inactivos POR archivar este
+        // contrato — no a quien ya estaba inactivo antes por otro motivo.
+        const idsTrab = DOTACION.trabajadores.filter(t=>t.contrato_id===c.id && t.inactivo_por_archivo).map(t=>t.id);
+        nTocados = idsTrab.length;
+        if(nTocados){
+          const { error: e2 } = await porLotes(idsTrab, lote=> sb.from("dot_trabajadores").update({activo:true, inactivo_por_archivo:false}).in("id", lote));
+          if(e2){ toast("Contrato reactivado, pero no se pudo reactivar a sus trabajadores: "+e2.message,"err"); }
         }
       }
       await loadDotacionState();
       renderContratosLista();
-      toast(archivando?`Contrato archivado${nInactivados?` — ${nInactivados} trabajador(es) marcados como inactivos`:''}`:"Contrato reactivado","ok");
+      toast(archivando
+        ?`Contrato archivado${nTocados?` — ${nTocados} trabajador(es) marcados como inactivos`:''}`
+        :`Contrato reactivado${nTocados?` — ${nTocados} trabajador(es) reactivados`:''}`,"ok");
     };
   });
 }
@@ -4671,7 +4683,7 @@ async function cargarTrabajadoresExcelDot(file){
 
 /* ---------- Catálogo de ítems (guantes, botas, casco…) ---------- */
 function abrirCatalogoModal(){
-  const puedeEditar = MIPERFIL.esAdmin || (MIPERFIL.editarCatalogo && MIPERFIL.rol==='editor');
+  const puedeEditar = MIPERFIL.esAdmin;
   const c = contratoActual();
   openModal(`<div class="modal" style="max-width:560px">
     <div class="modal-head"><div><h2>Catálogo de ítems</h2><p>Lo que se puede entregar como EPP en ${esc(c?.nombre||'este contrato')}. Cada contrato tiene su propio catálogo.</p></div>
@@ -4770,7 +4782,7 @@ async function cargarCatalogoExcelDot(file){
 function renderCatalogoLista(){
   const host = document.getElementById('catLista'); if(!host) return;
   const items = DOTACION.catalogo;
-  const puedeEditar = MIPERFIL.esAdmin || (MIPERFIL.editarCatalogo && MIPERFIL.rol==='editor');
+  const puedeEditar = MIPERFIL.esAdmin;
   host.innerHTML = items.length ? items.map(c=>`
     <div class="cat-row">
       <span style="flex:1;font-weight:600;font-size:13.5px;${c.activo?'':'opacity:.45;text-decoration:line-through'}">${esc(c.nombre)}</span>
@@ -5866,7 +5878,7 @@ const DTL_DECLARACION = "Declaro haber recibido a satisfacción los elementos de
 async function loadDtlState(){
   const [en, t, e] = await Promise.all([
     sb.from("dtl_entidades").select("id,nombre,activo,creado_en").order("creado_en",{ascending:true}),
-    sb.from("dtl_trabajadores").select("id,nombre,identificacion,cargo,area,entidad_id,fecha_ingreso,correo,activo,creado_en").order("nombre",{ascending:true}),
+    sb.from("dtl_trabajadores").select("id,nombre,identificacion,cargo,area,entidad_id,fecha_ingreso,correo,activo,inactivo_por_archivo,creado_en").order("nombre",{ascending:true}),
     sb.from("dtl_entregas").select("id,trabajador_id,fecha").order("fecha",{ascending:false})
   ]);
   const err = en.error || t.error || e.error;
@@ -6000,7 +6012,7 @@ async function renderDtlAdmin(silent){
           ${I.search}
           <input type="text" id="dtlSearch" placeholder="Buscar por nombre, cédula, cargo o área…" value="${esc(dtlQuery)}">
         </div>
-        <button class="btn btn-ghost btn-sm" id="btnEntregasHoyDtl" style="white-space:nowrap">${I.cal} Entregas de hoy</button>
+        ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-sm" id="btnEntregasHoyDtl" style="white-space:nowrap">${I.cal} Entregas de hoy</button>`:''}
         ${MIPERFIL.esAdmin?`<label class="chk" style="white-space:nowrap"><input type="checkbox" id="chkTodosDtl"> Todos</label>`:''}
         <label class="chk" style="white-space:nowrap"><input type="checkbox" id="chkMostrarInactivosDtl" ${dtlMostrarInactivos?'checked':''}> Mostrar inactivos</label>
       </div>
@@ -6032,7 +6044,7 @@ async function renderDtlAdmin(silent){
   const bcc=document.getElementById("btnCorregirCargosDtl"); if(bcc) bcc.onclick = abrirCorregirCargosDtl;
   const bce=document.getElementById("btnCopiarEnlacePublico"); if(bce) bce.onclick = ()=> copyText(location.href.split("#")[0]+"#/dotacionlegal/entrega", "Enlace de entrega remota copiado");
   const bqr=document.getElementById("btnQrEnlacePublico"); if(bqr) bqr.onclick = ()=> mostrarQR(location.href.split("#")[0]+"#/dotacionlegal/entrega", "Entrega remota de dotación");
-  document.getElementById("btnEntregasHoyDtl").onclick = abrirEntregasHoyDtl;
+  const behdtl=document.getElementById("btnEntregasHoyDtl"); if(behdtl) behdtl.onclick = abrirEntregasHoyDtl;
   document.getElementById("dtlSearch").oninput = (e)=>{ dtlQuery = e.target.value; renderDtlGrid(); };
   document.getElementById("chkMostrarInactivosDtl").onchange = (e)=>{ dtlMostrarInactivos = e.target.checked; renderDtlGrid(); };
   const chkTodosDtl = document.getElementById("chkTodosDtl");
@@ -6119,7 +6131,7 @@ async function reactivarSeleccionDtl(){
   const ids = Array.from(seleccionadosDtl);
   bloquear("Reactivando…");
   try{
-    const { error } = await porLotes(ids, lote=> sb.from("dtl_trabajadores").update({ activo:true }).in("id", lote));
+    const { error } = await porLotes(ids, lote=> sb.from("dtl_trabajadores").update({ activo:true, inactivo_por_archivo:false }).in("id", lote));
     if(error){ toast("No se pudo reactivar: "+error.message,"err"); return; }
     await loadDtlState();
     seleccionadosDtl.clear();
@@ -6141,7 +6153,7 @@ async function marcarInactivosSeleccionDtl(){
     const btn=document.getElementById("confMarcarInactivoDtl"); btn.disabled=true; btn.innerHTML="Guardando…";
     bloquear("Marcando como inactivos…");
     try{
-      const { error } = await porLotes(ids, lote=> sb.from("dtl_trabajadores").update({ activo:false }).in("id", lote));
+      const { error } = await porLotes(ids, lote=> sb.from("dtl_trabajadores").update({ activo:false, inactivo_por_archivo:false }).in("id", lote));
       if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
       await loadDtlState();
       seleccionadosDtl.clear();
@@ -6336,20 +6348,33 @@ function renderEntidadesDtlLista(){
       const archivando = x.activo;
       const { error } = await sb.from("dtl_entidades").update({ activo: !x.activo }).eq("id", x.id);
       if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
-      let nInactivados = 0;
+      let nTocados = 0;
       if(archivando){
         // Al archivar un contrato, sus trabajadores dejan de tener sentido en la vista
         // normal — se marcan inactivos igual que si el admin los hubiera seleccionado
-        // uno por uno (se conserva todo su historial de entregas y firmas).
+        // uno por uno (se conserva todo su historial de entregas y firmas). Se marcan
+        // con inactivo_por_archivo:true para poder reactivar EXACTAMENTE a estos (y no a
+        // alguien que ya estaba inactivo por otra razón desde antes de archivar).
         const idsTrab = DTL.trabajadores.filter(t=>t.entidad_id===x.id && t.activo!==false).map(t=>t.id);
-        nInactivados = idsTrab.length;
-        if(nInactivados){
-          const { error: e2 } = await porLotes(idsTrab, lote=> sb.from("dtl_trabajadores").update({activo:false}).in("id", lote));
+        nTocados = idsTrab.length;
+        if(nTocados){
+          const { error: e2 } = await porLotes(idsTrab, lote=> sb.from("dtl_trabajadores").update({activo:false, inactivo_por_archivo:true}).in("id", lote));
           if(e2){ toast("Contrato archivado, pero no se pudo marcar a los trabajadores como inactivos: "+e2.message,"err"); }
+        }
+      } else {
+        // Al reactivar, solo se reactivan los que quedaron inactivos POR archivar este
+        // contrato — no a quien ya estaba inactivo antes por otro motivo.
+        const idsTrab = DTL.trabajadores.filter(t=>t.entidad_id===x.id && t.inactivo_por_archivo).map(t=>t.id);
+        nTocados = idsTrab.length;
+        if(nTocados){
+          const { error: e2 } = await porLotes(idsTrab, lote=> sb.from("dtl_trabajadores").update({activo:true, inactivo_por_archivo:false}).in("id", lote));
+          if(e2){ toast("Contrato reactivado, pero no se pudo reactivar a sus trabajadores: "+e2.message,"err"); }
         }
       }
       await loadDtlState(); renderEntidadesDtlLista();
-      toast(archivando?`Contrato archivado${nInactivados?` — ${nInactivados} trabajador(es) marcados como inactivos`:''}`:"Contrato reactivado","ok");
+      toast(archivando
+        ?`Contrato archivado${nTocados?` — ${nTocados} trabajador(es) marcados como inactivos`:''}`
+        :`Contrato reactivado${nTocados?` — ${nTocados} trabajador(es) reactivados`:''}`,"ok");
     };
   });
 }
@@ -7714,7 +7739,7 @@ async function renderConfiguracion(silent){
   let perfiles = [];
   try{
     const [{ data }, { data:cfgData }] = await Promise.all([
-      sb.from("acc_perfiles").select("id,email,nombre,es_admin,activo,dotacion_editar_catalogo,rol").order("email",{ascending:true}),
+      sb.from("acc_perfiles").select("id,email,nombre,es_admin,activo,rol").order("email",{ascending:true}),
       sb.from("app_config").select("epp_foto_obligatoria,dotacion_foto_obligatoria").eq("id",true).maybeSingle()
     ]);
     perfiles = data || [];
@@ -7748,8 +7773,9 @@ async function renderConfiguracion(silent){
       <div style="margin-bottom:20px;padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
         <p style="margin-bottom:8px"><b>Administrador</b> — acceso total a todo, sin restricciones, en los 4 módulos.</p>
         <p style="margin-bottom:8px"><b>Editor en Asistencia y Documentos y Firmas</b> — crea, y solo edita/elimina lo que él mismo creó; nunca puede tocar una lista cerrada o un documento finalizado, así sea suyo.</p>
-        <p style="margin-bottom:8px"><b>Editor en EPP y Dotación</b> — ve todo el directorio y todas las entregas; puede registrar entregas nuevas libremente; solo puede editar o eliminar <b>las entregas que él mismo registró</b>, y solo <b>durante las primeras 24 horas</b> desde que las creó — pasado ese plazo, ni él puede tocarlas, solo un administrador. <b>No puede agregar, editar ni eliminar trabajadores</b> del directorio (tampoco por carga masiva de Excel) — el directorio de trabajadores es solo de administrador.</p>
+        <p style="margin-bottom:8px"><b>Editor en EPP y Dotación</b> — ve todo el directorio y todas las entregas; puede registrar entregas nuevas libremente; solo puede editar o eliminar <b>las entregas que él mismo registró</b>, y solo <b>durante las primeras 24 horas</b> desde que las creó — pasado ese plazo, ni él puede tocarlas, solo un administrador. <b>No puede agregar, editar ni eliminar trabajadores</b> del directorio (tampoco por carga masiva de Excel) — el directorio de trabajadores es solo de administrador. <b>Tampoco ve ni toca el catálogo de ítems de EPP</b> (agregar/editar/eliminar ítems del catálogo) — eso también es solo de administrador; el botón "Catálogo de ítems" no le aparece.</p>
         <p style="margin-bottom:8px"><b>Visualizador</b> — en cualquier módulo, solo puede ver lo que sus módulos/contratos le permitan; nunca crea, edita ni elimina nada.</p>
+        <p style="margin-bottom:8px"><b>"Entregas de hoy" y "Todos" (junto al buscador, en EPP y Dotación)</b> — solo aparecen para Administrador. Editores y Visualizadores solo ven "Mostrar inactivos".</p>
         <p style="margin:0"><b>Auditoría</b> — visible solo para Administrador. No es un módulo que se pueda conceder a un Editor o Visualizador; nadie más la ve, sin importar qué permisos tenga.</p>
       </div>
       <div style="margin-bottom:20px;padding:14px 16px;background:var(--danger-soft);border:1px solid #f6cdd4;border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
@@ -7802,7 +7828,7 @@ async function abrirPermisosUsuario(perfilId){
   let perfil, modulos, contratosMarcados, todosLosContratos, entidadesMarcadas, todasLasEntidades;
   try{
     const [{ data:p }, { data:pm }, { data:pc }, { data:cs }, { data:pe }, { data:es }] = await Promise.all([
-      sb.from("acc_perfiles").select("id,email,nombre,es_admin,activo,dotacion_editar_catalogo,rol").eq("id",perfilId).maybeSingle(),
+      sb.from("acc_perfiles").select("id,email,nombre,es_admin,activo,rol").eq("id",perfilId).maybeSingle(),
       sb.from("acc_perfil_modulos").select("modulo").eq("perfil_id",perfilId),
       sb.from("acc_perfil_contratos").select("contrato_id").eq("perfil_id",perfilId),
       sb.from("dot_contratos").select("id,nombre").order("nombre",{ascending:true}),
@@ -7835,7 +7861,6 @@ async function abrirPermisosUsuario(perfilId){
           ${todosLosContratos.length
             ? todosLosContratos.map(c=>`<label class="chk" style="padding:3px 0"><input type="checkbox" data-pf-contrato="${c.id}" ${contratosMarcados.includes(c.id)?'checked':''}> ${esc(c.nombre)}</label>`).join('')
             : '<p class="muted-sm">Aún no hay contratos creados.</p>'}
-          <label class="chk" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line)"><input type="checkbox" id="pfCatalogo" ${perfil.dotacion_editar_catalogo?'checked':''}> Puede editar el catálogo de ítems</label>
         </div>
         <label class="chk" style="margin-top:8px"><input type="checkbox" data-pf-mod="dotacionlegal" ${modulos.includes('dotacionlegal')?'checked':''}> Dotación</label>
         <div id="permisosDotacionLegal" style="margin-top:10px;padding:12px 14px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;${modulos.includes('dotacionlegal')?'':'display:none'}">
@@ -7920,15 +7945,13 @@ async function guardarPermisosUsuario(perfilId){
   const modulosMarcados = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-mod]:checked')).map(el=>el.dataset.pfMod);
   const contratosMarcados = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-contrato]:checked')).map(el=>el.dataset.pfContrato);
   const entidadesMarcadas = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-entidad]:checked')).map(el=>el.dataset.pfEntidad);
-  const chkCat = document.getElementById('pfCatalogo');
-  const editarCatalogo = chkCat ? chkCat.checked : false;
   const rolSeleccionado = document.querySelector('input[name="pfRol"]:checked');
   const rol = rolSeleccionado ? rolSeleccionado.value : 'editor';
 
   const btn = document.getElementById('btnGuardarPermisos'); btn.disabled=true; btn.innerHTML="Guardando…";
   bloquear("Guardando permisos…");
   try{
-    const { error:e1 } = await sb.from("acc_perfiles").update({ es_admin: esAdmin, dotacion_editar_catalogo: editarCatalogo, rol }).eq("id", perfilId);
+    const { error:e1 } = await sb.from("acc_perfiles").update({ es_admin: esAdmin, rol }).eq("id", perfilId);
     if(e1){ toast("No se pudo guardar: "+e1.message,"err"); return; }
 
     // Reemplazo simple: borra lo que había y vuelve a insertar lo marcado (evita comparar/diferenciar)
@@ -7974,7 +7997,7 @@ sb.auth.onAuthStateChange((event)=>{
     // Igual que en "Salir" (wireLogout): si la sesión se cerró sola (ej. token expirado) en vez
     // de por el botón, hay que limpiar MIPERFIL/STATE aquí también — si no, quedan con los datos
     // del usuario anterior y el siguiente que inicie sesión en esta misma pestaña los hereda.
-    MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], editarCatalogo:false, nombre:"", uid:null };
+    MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], nombre:"", uid:null };
     PERFILES_NOMBRE = {};
     STATE.listas = []; STATE.userEmail = "";
     renderLogin();
