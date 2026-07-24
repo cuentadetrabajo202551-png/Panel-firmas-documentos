@@ -3989,7 +3989,11 @@ async function renderDotacionAdmin(silent){
       <div class="wrap"><div class="empty"><div class="ic">${I.box}</div>
         <h3>Crea tu primer contrato</h3>
         <p>Cada contrato (ej. "Hospital de Medellín") tiene su propio directorio de trabajadores y entregas.</p>
-        <div style="margin-top:18px"><button class="btn btn-primary" id="btnPrimerContrato">${I.plus} Crear contrato</button></div>
+        <div style="margin-top:18px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+          <button class="btn btn-primary" id="btnPrimerContrato">${I.plus} Crear contrato</button>
+          <button class="btn btn-ghost" id="btnCargaMasivaVacioDot">${I.doc} Carga masiva desde Excel</button>
+          <button class="btn btn-ghost" id="btnPlantillaVacioDot">${I.doc} Descargar plantilla</button>
+        </div>
       </div></div>` : `${topbar('dotacion')}
       <div class="wrap"><div class="empty"><div class="ic">${I.box}</div>
         <h3>Aún no tienes ningún contrato asignado</h3>
@@ -3997,6 +4001,8 @@ async function renderDotacionAdmin(silent){
       </div></div>`;
     wireLogout();
     const bpc=document.getElementById("btnPrimerContrato"); if(bpc) bpc.onclick = ()=> abrirFormContrato(null, ()=> renderDotacionAdmin());
+    const bcmv=document.getElementById("btnCargaMasivaVacioDot"); if(bcmv) bcmv.onclick = abrirCargaMasivaDot;
+    const bpv=document.getElementById("btnPlantillaVacioDot"); if(bpv) bpv.onclick = descargarPlantillaTrabajadoresDot;
     return;
   }
 
@@ -5896,8 +5902,13 @@ async function renderDtlAdmin(silent){
     document.getElementById("app").innerHTML = MIPERFIL.esAdmin ? `${topbar('dotacionlegal')}
       <div class="wrap"><div class="empty"><div class="ic">${I.box}</div>
         <h3>Crea tu primer contrato</h3>
-        <p>Cada contrato (ej. "Sede Bogotá") tiene su propio directorio de trabajadores y entregas.</p>
-        <div style="margin-top:18px"><button class="btn btn-primary" id="btnPrimeraEntidad">${I.plus} Crear contrato</button></div>
+        <p>Cada contrato (ej. "Sede Bogotá") tiene su propio directorio de trabajadores y entregas. Si ya tienes el Excel con los trabajadores (con su columna de contrato), puedes cargarlo directo — los contratos se crean solos a partir de esa columna.</p>
+        <div style="margin-top:18px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+          <button class="btn btn-primary" id="btnPrimeraEntidad">${I.plus} Crear contrato</button>
+          <button class="btn btn-ghost" id="btnCargaMasivaVacioDtl">${I.doc} Carga masiva desde Excel</button>
+          <button class="btn btn-ghost" id="btnPlantillaVacioDtl">${I.doc} Descargar plantilla</button>
+        </div>
+        <input type="file" id="fileTrabajadoresDtlVacio" accept=".xlsx,.xls,.csv" style="display:none">
       </div></div>` : `${topbar('dotacionlegal')}
       <div class="wrap"><div class="empty"><div class="ic">${I.box}</div>
         <h3>Aún no tienes ningún contrato asignado</h3>
@@ -5905,6 +5916,9 @@ async function renderDtlAdmin(silent){
       </div></div>`;
     wireLogout();
     const bpe=document.getElementById("btnPrimeraEntidad"); if(bpe) bpe.onclick = ()=> abrirFormEntidadDtl(null, ()=> renderDtlAdmin());
+    const bcmv=document.getElementById("btnCargaMasivaVacioDtl"); if(bcmv) bcmv.onclick = ()=> document.getElementById("fileTrabajadoresDtlVacio").click();
+    const bpv=document.getElementById("btnPlantillaVacioDtl"); if(bpv) bpv.onclick = descargarPlantillaTrabajadoresDtl;
+    const fiv=document.getElementById("fileTrabajadoresDtlVacio"); if(fiv) fiv.onchange = (e)=>{ const f=e.target.files[0]; if(f) cargarTrabajadoresExcelDtl(f); e.target.value=""; };
     return;
   }
 
@@ -6532,14 +6546,16 @@ async function cargarTrabajadoresExcelDtl(file){
       const { error } = await sb.from("dtl_trabajadores").insert(nuevos);
       if(error){ toast("No se pudo cargar: "+error.message,"err"); return; }
     }
-    await loadDtlState();
-    renderDtlGrid();
     let msg = `${nuevos.length} trabajador(es) nuevo(s) agregado(s)`;
     if(entidadesCreadas) msg += ` · ${entidadesCreadas} contrato(s) nuevo(s) creado(s)`;
     if(yaExistian) msg += ` · ${yaExistian} ya existían (cédula repetida, sin cambios)`;
     if(ignoradas) msg += ` · ${ignoradas} fila(s) incompleta(s) omitida(s)`;
     if(dup) msg += ` · ${dup} duplicada(s) en el archivo`;
     toast(msg,"ok");
+    // renderDtlAdmin (no renderDtlGrid) a propósito: si se cargó desde la pantalla
+    // "Crea tu primer contrato" (0 entidades), hay que reconstruir toda la página para
+    // que aparezca el panel normal — renderDtlGrid asume que ese panel ya existe.
+    await renderDtlAdmin(true);
   }catch(e){ console.error(e); toast("No se pudo leer el archivo: "+(e.message||''),"err"); }
   finally{ desbloquear(); }
 }
