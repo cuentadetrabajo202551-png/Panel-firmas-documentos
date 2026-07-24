@@ -757,6 +757,16 @@ async function cargarFirmasLista(id){
 
 /* ---------- Utilidades ---------- */
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+/* Ejecuta una operación .in("id", lote) por tandas — con cientos/miles de ids en un
+   solo .in() la URL de la petición se vuelve enorme y el servidor la rechaza con
+   "Bad Request". Se parte en lotes de 150 ids (~5.5KB de URL cada uno, margen de sobra). */
+async function porLotes(ids, fn, tam=150){
+  for(let i=0;i<ids.length;i+=tam){
+    const { error } = await fn(ids.slice(i, i+tam));
+    if(error) return { error };
+  }
+  return { error: null };
+}
 function hoyLocal(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function pdfTexto(s){ return String(s==null?'':s).replace(/[^\x09\x0A\x0D\x20-\xFF]/g,''); }
 function fmtDate(iso){
@@ -4086,6 +4096,7 @@ function renderDotacionBody(){
     <div class="resp-firma" id="barraSeleccionDot" style="margin-bottom:16px;align-items:center;gap:12px;flex-wrap:wrap;display:${seleccionadosDot.size?'flex':'none'}">
       <span class="muted-sm" id="contadorSeleccionDot">${seleccionadosDot.size} seleccionado(s)</span>
       <div style="flex:1;min-width:8px"></div>
+      <button class="btn btn-ghost btn-sm" id="btnReactivarDot">Reactivar</button>
       <button class="btn btn-ghost btn-sm" id="btnMarcarInactivoDot">Marcar como inactivo</button>
       <button class="btn btn-danger btn-sm" id="btnEliminarSeleccionDot">${I.trash} Eliminar seleccionados</button>
     </div>
@@ -4100,6 +4111,7 @@ function renderDotacionBody(){
     renderDotTrabajadoresGrid();
     actualizarBarraSeleccionDot();
   };
+  document.getElementById('btnReactivarDot').onclick = ()=> reactivarSeleccionDot();
   document.getElementById('btnMarcarInactivoDot').onclick = ()=> marcarInactivosSeleccionDot();
   document.getElementById('btnEliminarSeleccionDot').onclick = ()=> eliminarSeleccionDot();
   renderDotTrabajadoresGrid();
@@ -4169,6 +4181,20 @@ function renderDotTrabajadoresGrid(){
   actualizarBarraSeleccionDot();
 }
 
+async function reactivarSeleccionDot(){
+  if(!seleccionadosDot.size){ toast("Selecciona al menos un trabajador","err"); return; }
+  const ids = Array.from(seleccionadosDot);
+  bloquear("Reactivando…");
+  try{
+    const { error } = await porLotes(ids, lote=> sb.from("dot_trabajadores").update({ activo:true }).in("id", lote));
+    if(error){ toast("No se pudo reactivar: "+error.message,"err"); return; }
+    await loadDotacionState();
+    seleccionadosDot.clear();
+    toast(`${ids.length} trabajador(es) reactivados`,"ok");
+    renderDotacionAdmin();
+  } finally { desbloquear(); }
+}
+
 async function marcarInactivosSeleccionDot(){
   if(!seleccionadosDot.size){ toast("Selecciona al menos un trabajador","err"); return; }
   const ids = Array.from(seleccionadosDot);
@@ -4182,7 +4208,7 @@ async function marcarInactivosSeleccionDot(){
     const btn=document.getElementById("confMarcarInactivoDot"); btn.disabled=true; btn.innerHTML="Guardando…";
     bloquear("Marcando como inactivos…");
     try{
-      const { error } = await sb.from("dot_trabajadores").update({ activo:false }).in("id", ids);
+      const { error } = await porLotes(ids, lote=> sb.from("dot_trabajadores").update({ activo:false }).in("id", lote));
       if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
       await loadDotacionState();
       seleccionadosDot.clear();
@@ -4206,7 +4232,7 @@ async function eliminarSeleccionDot(){
     const btn=document.getElementById("confEliminarSeleccionDot"); btn.disabled=true; btn.innerHTML="Eliminando…";
     bloquear("Eliminando…");
     try{
-      const { error } = await sb.from("dot_trabajadores").delete().in("id", ids);
+      const { error } = await porLotes(ids, lote=> sb.from("dot_trabajadores").delete().in("id", lote));
       if(error){ toast("No se pudo eliminar: "+error.message,"err"); return; }
       await loadDotacionState();
       seleccionadosDot.clear();
@@ -4327,7 +4353,7 @@ function abrirRenombrarCargoDot(cargoActual, cantidad){
     bloquear("Corrigiendo cargo…");
     try{
       const ids = trabajadoresDelContrato().filter(t=>(t.cargo||'').trim()===cargoActual).map(t=>t.id);
-      const { error } = await sb.from("dot_trabajadores").update({ cargo: nuevo }).in("id", ids);
+      const { error } = await porLotes(ids, lote=> sb.from("dot_trabajadores").update({ cargo: nuevo }).in("id", lote));
       if(error){ toast("No se pudo corregir: "+error.message,"err"); return; }
       await loadDotacionState();
       toast(`Cargo corregido en ${ids.length} trabajador(es)`,"ok");
@@ -4370,11 +4396,24 @@ function renderContratosLista(){
   host.querySelectorAll('[data-ct-toggle]').forEach(b=>{
     b.onclick = async ()=>{
       const c = DOTACION.contratos.find(x=>x.id===b.dataset.ctToggle);
+      const archivando = c.activo;
       const { error } = await sb.from("dot_contratos").update({activo: !c.activo}).eq("id", c.id);
       if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
+      let nInactivados = 0;
+      if(archivando){
+        // Al archivar un contrato, sus trabajadores dejan de tener sentido en la vista
+        // normal — se marcan inactivos igual que si el admin los hubiera seleccionado
+        // uno por uno (se conserva todo su historial de entregas y firmas).
+        const idsTrab = DOTACION.trabajadores.filter(t=>t.contrato_id===c.id && t.activo!==false).map(t=>t.id);
+        nInactivados = idsTrab.length;
+        if(nInactivados){
+          const { error: e2 } = await porLotes(idsTrab, lote=> sb.from("dot_trabajadores").update({activo:false}).in("id", lote));
+          if(e2){ toast("Contrato archivado, pero no se pudo marcar a los trabajadores como inactivos: "+e2.message,"err"); }
+        }
+      }
       await loadDotacionState();
       renderContratosLista();
-      toast(c.activo?"Contrato archivado":"Contrato reactivado","ok");
+      toast(archivando?`Contrato archivado${nInactivados?` — ${nInactivados} trabajador(es) marcados como inactivos`:''}`:"Contrato reactivado","ok");
     };
   });
 }
@@ -5889,6 +5928,7 @@ async function renderDtlAdmin(silent){
       <div class="resp-firma" id="barraSeleccionDtl" style="margin-bottom:16px;align-items:center;gap:12px;flex-wrap:wrap;display:${seleccionadosDtl.size?'flex':'none'}">
         <span class="muted-sm" id="contadorSeleccionDtl">${seleccionadosDtl.size} seleccionado(s)</span>
         <div style="flex:1;min-width:8px"></div>
+        <button class="btn btn-ghost btn-sm" id="btnReactivarDtl">Reactivar</button>
         <button class="btn btn-ghost btn-sm" id="btnMarcarInactivoDtl">Marcar como inactivo</button>
         <button class="btn btn-danger btn-sm" id="btnEliminarSeleccionDtl">${I.trash} Eliminar seleccionados</button>
       </div>
@@ -5923,6 +5963,7 @@ async function renderDtlAdmin(silent){
     renderDtlGrid();
     actualizarBarraSeleccionDtl();
   };
+  document.getElementById('btnReactivarDtl').onclick = ()=> reactivarSeleccionDtl();
   document.getElementById('btnMarcarInactivoDtl').onclick = ()=> marcarInactivosSeleccionDtl();
   document.getElementById('btnEliminarSeleccionDtl').onclick = ()=> eliminarSeleccionDtl();
   renderDtlGrid();
@@ -5993,6 +6034,20 @@ function renderDtlGrid(){
   actualizarBarraSeleccionDtl();
 }
 
+async function reactivarSeleccionDtl(){
+  if(!seleccionadosDtl.size){ toast("Selecciona al menos un trabajador","err"); return; }
+  const ids = Array.from(seleccionadosDtl);
+  bloquear("Reactivando…");
+  try{
+    const { error } = await porLotes(ids, lote=> sb.from("dtl_trabajadores").update({ activo:true }).in("id", lote));
+    if(error){ toast("No se pudo reactivar: "+error.message,"err"); return; }
+    await loadDtlState();
+    seleccionadosDtl.clear();
+    toast(`${ids.length} trabajador(es) reactivados`,"ok");
+    renderDtlAdmin();
+  } finally { desbloquear(); }
+}
+
 async function marcarInactivosSeleccionDtl(){
   if(!seleccionadosDtl.size){ toast("Selecciona al menos un trabajador","err"); return; }
   const ids = Array.from(seleccionadosDtl);
@@ -6006,7 +6061,7 @@ async function marcarInactivosSeleccionDtl(){
     const btn=document.getElementById("confMarcarInactivoDtl"); btn.disabled=true; btn.innerHTML="Guardando…";
     bloquear("Marcando como inactivos…");
     try{
-      const { error } = await sb.from("dtl_trabajadores").update({ activo:false }).in("id", ids);
+      const { error } = await porLotes(ids, lote=> sb.from("dtl_trabajadores").update({ activo:false }).in("id", lote));
       if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
       await loadDtlState();
       seleccionadosDtl.clear();
@@ -6030,7 +6085,7 @@ async function eliminarSeleccionDtl(){
     const btn=document.getElementById("confEliminarSeleccionDtl"); btn.disabled=true; btn.innerHTML="Eliminando…";
     bloquear("Eliminando…");
     try{
-      const { error } = await sb.from("dtl_trabajadores").delete().in("id", ids);
+      const { error } = await porLotes(ids, lote=> sb.from("dtl_trabajadores").delete().in("id", lote));
       if(error){ toast("No se pudo eliminar: "+error.message,"err"); return; }
       await loadDtlState();
       seleccionadosDtl.clear();
@@ -6119,7 +6174,7 @@ function abrirRenombrarCargoDtl(cargoActual, cantidad){
     bloquear("Corrigiendo cargo…");
     try{
       const ids = trabajadoresDeEntidad().filter(t=>(t.cargo||'').trim()===cargoActual).map(t=>t.id);
-      const { error } = await sb.from("dtl_trabajadores").update({ cargo: nuevo }).in("id", ids);
+      const { error } = await porLotes(ids, lote=> sb.from("dtl_trabajadores").update({ cargo: nuevo }).in("id", lote));
       if(error){ toast("No se pudo corregir: "+error.message,"err"); return; }
       await loadDtlState();
       toast(`Cargo corregido en ${ids.length} trabajador(es)`,"ok");
@@ -6155,10 +6210,23 @@ function renderEntidadesDtlLista(){
   host.querySelectorAll('[data-ent-toggle]').forEach(b=>{
     b.onclick = async ()=>{
       const x = DTL.entidades.find(e=>e.id===b.dataset.entToggle);
+      const archivando = x.activo;
       const { error } = await sb.from("dtl_entidades").update({ activo: !x.activo }).eq("id", x.id);
       if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
+      let nInactivados = 0;
+      if(archivando){
+        // Al archivar un contrato, sus trabajadores dejan de tener sentido en la vista
+        // normal — se marcan inactivos igual que si el admin los hubiera seleccionado
+        // uno por uno (se conserva todo su historial de entregas y firmas).
+        const idsTrab = DTL.trabajadores.filter(t=>t.entidad_id===x.id && t.activo!==false).map(t=>t.id);
+        nInactivados = idsTrab.length;
+        if(nInactivados){
+          const { error: e2 } = await porLotes(idsTrab, lote=> sb.from("dtl_trabajadores").update({activo:false}).in("id", lote));
+          if(e2){ toast("Contrato archivado, pero no se pudo marcar a los trabajadores como inactivos: "+e2.message,"err"); }
+        }
+      }
       await loadDtlState(); renderEntidadesDtlLista();
-      toast(x.activo?"Contrato archivado":"Contrato reactivado","ok");
+      toast(archivando?`Contrato archivado${nInactivados?` — ${nInactivados} trabajador(es) marcados como inactivos`:''}`:"Contrato reactivado","ok");
     };
   });
 }
@@ -7551,7 +7619,8 @@ async function renderConfiguracion(silent){
         <p style="margin-bottom:8px"><b>Administrador</b> — acceso total a todo, sin restricciones, en los 4 módulos.</p>
         <p style="margin-bottom:8px"><b>Editor en Asistencia y Documentos y Firmas</b> — crea, y solo edita/elimina lo que él mismo creó; nunca puede tocar una lista cerrada o un documento finalizado, así sea suyo.</p>
         <p style="margin-bottom:8px"><b>Editor en EPP y Dotación</b> — ve todo el directorio y todas las entregas; puede registrar entregas nuevas libremente; solo puede editar o eliminar <b>las entregas que él mismo registró</b>, y solo <b>durante las primeras 24 horas</b> desde que las creó — pasado ese plazo, ni él puede tocarlas, solo un administrador. <b>No puede agregar, editar ni eliminar trabajadores</b> del directorio (tampoco por carga masiva de Excel) — el directorio de trabajadores es solo de administrador.</p>
-        <p><b>Visualizador</b> — en cualquier módulo, solo puede ver lo que sus módulos/contratos le permitan; nunca crea, edita ni elimina nada.</p>
+        <p style="margin-bottom:8px"><b>Visualizador</b> — en cualquier módulo, solo puede ver lo que sus módulos/contratos le permitan; nunca crea, edita ni elimina nada.</p>
+        <p style="margin:0"><b>Auditoría</b> — visible solo para Administrador. No es un módulo que se pueda conceder a un Editor o Visualizador; nadie más la ve, sin importar qué permisos tenga.</p>
       </div>
       <div style="margin-bottom:20px;padding:14px 16px;background:var(--danger-soft);border:1px solid #f6cdd4;border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
         <p style="margin:0"><b style="color:var(--danger)">⚠ Aviso — entregas remotas (enlace/QR):</b> las entregas que un trabajador registra solo por el enlace o código QR (sin que un supervisor haya iniciado sesión) no quedan asociadas a ningún editor como "creador". Por eso, con la regla de arriba, <b>ningún editor puede editar ni eliminar una entrega remota</b> — solo un administrador puede hacerlo, sin importar cuánto tiempo haya pasado.</p>
