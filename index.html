@@ -5473,6 +5473,7 @@ let dotPublicoState = { contratoId:null, catalogo:[], trabajador:null, foto:null
    activos, o 2+ activos a la vez), se le pregunta en cuál trabaja. */
 async function renderDotPublicoUniversal(){
   dotPublicoState = { contratoId:null, catalogo:[], trabajador:null, foto:null };
+  await cargarAppConfig();   // sin esto, APP_CONFIG queda en su valor por defecto y el aviso "(obligatoria)" no sale aunque sí se exija al guardar (lo aplica un trigger en la base de datos, no el cliente)
   renderDotPublicoCedulaUniversal();
 }
 
@@ -5524,7 +5525,7 @@ function renderDotPublicoElegirContrato(candidatos){
 
 async function continuarConTrabajadorEpp(t){
   dotPublicoState.contratoId = t.contrato_id;
-  dotPublicoState.trabajador = { id:t.id, nombre:t.nombre, identificacion:t.identificacion, cargo:t.cargo };
+  dotPublicoState.trabajador = { id:t.id, nombre:t.nombre, identificacion:t.identificacion, cargo:t.cargo, contratoNombre:t.contrato_nombre };
   const { data } = await sb.rpc('dot_publico_catalogo', { p_contrato_id: t.contrato_id });
   dotPublicoState.catalogo = data || [];
   renderDotPublicoFormulario();
@@ -5539,6 +5540,7 @@ function renderDotPublicoFormulario(){
       <div class="trab-summary" style="margin-bottom:16px">
         <div class="tk">Recibe</div>
         <div class="tv">${esc(t.nombre)} — C.C. ${esc(t.identificacion)}</div>
+        ${t.contratoNombre?`<div class="muted-sm" style="margin-top:2px">${esc(t.contratoNombre)}</div>`:''}
       </div>
       <label style="font-weight:700;font-size:14px;display:block;margin-bottom:10px">Elementos que estás recibiendo</label>
       ${cat.length ? cat.map(c=>`
