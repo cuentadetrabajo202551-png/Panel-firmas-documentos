@@ -4130,7 +4130,7 @@ function renderDotacionBody(){
         ${I.search}
         <input type="text" id="dotSearch" placeholder="Buscar por nombre, cédula, cargo o área…" value="${esc(dotQuery)}">
       </div>
-      ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-sm" id="btnEntregasHoyDot" style="white-space:nowrap">${I.cal} Entregas de hoy</button>`:''}
+      ${puedeEscribir()?`<button class="btn btn-ghost btn-sm" id="btnEntregasHoyDot" style="white-space:nowrap">${I.cal} Entregas de hoy</button>`:''}
       ${MIPERFIL.esAdmin?`<label class="chk" style="white-space:nowrap"><input type="checkbox" id="chkTodosDot"> Todos</label>`:''}
       <label class="chk" style="white-space:nowrap"><input type="checkbox" id="chkMostrarInactivosDot" ${dotMostrarInactivos?'checked':''}> Mostrar inactivos</label>
     </div>
@@ -6046,7 +6046,7 @@ async function renderDtlAdmin(silent){
           ${I.search}
           <input type="text" id="dtlSearch" placeholder="Buscar por nombre, cédula, cargo o área…" value="${esc(dtlQuery)}">
         </div>
-        ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-sm" id="btnEntregasHoyDtl" style="white-space:nowrap">${I.cal} Entregas de hoy</button>`:''}
+        ${puedeEscribir()?`<button class="btn btn-ghost btn-sm" id="btnEntregasHoyDtl" style="white-space:nowrap">${I.cal} Entregas de hoy</button>`:''}
         ${MIPERFIL.esAdmin?`<label class="chk" style="white-space:nowrap"><input type="checkbox" id="chkTodosDtl"> Todos</label>`:''}
         <label class="chk" style="white-space:nowrap"><input type="checkbox" id="chkMostrarInactivosDtl" ${dtlMostrarInactivos?'checked':''}> Mostrar inactivos</label>
       </div>
@@ -7810,7 +7810,7 @@ async function renderConfiguracion(silent){
         <p style="margin-bottom:8px"><b>Editor en Asistencia y Documentos y Firmas</b> — crea, y solo edita/elimina lo que él mismo creó; nunca puede tocar una lista cerrada o un documento finalizado, así sea suyo.</p>
         <p style="margin-bottom:8px"><b>Editor en EPP y Dotación</b> — ve todo el directorio y todas las entregas; puede registrar entregas nuevas libremente; solo puede editar o eliminar <b>las entregas que él mismo registró</b>, y solo <b>durante las primeras 24 horas</b> desde que las creó — pasado ese plazo, ni él puede tocarlas, solo un administrador. <b>No puede agregar, editar ni eliminar trabajadores</b> del directorio (tampoco por carga masiva de Excel) — el directorio de trabajadores es solo de administrador. <b>Tampoco ve ni toca el catálogo de ítems de EPP</b> (agregar/editar/eliminar ítems del catálogo) — eso también es solo de administrador; el botón "Catálogo de ítems" no le aparece.</p>
         <p style="margin-bottom:8px"><b>Visualizador</b> — en cualquier módulo, solo puede ver lo que sus módulos/contratos le permitan; nunca crea, edita ni elimina nada.</p>
-        <p style="margin-bottom:8px"><b>"Entregas de hoy" y "Todos" (junto al buscador, en EPP y Dotación)</b> — solo aparecen para Administrador. Editores y Visualizadores solo ven "Mostrar inactivos".</p>
+        <p style="margin-bottom:8px"><b>"Entregas de hoy" (junto al buscador, en EPP y Dotación)</b> — Administrador y Editor. <b>"Todos"</b> (selección masiva) — solo Administrador. Visualizador solo ve "Mostrar inactivos".</p>
         <p style="margin:0"><b>Auditoría</b> — visible solo para Administrador. No es un módulo que se pueda conceder a un Editor o Visualizador; nadie más la ve, sin importar qué permisos tenga.</p>
       </div>
       <div style="margin-bottom:20px;padding:14px 16px;background:var(--danger-soft);border:1px solid #f6cdd4;border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
