@@ -4315,9 +4315,10 @@ async function eliminarSeleccionDot(){
    bajo demanda, solo de esas — nunca carga esas columnas para el listado completo. */
 async function abrirEntregasHoyDot(){
   const hoy = hoyLocal();
-  const idsHoy = DOTACION.entregas.filter(e=>e.fecha===hoy).map(e=>e.id);
+  const idsHoy = entregasDelContrato().filter(e=>e.fecha===hoy).map(e=>e.id);
+  const nombreContratoActual = contratoActualId==='todos' ? null : contratoActual()?.nombre;
   openModal(`<div class="modal" style="max-width:520px">
-    <div class="modal-head"><div><h2>Entregas de hoy</h2><p>${fmtDate(hoy)}</p></div>
+    <div class="modal-head"><div><h2>Entregas de hoy</h2><p>${fmtDate(hoy)}${nombreContratoActual?' · '+esc(nombreContratoActual):''}</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body" id="entregasHoyDotBody"><div class="empty"><h3>Cargando…</h3></div></div>
   </div>`);
@@ -4726,6 +4727,7 @@ function abrirCatalogoModal(){
       ${puedeEditar?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
         <button class="btn btn-ghost btn-sm" id="btnPlantillaCat">${I.doc} Plantilla Excel</button>
         <button class="btn btn-ghost btn-sm" id="btnCargaCat">${I.plus} Carga masiva</button>
+        ${DOTACION.catalogo.length?`<button class="btn btn-ghost btn-sm" id="btnDelTodoCat" style="color:var(--danger)">${I.trash} Eliminar todo</button>`:''}
       </div>
       <div class="field row2" style="margin-bottom:14px">
         <div><input id="catNombre" placeholder="Nombre del ítem (ej. Guantes de nitrilo)"></div>
@@ -4742,8 +4744,29 @@ function abrirCatalogoModal(){
   const bac=document.getElementById('btnAddCat'); if(bac) bac.onclick = guardarItemCatalogo;
   const bpc=document.getElementById('btnPlantillaCat'); if(bpc) bpc.onclick = descargarPlantillaCatalogoDot;
   const bcc=document.getElementById('btnCargaCat'); if(bcc) bcc.onclick = ()=> document.getElementById('fileCatalogo').click();
+  const bdtc=document.getElementById('btnDelTodoCat'); if(bdtc) bdtc.onclick = eliminarTodoCatalogo;
   const fc=document.getElementById('fileCatalogo'); if(fc) fc.onchange = (e)=>{ const f=e.target.files[0]; if(f) cargarCatalogoExcelDot(f); e.target.value=""; };
   renderCatalogoLista();
+}
+
+function eliminarTodoCatalogo(){
+  const items = DOTACION.catalogo;
+  if(!items.length){ toast("El catálogo ya está vacío","err"); return; }
+  const c = contratoActual();
+  openSubModal(`<div class="modal" style="max-width:420px">
+    <div class="modal-head"><div><h2>Eliminar todo el catálogo</h2><p>No afecta las entregas ya registradas.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">¿Eliminar los <b>${items.length}</b> ítem(s) del catálogo de <b>${esc(c?.nombre||'este contrato')}</b>? Ya no aparecerán para elegir en nuevas entregas; las entregas ya registradas conservan su nombre. Esta acción no se puede deshacer.</p></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-danger" id="confDelTodoCat">${I.trash} Sí, eliminar todo</button></div></div>`, ()=>abrirCatalogoModal());
+  document.getElementById("confDelTodoCat").onclick = async ()=>{
+    const btn=document.getElementById("confDelTodoCat"); btn.disabled=true; btn.innerHTML="Eliminando…";
+    const { error } = await sb.from("dot_catalogo").delete().eq("contrato_id", contratoActualId);
+    if(error){ toast("No se pudo eliminar: "+error.message,"err"); btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar todo`; return; }
+    await loadDotacionState();
+    abrirCatalogoModal();
+    toast("Catálogo eliminado","ok");
+  };
 }
 
 function descargarPlantillaCatalogoDot(){
@@ -6345,9 +6368,10 @@ async function eliminarSeleccionDtl(){
    cuáles son de hoy y solo trae el detalle pesado (hora/responsable/vía) de esas. */
 async function abrirEntregasHoyDtl(){
   const hoy = hoyLocal();
-  const idsHoy = DTL.entregas.filter(e=>e.fecha===hoy).map(e=>e.id);
+  const idsHoy = entregasDeEntidad().filter(e=>e.fecha===hoy).map(e=>e.id);
+  const nombreEntidadActual = dtlFiltroEntidad==='todas' ? null : nombreEntidadDtl(dtlFiltroEntidad);
   openModal(`<div class="modal" style="max-width:520px">
-    <div class="modal-head"><div><h2>Entregas de hoy</h2><p>${fmtDate(hoy)}</p></div>
+    <div class="modal-head"><div><h2>Entregas de hoy</h2><p>${fmtDate(hoy)}${nombreEntidadActual&&nombreEntidadActual!=='—'?' · '+esc(nombreEntidadActual):''}</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body" id="entregasHoyDtlBody"><div class="empty"><h3>Cargando…</h3></div></div>
   </div>`);
