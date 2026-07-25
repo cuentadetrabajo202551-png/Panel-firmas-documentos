@@ -4363,7 +4363,7 @@ function trabajadorCard(t){
       <div class="card-actions">
         <button class="icon-btn" title="Ver ficha" data-trab="ver" data-id="${t.id}">${I.eye}</button>
         ${n>0?`<button class="icon-btn" title="Descargar kárdex" data-trab="kardex" data-id="${t.id}">${I.pdf}</button>`:''}
-        ${puedeEscribir()?`<button class="icon-btn" title="Registrar entrega" data-trab="entregar" data-id="${t.id}">${I.plus}</button>`:''}
+        ${puedeEscribir()?`<button class="icon-btn" title="${inactivo?'No se puede registrar entrega: el trabajador está inactivo':'Registrar entrega'}" data-trab="entregar" data-id="${t.id}" ${inactivo?'disabled':''}>${I.plus}</button>`:''}
         ${MIPERFIL.esAdmin?`<button class="icon-btn" title="Editar" data-trab="editar" data-id="${t.id}">${I.pen}</button>
         <button class="icon-btn danger" title="Eliminar" data-trab="del" data-id="${t.id}">${I.trash}</button>`:''}
       </div>
@@ -5258,23 +5258,22 @@ function renderPasoEntregaFirmaResponsable(){
 async function guardarEntregaFinal(firmaResponsable){
   bloquear("Guardando entrega…");
   try{
-    const { data: entrega, error } = await sb.from("dot_entregas").insert({
-      trabajador_id: entregaDraft.trabajadorId,
-      fecha: entregaDraft.fecha,
-      responsable_nombre: entregaDraft.responsableNombre || null,
-      responsable_cargo: entregaDraft.responsableCargo || null,
-      observaciones: entregaDraft.observaciones || null,
-      firma_trabajador: entregaDraft.firmaTrabajador,
-      firma_responsable: firmaResponsable,
-      foto_trabajador: entregaDraft.fotoTrabajador
-    }).select().single();
-    if(error){ toast("No se pudo guardar la entrega: "+error.message,"err"); return; }
-    const rows = entregaDraft.items.map(it=>{
+    const items = entregaDraft.items.map(it=>{
       const c = DOTACION.catalogo.find(x=>x.id===it.catalogoId);
-      return { entrega_id: entrega.id, nombre_item: c?c.nombre:'Ítem', cantidad: it.cantidad, talla: it.talla||null };
+      return { nombre: c?c.nombre:'Ítem', cantidad: it.cantidad, talla: it.talla||null };
     });
-    const { error: e2 } = await sb.from("dot_entrega_items").insert(rows);
-    if(e2) toast("Entrega guardada, pero hubo un error con los ítems: "+e2.message,"err");
+    const { error } = await sb.rpc('dot_entrega_presencial_registrar', {
+      p_trabajador_id: entregaDraft.trabajadorId,
+      p_fecha: entregaDraft.fecha,
+      p_responsable_nombre: entregaDraft.responsableNombre || null,
+      p_responsable_cargo: entregaDraft.responsableCargo || null,
+      p_observaciones: entregaDraft.observaciones || null,
+      p_firma_trabajador: entregaDraft.firmaTrabajador,
+      p_firma_responsable: firmaResponsable,
+      p_foto_trabajador: entregaDraft.fotoTrabajador,
+      p_items: items
+    });
+    if(error){ toast("No se pudo guardar la entrega: "+error.message,"err"); return; }
     const trabId = entregaDraft.trabajadorId;
     const yaEstabaEnFicha = location.hash === "#/dotacion/trabajador/"+trabId;
     entregaDraft = null;
@@ -5326,7 +5325,7 @@ async function renderFichaTrabajador(id){
           <div style="display:flex;gap:10px;flex-wrap:wrap">
             ${MIPERFIL.esAdmin?`<button class="btn btn-ghost" id="btnEditarTrab">${I.pen} Editar datos</button>`:''}
             ${listaEntregas.length?`<button class="btn btn-ghost" id="btnKardex">${I.pdf} Imprimir kárdex</button>`:''}
-            ${puedeEscribir()?`<button class="btn btn-primary" id="btnNuevaEntregaFicha">${I.plus} Registrar entrega</button>`:''}
+            ${puedeEscribir()?`<button class="btn btn-primary" id="btnNuevaEntregaFicha" title="${t.activo===false?'No se puede registrar entrega: el trabajador está inactivo':''}" ${t.activo===false?'disabled':''}>${I.plus} Registrar entrega</button>`:''}
           </div>
         </div>
         <div class="sec-bar"><h2>Historial de entregas</h2><span class="muted-sm">${listaEntregas.length} registrada(s)</span></div>
@@ -5499,10 +5498,13 @@ function renderDotPublicoCedulaUniversal(){
       err.textContent = 'No encontramos tu cédula. Contacta a Recursos Humanos.';
       return;
     }
-    if(data.length === 1){ await continuarConTrabajadorEpp(data[0]); return; }
     const activos = data.filter(c=>c.activo);
+    if(!activos.length){
+      err.textContent = 'Tu cédula no está activa en ningún contrato. Contacta a Recursos Humanos.';
+      return;
+    }
     if(activos.length === 1){ await continuarConTrabajadorEpp(activos[0]); return; }
-    renderDotPublicoElegirContrato(activos.length ? activos : data);
+    renderDotPublicoElegirContrato(activos);
   };
 }
 
@@ -5784,7 +5786,8 @@ async function construirKardexPDF(trabajadorId){
     const its = itemsPorEntrega[e.id]||[];
     const lineas = its.length ? its.map(it=>"• "+it.nombre_item+" × "+it.cantidad+(it.talla?" ("+it.talla+")":"")) : ["—"];
     const wrapped = doc.splitTextToSize(pdfTexto(lineas.join("\n")), x2-x1-4);
-    let rowH = Math.max(e.via==='remoto' ? 22 : 16, wrapped.length*3.6 + 5);
+    const tieneAuditoria = !!(e.ip_address || e.dispositivo_ua);
+    let rowH = Math.max(tieneAuditoria ? 22 : 16, wrapped.length*3.6 + 5);
     // Si hay foto, la fila crece para respetar su proporción original (nunca se estira/deforma la foto)
     let fotoH = 0;
     const dims = e.foto_trabajador ? await getImageSize(e.foto_trabajador) : null;
@@ -5806,7 +5809,7 @@ async function construirKardexPDF(trabajadorId){
       doc.text(horaFirma, (x0+x1)/2, yAudit, {align:"center"});
       yAudit += 3;
     }
-    if(e.via==='remoto'){
+    if(tieneAuditoria){
       doc.setFontSize(5.3); doc.setTextColor(150,150,170);
       if(e.ip_address){ doc.text("IP "+e.ip_address, (x0+x1)/2, yAudit, {align:"center"}); yAudit += 2.6; }
       const disp = resumenDispositivoUA(e.dispositivo_ua);
@@ -6389,7 +6392,7 @@ function trabajadorDtlCard(t){
       <div class="card-actions">
         <button class="icon-btn" title="Ver ficha" data-trabdtl="ver" data-id="${t.id}">${I.eye}</button>
         ${n>0?`<button class="icon-btn" title="Descargar kárdex" data-trabdtl="kardex" data-id="${t.id}">${I.pdf}</button>`:''}
-        ${puedeEscribir()?`<button class="icon-btn" title="Registrar entrega" data-trabdtl="entregar" data-id="${t.id}">${I.plus}</button>`:''}
+        ${puedeEscribir()?`<button class="icon-btn" title="${inactivo?'No se puede registrar entrega: el trabajador está inactivo':'Registrar entrega'}" data-trabdtl="entregar" data-id="${t.id}" ${inactivo?'disabled':''}>${I.plus}</button>`:''}
         ${MIPERFIL.esAdmin?`<button class="icon-btn" title="Editar" data-trabdtl="editar" data-id="${t.id}">${I.pen}</button>
         <button class="icon-btn danger" title="Eliminar" data-trabdtl="del" data-id="${t.id}">${I.trash}</button>`:''}
       </div>
@@ -7128,19 +7131,18 @@ function renderPasoDtl3(){
 async function guardarEntregaDtlFinal(firmaResponsable){
   bloquear("Guardando entrega…");
   try{
-    const { error } = await sb.from("dtl_entregas").insert({
-      trabajador_id: dtlEntregaDraft.trabajadorId,
-      fecha: dtlEntregaDraft.fecha,
-      pantalon_cantidad: dtlEntregaDraft.pantalonCantidad, pantalon_talla: dtlEntregaDraft.pantalonTalla || null,
-      camisa_cantidad: dtlEntregaDraft.camisaCantidad, camisa_talla: dtlEntregaDraft.camisaTalla || null,
-      botas_cantidad: dtlEntregaDraft.botasCantidad, botas_talla: dtlEntregaDraft.botasTalla || null,
-      adicional: dtlEntregaDraft.adicional || null,
-      responsable_nombre: dtlEntregaDraft.responsableNombre || null,
-      responsable_cargo: dtlEntregaDraft.responsableCargo || null,
-      firma_trabajador: dtlEntregaDraft.firmaTrabajador,
-      firma_responsable: firmaResponsable,
-      foto_trabajador: dtlEntregaDraft.fotoTrabajador,
-      via: 'presencial'
+    const { error } = await sb.rpc('dtl_entrega_presencial_registrar', {
+      p_trabajador_id: dtlEntregaDraft.trabajadorId,
+      p_fecha: dtlEntregaDraft.fecha,
+      p_pantalon_cantidad: dtlEntregaDraft.pantalonCantidad, p_pantalon_talla: dtlEntregaDraft.pantalonTalla || null,
+      p_camisa_cantidad: dtlEntregaDraft.camisaCantidad, p_camisa_talla: dtlEntregaDraft.camisaTalla || null,
+      p_botas_cantidad: dtlEntregaDraft.botasCantidad, p_botas_talla: dtlEntregaDraft.botasTalla || null,
+      p_adicional: dtlEntregaDraft.adicional || null,
+      p_responsable_nombre: dtlEntregaDraft.responsableNombre || null,
+      p_responsable_cargo: dtlEntregaDraft.responsableCargo || null,
+      p_firma_trabajador: dtlEntregaDraft.firmaTrabajador,
+      p_firma_responsable: firmaResponsable,
+      p_foto_trabajador: dtlEntregaDraft.fotoTrabajador
     });
     if(error){ toast("No se pudo guardar la entrega: "+error.message,"err"); return; }
     const trabId = dtlEntregaDraft.trabajadorId;
@@ -7192,7 +7194,7 @@ async function renderFichaTrabajadorDtl(id){
           <div style="display:flex;gap:10px;flex-wrap:wrap">
             ${MIPERFIL.esAdmin?`<button class="btn btn-ghost" id="btnEditarTrabDtl">${I.pen} Editar datos</button>`:''}
             ${listaEntregas.length?`<button class="btn btn-ghost" id="btnKardexDtl">${I.pdf} Imprimir kárdex</button>`:''}
-            ${puedeEscribir()?`<button class="btn btn-primary" id="btnNuevaEntregaFichaDtl">${I.plus} Registrar entrega</button>`:''}
+            ${puedeEscribir()?`<button class="btn btn-primary" id="btnNuevaEntregaFichaDtl" title="${t.activo===false?'No se puede registrar entrega: el trabajador está inactivo':''}" ${t.activo===false?'disabled':''}>${I.plus} Registrar entrega</button>`:''}
           </div>
         </div>
         <div class="sec-bar"><h2>Historial de entregas</h2><span class="muted-sm">${listaEntregas.length} registrada(s)</span></div>
@@ -7411,7 +7413,8 @@ async function construirKardexDtlPDF(trabajadorId){
     if(e.adicional) partes.push("• "+e.adicional);
     const lineas = partes.length ? partes : ["—"];
     const wrapped = doc.splitTextToSize(pdfTexto(lineas.join("\n")), x2-x1-4);
-    let rowH = Math.max(e.via==='remoto' ? 22 : 16, wrapped.length*3.6 + 5);
+    const tieneAuditoria = !!(e.ip_address || e.dispositivo_ua);
+    let rowH = Math.max(tieneAuditoria ? 22 : 16, wrapped.length*3.6 + 5);
     let fotoH = 0;
     const dims = e.foto_trabajador ? await getImageSize(e.foto_trabajador) : null;
     if(dims && dims.w>0){ fotoH = Math.min(90, colFotoW * (dims.h/dims.w)); rowH = Math.max(rowH, fotoH+4); }
@@ -7432,7 +7435,7 @@ async function construirKardexDtlPDF(trabajadorId){
       doc.text(horaFirma, (x0+x1)/2, yAudit, {align:"center"});
       yAudit += 3;
     }
-    if(e.via==='remoto'){
+    if(tieneAuditoria){
       doc.setFontSize(5.3); doc.setTextColor(150,150,170);
       if(e.ip_address){ doc.text("IP "+e.ip_address, (x0+x1)/2, yAudit, {align:"center"}); yAudit += 2.6; }
       const disp = resumenDispositivoUA(e.dispositivo_ua);
