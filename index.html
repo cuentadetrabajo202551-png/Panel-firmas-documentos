@@ -758,8 +758,15 @@ function uid(){ return Date.now().toString(36) + Math.random().toString(36).slic
 /* Carga las firmas de UNA lista solo cuando se necesitan (detalle/PDF) */
 async function cargarFirmasLista(id){
   const l = getList(id); if(!l || l._firmasCargadas) return;
-  const { data } = await sb.from("asis_asistentes").select("id,firma").eq("lista_id", id);
-  if(data){ const m={}; data.forEach(r=>{ m[r.id]=r.firma; }); (l.asistentes||[]).forEach(a=>{ if(m[a.id]) a.firma=m[a.id]; }); l._firmasCargadas=true; }
+  const { data } = await sb.from("asis_asistentes").select("id,firma,ip_address,dispositivo_ua").eq("lista_id", id);
+  if(data){
+    const m={}; data.forEach(r=>{ m[r.id]=r; });
+    (l.asistentes||[]).forEach(a=>{
+      const r = m[a.id];
+      if(r){ a.firma=r.firma; a.ipAddress=r.ip_address; a.dispositivoUa=r.dispositivo_ua; }
+    });
+    l._firmasCargadas=true;
+  }
 }
 
 /* ---------- Utilidades ---------- */
@@ -1313,7 +1320,7 @@ async function openDetail(id){
       <td>${esc(a.documento)}</td>
       <td>${esc(a.cargo||"—")}</td>
       <td>${esc(a.area||"—")}</td>
-      <td>${esc(a.fecha)} ${esc(a.hora)}</td>
+      <td>${esc(a.fecha)} ${esc(a.hora)}${(a.ipAddress||a.dispositivoUa)?`<div class="muted-sm">${a.ipAddress?'IP '+esc(a.ipAddress):''}${a.ipAddress&&a.dispositivoUa?' · ':''}${a.dispositivoUa?esc(resumenDispositivoUA(a.dispositivoUa)):''}</div>`:''}</td>
       <td>${a.firma?`<img class="sig-thumb" src="${a.firma}" alt="firma">`:'<span class="muted-sm">—</span>'}</td>
       <td style="text-align:center">${puedoTocarCerrable(l.creadaPor,!act)?`<button class="btn btn-ghost btn-sm" title="Eliminar registro" onclick="eliminarAsistente('${a.id}','${l.id}','${esc(a.nombre).replace(/'/g,"\\'")}')">${I.trash}</button>`:''}</td>
     </tr>`).join("");
@@ -1744,21 +1751,20 @@ async function registrarAsistencia(id){
     }
   }catch(e){ /* si la RPC no existe aún, el RLS igual bloquea el duplicado */ }
 
-  const { error } = await sb.from("asis_asistentes").insert({
-    lista_id: id,
-    nombre,
-    documento,
-    cargo: g("p_cargo").value.trim(),
-    area: g("p_area").value.trim() || null,
-    firma: sigPad.dataURL()
+  const { data, error } = await sb.rpc("asis_registrar_publico", {
+    p_lista_id: id,
+    p_nombre: nombre,
+    p_documento: documento,
+    p_cargo: g("p_cargo").value.trim(),
+    p_area: g("p_area").value.trim() || null,
+    p_firma: sigPad.dataURL()
   });
 
-  if(error){
+  if(error || !data || !data.ok){
     btn.disabled = false; btn.innerHTML = `${I.check} Registrar asistencia`;
-    const dup = /asis_ya_registrado|duplicad|unique|ya_registrado/i.test(error.message||"");
-    const cerrada = /row-level security|violates|policy/i.test(error.message||"");
-    if(dup){ mostrarYaRegistrado(documento); return; }
-    toast(cerrada ? "Este documento ya fue registrado, o la lista fue cerrada." : ("No se pudo registrar: "+error.message), "err");
+    const motivo = data && data.motivo;
+    if(motivo === "ya_registrado"){ mostrarYaRegistrado(documento); return; }
+    toast(motivo === "cerrada" ? "Este documento ya fue registrado, o la lista fue cerrada." : ("No se pudo registrar: "+((error&&error.message)||motivo||"")), "err");
     return;
   }
 
@@ -1941,7 +1947,7 @@ async function generarPDF(id, firmaResp){
 
   // columnas tabla asistentes
   const cNo = M, cNom = M+14, cCed = M+74, cCar = M+114, cFir = M+154, cEnd = RIGHT; // 14/60/40/40/36
-  const ROW_H = 16;
+  const ROW_H = 21; // +5mm sobre el original para dejar sitio a la línea de IP/dispositivo
 
   function grayHead(y,h){ doc.setFillColor(238,241,248); doc.rect(M,y,RIGHT-M,h,"F"); }
   function line(x1,y1,x2,y2){ doc.setDrawColor(200,206,224); doc.line(x1,y1,x2,y2); }
@@ -2062,7 +2068,12 @@ async function generarPDF(id, firmaResp){
       const car = doc.splitTextToSize(a.cargo||"", cFir-cCar-4);
       doc.text(car, cCar+2, y+6);
       doc.setFontSize(6.4); doc.setTextColor(120,120,140);
-      doc.text((a.fecha||"")+" "+(a.hora||""), cNom+2, y+h-2.5);
+      doc.text((a.fecha||"")+" "+(a.hora||""), cNom+2, y+h-5.5);
+      if(a.ipAddress||a.dispositivoUa){
+        doc.setFontSize(5.6);
+        const partesAudit = [a.ipAddress?"IP "+a.ipAddress:null, a.dispositivoUa?resumenDispositivoUA(a.dispositivoUa):null].filter(Boolean);
+        doc.text(partesAudit.join(" · "), cNom+2, y+h-2.3);
+      }
       doc.setTextColor(20,20,20);
       if(a.firma){ try{ doc.addImage(a.firma, "PNG", cFir+2, y+1.5, cEnd-cFir-4, h-3); }catch(e){} }
     }
@@ -2840,7 +2851,8 @@ async function verEvidencia(id){
           <div class="info-item"><div class="k">Identificación</div><div class="v">${esc(f.identificacion||'—')}</div></div>
           <div class="info-item"><div class="k">Cargo</div><div class="v">${esc(f.cargo||'—')}</div></div>
           <div class="info-item"><div class="k">Fecha y hora</div><div class="v">${f.firmado_en?fmtDateTime(f.firmado_en):'—'}</div></div>
-          <div class="info-item"><div class="k">Dirección IP</div><div class="v">${esc(ev.ip||'—')}</div></div>
+          <div class="info-item"><div class="k">Dirección IP</div><div class="v">${esc(f.ip_address||ev.ip||'—')}</div></div>
+          <div class="info-item"><div class="k">Dispositivo</div><div class="v">${f.dispositivo_ua?esc(resumenDispositivoUA(f.dispositivo_ua)):'—'}</div></div>
           <div class="info-item"><div class="k">Navegador</div><div class="v">${esc(ev.navegador||'—')}</div></div>
           <div class="info-item"><div class="k">Sistema operativo</div><div class="v">${esc(ev.so||'—')}</div></div>
           <div class="info-item full"><div class="k">Ubicación GPS</div><div class="v">${gps?`${(+gps.lat).toFixed(5)}, ${(+gps.lng).toFixed(5)} (±${Math.round(gps.precision||0)} m) · <a href="https://www.google.com/maps?q=${gps.lat},${gps.lng}" target="_blank" rel="noopener">Ver en mapa</a>`:'—'}</div></div>
@@ -2871,7 +2883,7 @@ async function abrirDocumento(id){
     if(plFull && Array.isArray(plFull.contenido)) doc.contenido = plFull.contenido;
   }
   const { data:fdata } = await sb.from("doc_firmantes")
-    .select("id,documento_id,nombre,correo,identificacion,cargo,orden,token,estado,evidencia,firmado_en")
+    .select("id,documento_id,nombre,correo,identificacion,cargo,orden,token,estado,evidencia,firmado_en,ip_address,dispositivo_ua")
     .eq("documento_id",id).order("orden",{ascending:true});
   const fs = fdata||[];
   const { data:edata } = await sb.from("doc_eventos").select("*").eq("documento_id",id).order("ocurrido_en",{ascending:true});
@@ -3222,7 +3234,8 @@ async function componerPdfFirmado(doc, firmantes){
       const ev=f.evidencia||{};
       const fhRaw = ev.fecha_hora || f.firmado_en;
       const fh = fhRaw ? new Date(fhRaw).toLocaleString('es-CO') : '-';
-      const line = pdfTexto((f.nombre||'-')+'   |   C.C. '+(f.identificacion||'-')+'   |   Firmado: '+fh+'   |   IP: '+(ev.ip||'-'));
+      const disp = f.dispositivo_ua ? resumenDispositivoUA(f.dispositivo_ua) : null;
+      const line = pdfTexto((f.nombre||'-')+'   |   C.C. '+(f.identificacion||'-')+'   |   Firmado: '+fh+'   |   IP: '+(f.ip_address||ev.ip||'-')+(disp?'   |   '+disp:''));
       try{ last.drawText(line, { x:26, y:baseY + (firmados.length-1-i)*lineH, size:6.8, font, color:rgb(0.28,0.28,0.36) }); }catch(e){}
     });
   }
@@ -3347,7 +3360,7 @@ async function generarPDFDocDirecto(id){
     }
     if(!doc.pdf){ toast("Este documento no tiene PDF asociado","err"); return; }
     const { data:fs } = await sb.from("doc_firmantes")
-      .select("id,nombre,identificacion,cargo,orden,estado,firma,selfie,foto_id,evidencia,firmado_en")
+      .select("id,nombre,identificacion,cargo,orden,estado,firma,selfie,foto_id,evidencia,firmado_en,ip_address,dispositivo_ua")
       .eq("documento_id",id).order("orden",{ascending:true});
     const signed = await componerPdfFirmado(doc, fs||[]);
     descargarBlobPdf(signed, doc.nombre);
