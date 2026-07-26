@@ -5014,13 +5014,11 @@ function abrirNuevaEntrega(trabajadorId){
     toast("Primero agrega ítems al catálogo (botón 'Catálogo de ítems')","err");
     return;
   }
-  let ultimoResp = {};
-  try{ ultimoResp = JSON.parse(localStorage.getItem('dot_ultimo_responsable')||'{}'); }catch(e){}
   entregaDraft = {
     trabajadorId: trabajadorId || null,
     fecha: hoyLocal(),
-    responsableNombre: ultimoResp.nombre || '',
-    responsableCargo: ultimoResp.cargo || '',
+    responsableNombre: '',
+    responsableCargo: '',
     predeterminadoId: null,
     observaciones: '',
     items: [{ catalogoId:'', cantidad:1, talla:'' }],
@@ -5139,7 +5137,6 @@ function validarYContinuarPaso1(){
   const validos = entregaDraft.items.filter(it=>it.catalogoId && it.cantidad>0);
   if(!validos.length){ toast("Agrega al menos un ítem con cantidad","err"); return; }
   entregaDraft.items = validos;
-  localStorage.setItem('dot_ultimo_responsable', JSON.stringify({ nombre: entregaDraft.responsableNombre, cargo: entregaDraft.responsableCargo }));
   renderPasoEntregaFirmaTrabajador();
 }
 
@@ -5203,7 +5200,7 @@ function wireFotoTrabPreview(){
   const inp = document.getElementById('fileFotoTrab');
   inp.onchange = async ()=>{
     const f = inp.files[0]; if(!f) return;
-    entregaDraft.fotoTrabajador = await comprimirImagen(f, 700);
+    entregaDraft.fotoTrabajador = await comprimirImagen(f, 500);
     inp.value = '';
     document.getElementById('fotoTrabPreview').innerHTML = fotoTrabPreviewHTML();
     wireFotoTrabPreview();
@@ -5229,8 +5226,8 @@ function renderPasoEntregaFirmaResponsable(){
         <div class="sig-box" id="sigBox"><canvas id="sigCanvas"></canvas><div class="sig-placeholder" id="sigPh">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div></div>
         <div class="sig-actions"><button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar</button></div>
         ${!plantilla && DOTACION.predeterminados.length<PREDET_MAX?`
-        <label class="chk" style="margin-top:8px" id="chkWrapGuardarPredet"><input type="checkbox" id="chkGuardarPredet" checked> Guardar como plantilla predeterminada (Predeterminado)</label>
-        <div class="field" id="nuevaPredetNombreWrap" style="margin-top:6px"><input id="nuevaPredetNombre" placeholder="Nombre de la plantilla, ej. Plantilla1"></div>`:''}
+        <label class="chk" style="margin-top:8px" id="chkWrapGuardarPredet"><input type="checkbox" id="chkGuardarPredet"> Guardar como plantilla predeterminada (Predeterminado)</label>
+        <div class="field" id="nuevaPredetNombreWrap" style="margin-top:6px;display:none"><input id="nuevaPredetNombre" placeholder="Nombre de la plantilla, ej. Plantilla1"></div>`:''}
       </div>
     </div>
     <div class="modal-foot">
@@ -5556,70 +5553,44 @@ async function continuarConTrabajadorEpp(t){
   renderDotPublicoFormulario();
 }
 
-/* Ítems que se le pueden ofrecer a la fila "i" — cualquier ítem del catálogo que
-   no esté ya elegido en OTRA fila (para no poder repetir el mismo ítem dos veces),
-   pero conservando el propio elegido de esta fila entre las opciones. */
-function epItemsDisponiblesPara(indiceFila){
-  const elegidosEnOtras = dotPublicoState.filas.filter((f,i)=>i!==indiceFila && f.catalogoId).map(f=>f.catalogoId);
-  return dotPublicoState.catalogo.filter(c=>!elegidosEnOtras.includes(c.id));
-}
-function renderEpFilas(){
-  const host = document.getElementById('epFilasItems');
+/* Lista completa del catálogo, una casilla por ítem (vuelta al diseño original:
+   las personas que llenan esto solas desde el celular, por lo general de edad
+   avanzada, se enredaban con el patrón de "agregar otro ítem"). */
+function renderEpListaCatalogo(){
+  const host = document.getElementById('epListaCatalogo');
   if(!host) return;
-  host.innerHTML = dotPublicoState.filas.map((f,i)=>{
-    const disponibles = epItemsDisponiblesPara(i);
-    return `<div class="ep-fila-item" style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px">
-      <div style="display:flex;gap:8px;align-items:flex-end">
-        <div style="flex:1"><label style="font-size:12.5px;font-weight:700;color:var(--ink-2);display:block;margin-bottom:4px">Ítem</label>
-          <select data-fila-item="${i}" style="width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;background:#fff">
-            <option value="">Selecciona…</option>
-            ${disponibles.map(c=>`<option value="${c.id}" ${f.catalogoId===c.id?'selected':''}>${esc(c.nombre)}</option>`).join('')}
-          </select>
-        </div>
-        ${dotPublicoState.filas.length>1?`<button type="button" class="icon-btn danger" data-fila-quitar="${i}" title="Quitar ítem">${I.trash}</button>`:''}
-      </div>
-      ${f.catalogoId?`
+  host.innerHTML = dotPublicoState.catalogo.map(c=>{
+    const s = dotPublicoState.seleccion[c.id];
+    return `<div class="ep-item-check" style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:8px">
+      <label class="chk" style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px">
+        <input type="checkbox" data-ep-inc="${c.id}" ${s.incluido?'checked':''}> ${esc(c.nombre)}${c.unidad?` <span class="muted-sm">(${esc(c.unidad)})</span>`:''}
+      </label>
+      ${s.incluido?`
       <div class="field row2" style="margin-top:10px">
-        <div><label>Cantidad</label><input type="number" min="1" step="1" value="${f.cantidad||1}" data-fila-cant="${i}"></div>
-        <div><label>Talla <span class="opt">(opcional)</span></label><input placeholder="Si aplica" value="${esc(f.talla||'')}" data-fila-talla="${i}"></div>
+        <div><label>Cantidad</label><input type="number" min="1" step="1" value="${s.cantidad||1}" data-ep-cant="${c.id}"></div>
+        <div><label>Talla <span class="opt">(opcional)</span></label><input placeholder="Si aplica" value="${esc(s.talla||'')}" data-ep-talla="${c.id}"></div>
       </div>`:''}
     </div>`;
   }).join('');
-  host.querySelectorAll('[data-fila-item]').forEach(sel=>{
-    sel.onchange = ()=>{
-      const i = +sel.dataset.filaItem;
-      dotPublicoState.filas[i].catalogoId = sel.value;
-      if(sel.value && !dotPublicoState.filas[i].cantidad) dotPublicoState.filas[i].cantidad = 1;
-      renderEpFilas();
-      actualizarBotonAgregarItem();
+  host.querySelectorAll('[data-ep-inc]').forEach(chk=>{
+    chk.onchange = ()=>{
+      dotPublicoState.seleccion[chk.dataset.epInc].incluido = chk.checked;
+      renderEpListaCatalogo();
     };
   });
-  host.querySelectorAll('[data-fila-cant]').forEach(inp=>{
-    inp.oninput = ()=>{ dotPublicoState.filas[+inp.dataset.filaCant].cantidad = +inp.value || 1; };
+  host.querySelectorAll('[data-ep-cant]').forEach(inp=>{
+    inp.oninput = ()=>{ dotPublicoState.seleccion[inp.dataset.epCant].cantidad = +inp.value || 1; };
   });
-  host.querySelectorAll('[data-fila-talla]').forEach(inp=>{
-    inp.oninput = ()=>{ dotPublicoState.filas[+inp.dataset.filaTalla].talla = inp.value; };
+  host.querySelectorAll('[data-ep-talla]').forEach(inp=>{
+    inp.oninput = ()=>{ dotPublicoState.seleccion[inp.dataset.epTalla].talla = inp.value; };
   });
-  host.querySelectorAll('[data-fila-quitar]').forEach(b=>{
-    b.onclick = ()=>{
-      dotPublicoState.filas.splice(+b.dataset.filaQuitar, 1);
-      renderEpFilas();
-      actualizarBotonAgregarItem();
-    };
-  });
-}
-/* Oculta "Agregar otro ítem" cuando ya no queda ningún ítem del catálogo sin elegir. */
-function actualizarBotonAgregarItem(){
-  const btn = document.getElementById('epAgregarItem');
-  if(!btn) return;
-  const elegidos = dotPublicoState.filas.filter(f=>f.catalogoId).length;
-  btn.style.display = elegidos >= dotPublicoState.catalogo.length ? 'none' : '';
 }
 
 function renderDotPublicoFormulario(){
   const t = dotPublicoState.trabajador;
   const cat = dotPublicoState.catalogo;
-  dotPublicoState.filas = cat.length ? [{ catalogoId:'', cantidad:1, talla:'' }] : [];
+  dotPublicoState.seleccion = {};
+  cat.forEach(c=> dotPublicoState.seleccion[c.id] = { incluido:false, cantidad:1, talla:'' });
   document.getElementById("app").innerHTML = `
     <div class="pub-wrap"><div class="pub-card"><div class="pub-body">
       <img src="${LOGO}" alt="Don Aseo Ltda." style="height:40px;display:block;margin:0 auto 14px">
@@ -5629,9 +5600,8 @@ function renderDotPublicoFormulario(){
         ${t.contratoNombre?`<div class="muted-sm" style="margin-top:2px">${esc(t.contratoNombre)}</div>`:''}
       </div>
       <label style="font-weight:700;font-size:14px;display:block;margin-bottom:10px">Elementos que estás recibiendo</label>
-      <div id="epFilasItems"></div>
-      ${cat.length?`<button type="button" class="btn btn-ghost btn-sm" id="epAgregarItem" style="margin-bottom:14px">${I.plus} Agregar otro ítem</button>`
-        : `<p class="muted-sm">No hay ítems configurados en el catálogo de este contrato — contacta a Recursos Humanos.</p>`}
+      <div id="epListaCatalogo"></div>
+      ${!cat.length?`<p class="muted-sm">No hay ítems configurados en el catálogo de este contrato — contacta a Recursos Humanos.</p>`:''}
       <div class="field"><label>Observaciones <span class="opt">(opcional)</span></label><input id="epObs" placeholder="Ej. reposición por daño, talla especial…"></div>
 
       <div style="margin-bottom:14px">
@@ -5653,14 +5623,7 @@ function renderDotPublicoFormulario(){
   initSignature();
   document.getElementById('sigClear').onclick = ()=> sigPad.clear();
   wireEpFotoPreview();
-  renderEpFilas();
-  actualizarBotonAgregarItem();
-  const btnAgregar = document.getElementById('epAgregarItem');
-  if(btnAgregar) btnAgregar.onclick = ()=>{
-    dotPublicoState.filas.push({ catalogoId:'', cantidad:1, talla:'' });
-    renderEpFilas();
-    actualizarBotonAgregarItem();
-  };
+  renderEpListaCatalogo();
   document.getElementById('epConfirmarBtn').onclick = confirmarEntregaDotPublica;
 }
 
@@ -5673,7 +5636,7 @@ function wireEpFotoPreview(){
   const inp = document.getElementById('epFileFoto');
   inp.onchange = async ()=>{
     const f = inp.files[0]; if(!f) return;
-    dotPublicoState.foto = await comprimirImagen(f, 700);
+    dotPublicoState.foto = await comprimirImagen(f, 500);
     inp.value = '';
     document.getElementById('epFotoPreview').innerHTML = epFotoPreviewHTML();
     wireEpFotoPreview();
@@ -5685,11 +5648,11 @@ function wireEpFotoPreview(){
 async function confirmarEntregaDotPublica(){
   const err = document.getElementById('epError'); err.textContent = '';
   const items = [];
-  (dotPublicoState.filas||[]).forEach(f=>{
-    if(!f.catalogoId) return;
-    const c = dotPublicoState.catalogo.find(x=>x.id===f.catalogoId);
-    const cant = +f.cantidad || 0;
-    if(c && cant>0) items.push({ nombre: c.nombre, cantidad: cant, talla: (f.talla||'').trim()||null });
+  dotPublicoState.catalogo.forEach(c=>{
+    const s = dotPublicoState.seleccion[c.id];
+    if(!s || !s.incluido) return;
+    const cant = +s.cantidad || 0;
+    if(cant>0) items.push({ nombre: c.nombre, cantidad: cant, talla: (s.talla||'').trim()||null });
   });
   if(!items.length){ err.textContent = 'Selecciona al menos un ítem que estás recibiendo.'; return; }
   if(APP_CONFIG.eppFotoObligatoria && !dotPublicoState.foto){ err.textContent = 'Tu foto es obligatoria para continuar.'; return; }
@@ -5802,6 +5765,13 @@ async function construirKardexPDF(trabajadorId){
 
   const FOOTER_TOP = 278;
   const colFotoW = x2f-x2-4;
+  // Decodificar todas las fotos EN PARALELO antes de dibujar (antes se hacía una por
+  // una dentro del for, esperando cada foto antes de pasar a la siguiente — con
+  // trabajadores de historial largo eso hacía que el kárdex tardara cada vez más).
+  const dimsPorEntrega = {};
+  await Promise.all(listaEntregas.map(async e=>{
+    if(e.foto_trabajador) dimsPorEntrega[e.id] = await getImageSize(e.foto_trabajador);
+  }));
   let y = encabezado();
   y = tablaHead(y);
   let pag = 1;
@@ -5813,7 +5783,7 @@ async function construirKardexPDF(trabajadorId){
     let rowH = Math.max(tieneAuditoria ? 22 : 16, wrapped.length*3.6 + 5);
     // Si hay foto, la fila crece para respetar su proporción original (nunca se estira/deforma la foto)
     let fotoH = 0;
-    const dims = e.foto_trabajador ? await getImageSize(e.foto_trabajador) : null;
+    const dims = dimsPorEntrega[e.id] || null;
     if(dims && dims.w>0){ fotoH = Math.min(90, colFotoW * (dims.h/dims.w)); rowH = Math.max(rowH, fotoH+4); }
     if(y + rowH > FOOTER_TOP){
       piePagina(pag);
@@ -6875,8 +6845,6 @@ async function abrirNuevaEntregaDtl(trabajadorId){
   if(!t){ toast("Trabajador no encontrado","err"); return; }
   bloquear("Cargando…");
   try{ DTL.predeterminados = await cargarPredeterminadosDtl(t.entidad_id); } finally{ desbloquear(); }
-  let ultimoResp = {};
-  try{ ultimoResp = JSON.parse(localStorage.getItem('dtl_ultimo_responsable')||'{}'); }catch(e){}
   dtlEntregaDraft = {
     trabajadorId: trabajadorId,
     fecha: hoyLocal(),
@@ -6884,8 +6852,8 @@ async function abrirNuevaEntregaDtl(trabajadorId){
     camisaCantidad: 2, camisaTalla: '',
     botasCantidad: 1, botasTalla: '',
     adicional: '',
-    responsableNombre: ultimoResp.nombre || '',
-    responsableCargo: ultimoResp.cargo || '',
+    responsableNombre: '',
+    responsableCargo: '',
     predeterminadoId: null,
     firmaTrabajador: null,
     fotoTrabajador: null
@@ -7010,7 +6978,6 @@ function validarYContinuarPasoDtl1(){
   if(dtlEntregaDraft.pantalonCantidad>0 && !dtlEntregaDraft.pantalonTalla){ toast("Escribe la talla del pantalón","err"); return; }
   if(dtlEntregaDraft.camisaCantidad>0 && !dtlEntregaDraft.camisaTalla){ toast("Escribe la talla de la camisa","err"); return; }
   if(dtlEntregaDraft.botasCantidad>0 && !dtlEntregaDraft.botasTalla){ toast("Escribe la talla de las botas","err"); return; }
-  localStorage.setItem('dtl_ultimo_responsable', JSON.stringify({ nombre: dtlEntregaDraft.responsableNombre, cargo: dtlEntregaDraft.responsableCargo }));
   renderPasoDtl2();
 }
 
@@ -7077,7 +7044,7 @@ function wireFotoTrabDtlPreview(){
   const inp = document.getElementById('fileFotoTrabDtl');
   inp.onchange = async ()=>{
     const f = inp.files[0]; if(!f) return;
-    dtlEntregaDraft.fotoTrabajador = await comprimirImagen(f, 700);
+    dtlEntregaDraft.fotoTrabajador = await comprimirImagen(f, 500);
     inp.value = '';
     document.getElementById('fotoTrabDtlPreview').innerHTML = fotoTrabDtlPreviewHTML();
     wireFotoTrabDtlPreview();
@@ -7103,8 +7070,8 @@ function renderPasoDtl3(){
         <div class="sig-box" id="sigBox"><canvas id="sigCanvas"></canvas><div class="sig-placeholder" id="sigPh">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div></div>
         <div class="sig-actions"><button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar</button></div>
         ${!plantilla && DTL.predeterminados.length<PREDET_DTL_MAX?`
-        <label class="chk" style="margin-top:8px" id="chkWrapGuardarPredetDtl"><input type="checkbox" id="chkGuardarPredetDtl" checked> Guardar como plantilla predeterminada (Predeterminado)</label>
-        <div class="field" id="nuevaPredetDtlNombreWrap" style="margin-top:6px"><input id="nuevaPredetDtlNombre" placeholder="Nombre de la plantilla, ej. Plantilla1"></div>`:''}
+        <label class="chk" style="margin-top:8px" id="chkWrapGuardarPredetDtl"><input type="checkbox" id="chkGuardarPredetDtl"> Guardar como plantilla predeterminada (Predeterminado)</label>
+        <div class="field" id="nuevaPredetDtlNombreWrap" style="margin-top:6px;display:none"><input id="nuevaPredetDtlNombre" placeholder="Nombre de la plantilla, ej. Plantilla1"></div>`:''}
       </div>
     </div>
     <div class="modal-foot">
@@ -7425,10 +7392,16 @@ async function construirKardexDtlPDF(trabajadorId){
   }
 
   const FOOTER_TOP = 265;
+  const colFotoW = x2f-x2-4;
+  // Decodificar todas las fotos EN PARALELO antes de dibujar (ver mismo comentario
+  // en construirKardexPDF de EPP).
+  const dimsPorEntrega = {};
+  await Promise.all(listaEntregas.map(async e=>{
+    if(e.foto_trabajador) dimsPorEntrega[e.id] = await getImageSize(e.foto_trabajador);
+  }));
   let y = encabezado();
   y = tablaHead(y);
   let pag = 1;
-  const colFotoW = x2f-x2-4;
   for(const e of listaEntregas){
     const partes = [];
     if(e.pantalon_cantidad>0) partes.push("• Pantalón × "+e.pantalon_cantidad+(e.pantalon_talla?" ("+e.pantalon_talla+")":""));
@@ -7440,7 +7413,7 @@ async function construirKardexDtlPDF(trabajadorId){
     const tieneAuditoria = !!(e.ip_address || e.dispositivo_ua);
     let rowH = Math.max(tieneAuditoria ? 22 : 16, wrapped.length*3.6 + 5);
     let fotoH = 0;
-    const dims = e.foto_trabajador ? await getImageSize(e.foto_trabajador) : null;
+    const dims = dimsPorEntrega[e.id] || null;
     if(dims && dims.w>0){ fotoH = Math.min(90, colFotoW * (dims.h/dims.w)); rowH = Math.max(rowH, fotoH+4); }
     if(y + rowH > FOOTER_TOP){
       piePagina(pag);
@@ -7739,7 +7712,7 @@ function wireDpFotoPreview(){
   const inp = document.getElementById('dpFileFoto');
   inp.onchange = async ()=>{
     const f = inp.files[0]; if(!f) return;
-    dtlPublicoState.foto = await comprimirImagen(f, 700);
+    dtlPublicoState.foto = await comprimirImagen(f, 500);
     inp.value = '';
     document.getElementById('dpFotoPreview').innerHTML = dpFotoPreviewHTML();
     wireDpFotoPreview();
