@@ -1701,10 +1701,15 @@ function initSignature(){
     isEmpty: ()=>!hasInk,
     clear: ()=>{ ctx.clearRect(0,0,canvas.width,canvas.height); hasInk=false; ph.style.display="grid"; },
     dataURL: ()=>{
-      // recorte sobre fondo blanco para el PDF
-      const tmp=document.createElement("canvas"); tmp.width=canvas.width; tmp.height=canvas.height;
+      // Recorte sobre fondo blanco para el PDF. El canvas real mide CSS-px × devicePixelRatio
+      // (hasta 3x en celulares de gama alta) — mucho más de lo que hace falta para una firma
+      // que se imprime en una columna angosta del kárdex, así que se limita el ancho de salida.
+      const maxW = 600;
+      const escala = Math.min(1, maxW / canvas.width);
+      const outW = Math.round(canvas.width * escala), outH = Math.round(canvas.height * escala);
+      const tmp=document.createElement("canvas"); tmp.width=outW; tmp.height=outH;
       const tctx=tmp.getContext("2d"); tctx.fillStyle="#ffffff"; tctx.fillRect(0,0,tmp.width,tmp.height);
-      tctx.drawImage(canvas,0,0);
+      tctx.drawImage(canvas,0,0,outW,outH);
       return tmp.toDataURL("image/png");
     }
   };
@@ -5325,8 +5330,9 @@ async function renderFichaTrabajador(id){
 
     const filas = listaEntregas.map(e=>{
       const its = (itemsPorEntrega[e.id]||[]).map(it=>`${esc(it.nombre_item)} × ${it.cantidad}${it.talla?' ('+esc(it.talla)+')':''}`).join(', ');
+      const horaEnt = e.creado_en ? new Date(e.creado_en).toLocaleTimeString("es-CO",{hour:'2-digit',minute:'2-digit'}) : '';
       return `<tr>
-        <td>${fmtDate(e.fecha)}</td>
+        <td>${fmtDate(e.fecha)}${horaEnt?`<div class="muted-sm">${horaEnt}</div>`:''}</td>
         <td>${its||'—'}</td>
         <td>${esc(e.responsable_nombre||'—')}</td>
         <td>${puedoTocarReciente(e.creado_en, e.creado_por)?`<div style="display:flex;gap:6px"><button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntrega('${e.id}','${t.id}')">${I.pen}</button>
@@ -5778,6 +5784,11 @@ async function construirKardexPDF(trabajadorId){
   for(const e of listaEntregas){
     const its = itemsPorEntrega[e.id]||[];
     const lineas = its.length ? its.map(it=>"• "+it.nombre_item+" × "+it.cantidad+(it.talla?" ("+it.talla+")":"")) : ["—"];
+    // splitTextToSize mide el texto con la fuente ACTIVA en el momento de llamarla — hay
+    // que fijarla aquí, a la misma que se usa luego para dibujar (7.4), si no el ancho de
+    // ajuste queda calculado con la fuente que haya quedado activa de la fila anterior
+    // (más chica) y el texto se sale del recuadro al dibujarse más grande de lo que se midió.
+    doc.setFont("helvetica","normal"); doc.setFontSize(7.4);
     const wrapped = doc.splitTextToSize(pdfTexto(lineas.join("\n")), x2-x1-4);
     const tieneAuditoria = !!(e.ip_address || e.dispositivo_ua);
     let rowH = Math.max(tieneAuditoria ? 22 : 16, wrapped.length*3.6 + 5);
@@ -5808,7 +5819,7 @@ async function construirKardexPDF(trabajadorId){
       const disp = resumenDispositivoUA(e.dispositivo_ua);
       if(disp) doc.text(disp, (x0+x1)/2, yAudit, {align:"center"});
     }
-    doc.setFontSize(7.4); doc.setTextColor(20,20,20);
+    doc.setFont("helvetica","normal"); doc.setFontSize(7.4); doc.setTextColor(20,20,20);
     doc.text(wrapped, x1+2, y+5);
     if(e.foto_trabajador){
       try{
@@ -7165,8 +7176,9 @@ async function renderFichaTrabajadorDtl(id){
       if(e.camisa_cantidad>0) partes.push(`Camisa × ${e.camisa_cantidad}${e.camisa_talla?' ('+esc(e.camisa_talla)+')':''}`);
       if(e.botas_cantidad>0) partes.push(`Botas × ${e.botas_cantidad}${e.botas_talla?' ('+esc(e.botas_talla)+')':''}`);
       if(e.adicional) partes.push(esc(e.adicional));
+      const horaEnt = e.creado_en ? new Date(e.creado_en).toLocaleTimeString("es-CO",{hour:'2-digit',minute:'2-digit'}) : '';
       return `<tr>
-        <td>${fmtDate(e.fecha)}</td>
+        <td>${fmtDate(e.fecha)}${horaEnt?`<div class="muted-sm">${horaEnt}</div>`:''}</td>
         <td>${partes.join(', ')||'—'}</td>
         <td>${esc(e.responsable_nombre||(e.via==='remoto'?'(entrega remota)':'—'))}</td>
         <td>${puedoTocarReciente(e.creado_en, e.creado_por)?`<div style="display:flex;gap:6px"><button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntregaDtl('${e.id}','${t.id}')">${I.pen}</button>
@@ -7409,6 +7421,7 @@ async function construirKardexDtlPDF(trabajadorId){
     if(e.botas_cantidad>0) partes.push("• Botas × "+e.botas_cantidad+(e.botas_talla?" ("+e.botas_talla+")":""));
     if(e.adicional) partes.push("• "+e.adicional);
     const lineas = partes.length ? partes : ["—"];
+    doc.setFont("helvetica","normal"); doc.setFontSize(7.4);
     const wrapped = doc.splitTextToSize(pdfTexto(lineas.join("\n")), x2-x1-4);
     const tieneAuditoria = !!(e.ip_address || e.dispositivo_ua);
     let rowH = Math.max(tieneAuditoria ? 22 : 16, wrapped.length*3.6 + 5);
@@ -7438,7 +7451,7 @@ async function construirKardexDtlPDF(trabajadorId){
       const disp = resumenDispositivoUA(e.dispositivo_ua);
       if(disp) doc.text(disp, (x0+x1)/2, yAudit, {align:"center"});
     }
-    doc.setFontSize(7.4); doc.setTextColor(20,20,20);
+    doc.setFont("helvetica","normal"); doc.setFontSize(7.4); doc.setTextColor(20,20,20);
     doc.text(wrapped, x1+2, y+5);
     if(e.foto_trabajador){
       try{
