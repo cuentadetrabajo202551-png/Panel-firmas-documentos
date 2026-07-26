@@ -313,6 +313,7 @@ input,textarea,select{font-family:inherit;font-size:14px;color:var(--ink)}
   overflow:hidden;margin:auto 0;
 }
 .modal.lg{max-width:860px}
+.modal.xl{max-width:1080px}
 .overlay.open .modal{transform:none}
 .modal-head{padding:22px 26px;border-bottom:1px solid var(--line);display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
 .modal-head h2{font-family:var(--display);font-size:21px;font-weight:700;letter-spacing:-.01em}
@@ -354,7 +355,7 @@ table.dt tr:hover td{background:#fafbfe}
 .foto-thumb{height:36px;width:36px;object-fit:cover;border:1px solid var(--line);border-radius:7px;background:#fff;cursor:pointer}
 .dt .icon-btn{width:30px;height:30px;border-radius:8px}
 .dt .icon-btn svg{width:15px;height:15px}
-.dt .acc-mini{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
+.dt .acc-mini{display:flex;gap:5px;flex-wrap:nowrap;align-items:center}
 .muted-sm{color:var(--ink-3);font-size:12.5px}
 
 /* ---------- Public form ---------- */
@@ -1425,7 +1426,6 @@ function eliminarAsistente(aid, listaId, nombre){
       return;
     }
     await loadState();
-    closeModal();
     openDetail(listaId);
     toast("Registro eliminado","ok");
   };
@@ -1458,7 +1458,6 @@ function eliminarFirmaResponsable(listaId){
       return;
     }
     const l = getList(listaId); if(l) l.responsableFirma = null;
-    closeModal();
     openDetail(listaId);
     toast("Firma del responsable eliminada","ok");
   };
@@ -2871,7 +2870,7 @@ let _docPesadoId = null;
 
 async function abrirDocumento(id){
   // Abre el modal AL INSTANTE con una ruedita de carga
-  openModal(`<div class="modal lg"><div class="modal-body"><div class="load-box"><div class="spinner"></div><div class="muted-sm">Cargando documento…</div></div></div></div>`);
+  openModal(`<div class="modal xl"><div class="modal-body"><div class="load-box"><div class="spinner"></div><div class="muted-sm">Cargando documento…</div></div></div></div>`);
 
   // Carga LIGERA: sin el PDF ni las imágenes de firma (eso es lo pesado) → abre rápido
   const { data:doc, error } = await sb.from("doc_documentos")
@@ -2922,7 +2921,7 @@ async function abrirDocumento(id){
   }).join("");
 
   document.getElementById("modalHost").innerHTML = `
-    <div class="modal lg">
+    <div class="modal xl">
       <div class="modal-head"><div>
         <div style="display:flex;gap:10px;align-items:center;margin-bottom:4px">
           <span class="badge ${estadoBadgeClass(doc.estado)}"><span class="dot"></span>${estadoLabel(doc.estado)}</span>
@@ -3412,7 +3411,7 @@ function repetirFirmaFirmante(firmanteId, docId, nombre){
     const doc = docDetalleActual;
     if(doc && doc.estado==='finalizado'){ await sb.from("doc_documentos").update({estado:'enviado'}).eq("id",docId); }
     await sb.from("doc_eventos").insert({ documento_id:docId, firmante_id:firmanteId, tipo:'editado', detalle:{accion:'repetir_firma', nombre} });
-    closeModal(); toast("Firma restablecida — el firmante puede firmar de nuevo","ok");
+    toast("Firma restablecida — el firmante puede firmar de nuevo","ok");
     abrirDocumento(docId);
   };
 }
@@ -3458,7 +3457,7 @@ function eliminarFirmanteDoc(firmanteId, docId, nombre){
     const { error } = await sb.from("doc_firmantes").delete().eq("id", firmanteId);
     if(error){ btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`; toast("No se pudo eliminar: "+error.message,"err"); return; }
     await sb.from("doc_eventos").insert({ documento_id:docId, tipo:'editado', detalle:{accion:'eliminar_firmante', nombre} });
-    closeModal(); toast("Firmante eliminado","ok");
+    toast("Firmante eliminado","ok");
     abrirDocumento(docId);
   };
 }
