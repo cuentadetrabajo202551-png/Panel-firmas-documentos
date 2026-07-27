@@ -3173,6 +3173,29 @@ async function guardarEdicionDocumento(id){
 /* === Componer el PDF FIRMADO: estampa firma/fotos/textos en cada campo (pdf-lib) === */
 function _dataUrlABytes(u){ return Uint8Array.from(atob(u.split(',')[1]), c=>c.charCodeAt(0)); }
 
+/* Ver el archivo adjunto de una entrega escaneada (EPP o Dotación) — se carga bajo
+   demanda, nunca en la consulta de lista (es un base64 pesado, igual que firma/foto). */
+async function verAdjuntoEntrega(entregaId, tabla){
+  bloquear("Cargando archivo…");
+  const { data, error } = await sb.from(tabla).select("adjunto_archivo,adjunto_tipo,adjunto_titulo").eq("id",entregaId).maybeSingle();
+  desbloquear();
+  if(error || !data || !data.adjunto_archivo){ toast("No se pudo cargar el archivo","err"); return; }
+  if(data.adjunto_tipo === 'application/pdf'){
+    try{
+      const blob = new Blob([_dataUrlABytes(data.adjunto_archivo)], { type:'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(()=>URL.revokeObjectURL(url), 60000);
+    }catch(e){ toast("No se pudo abrir el archivo","err"); }
+  } else {
+    openModal(`<div class="modal" style="max-width:600px">
+      <div class="modal-head"><div><h2>${esc(data.adjunto_titulo||'Adjunto')}</h2></div>
+        <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+      <div class="modal-body" style="text-align:center"><img src="${data.adjunto_archivo}" style="max-width:100%;border-radius:8px"></div>
+    </div>`);
+  }
+}
+
 async function componerPdfFirmado(doc, firmantes){
   const { PDFDocument, StandardFonts, rgb } = window.PDFLib;
   const pdfDoc = await PDFDocument.load(_dataUrlABytes(doc.pdf));
@@ -3969,6 +3992,7 @@ function esRutaEdicion(){
 let DOTACION = { contratos: [], trabajadores: [], catalogo: [], entregas: [], entregaItems: [], predeterminados: [] };
 let dotQuery = "";
 let entregaDraft = null;
+let dotEscaneadaState = null;
 let contratoActualId = localStorage.getItem('dot_contrato_actual') || null; // null hasta que se carguen los contratos; "todos" = vista combinada
 /* Selección múltiple para marcar inactivos / eliminar en bloque (solo admin) */
 let dotMostrarInactivos = false;
@@ -3976,7 +4000,7 @@ let seleccionadosDot = new Set();
 
 async function loadDotacionState(){
   const [co, t, e, ei] = await Promise.all([
-    sb.from("dot_contratos").select("id,nombre,activo,creado_en").order("creado_en",{ascending:true}),
+    sb.from("dot_contratos").select("id,nombre,activo,creado_en,modo_registro").order("creado_en",{ascending:true}),
     sb.from("dot_trabajadores").select("id,nombre,identificacion,cargo,area,contrato_id,activo,inactivo_por_archivo,creado_en").order("nombre",{ascending:true}),
     sb.from("dot_entregas").select("id,trabajador_id,fecha").order("fecha",{ascending:false}),
     sb.from("dot_entrega_items").select("entrega_id,nombre_item,cantidad")
@@ -4401,6 +4425,14 @@ function abrirFormContrato(id, alGuardar, comoRaiz){
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
       <div class="field"><label>Nombre del contrato *</label><input id="ctNombre" value="${esc(c?.nombre||'')}" placeholder="Nombre del cliente o contrato"></div>
+      <div class="field">
+        <label>Modo de registro</label>
+        <select id="ctModoRegistro">
+          <option value="digital" ${(!c||c.modo_registro!=='escaneado')?'selected':''}>Digital (normal, con firmas capturadas en el celular)</option>
+          <option value="escaneado" ${c&&c.modo_registro==='escaneado'?'selected':''}>Escaneado (subir formato físico ya firmado, sin señal)</option>
+        </select>
+        <div class="muted-sm" style="margin-top:6px">Si eliges "Escaneado", nadie podrá registrar entregas digitales en este contrato — todas quedan como archivo adjunto. Pensado para supervisores sin señal en campo.</div>
+      </div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
@@ -4410,10 +4442,11 @@ function abrirFormContrato(id, alGuardar, comoRaiz){
   document.getElementById('btnGuardarContrato').onclick = async ()=>{
     const nombre = document.getElementById('ctNombre').value.trim();
     if(!nombre){ toast("Escribe el nombre del contrato","err"); return; }
+    const modo_registro = document.getElementById('ctModoRegistro').value;
     const btn = document.getElementById('btnGuardarContrato'); btn.disabled=true; btn.innerHTML="Guardando…";
     let error, data;
-    if(c){ ({error} = await sb.from("dot_contratos").update({nombre}).eq("id",c.id)); }
-    else { ({data,error} = await sb.from("dot_contratos").insert({nombre}).select().single()); }
+    if(c){ ({error} = await sb.from("dot_contratos").update({nombre,modo_registro}).eq("id",c.id)); }
+    else { ({data,error} = await sb.from("dot_contratos").insert({nombre,modo_registro}).select().single()); }
     if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
     await loadDotacionState();
     if(!c && data) { contratoActualId = data.id; localStorage.setItem('dot_contrato_actual', data.id); }
@@ -5027,6 +5060,10 @@ function abrirNuevaEntrega(trabajadorId){
     toast("Selecciona primero un contrato específico","err");
     return;
   }
+  if(contratoActual()?.modo_registro==='escaneado'){
+    abrirNuevaEntregaEscaneada(trabajadorId);
+    return;
+  }
   if(!DOTACION.catalogo.some(c=>c.activo)){
     toast("Primero agrega ítems al catálogo (botón 'Catálogo de ítems')","err");
     return;
@@ -5043,6 +5080,95 @@ function abrirNuevaEntrega(trabajadorId){
     fotoTrabajador: null
   };
   renderPasoEntrega1();
+}
+
+/* ---------- Nueva entrega ESCANEADA (contrato en modo "escaneado": sin señal en campo,
+   se sube el formato físico ya firmado en vez de capturar firmas/ítems digitales) ---------- */
+function abrirNuevaEntregaEscaneada(trabajadorId){
+  const t = trabajadorId ? DOTACION.trabajadores.find(x=>x.id===trabajadorId) : null;
+  const opcionesTrab = trabajadoresDelContrato().map(x=>`<option value="${x.id}" ${x.id===trabajadorId?'selected':''}>${esc(x.nombre)} — C.C. ${esc(x.identificacion)}</option>`).join('');
+  const nSugerido = (t ? DOTACION.entregas.filter(e=>e.trabajador_id===t.id).length : 0) + 1;
+  const tituloSugerido = `Entrega #${nSugerido} · ${fmtDate(hoyLocal())}`;
+  dotEscaneadaState = { trabajadorId: trabajadorId || null, archivo: null, archivoTipo: null, archivoNombre: null };
+  openModal(`<div class="modal" style="max-width:480px">
+    <div class="modal-head"><div><h2>Registrar entrega escaneada</h2><p>Este contrato usa formato físico — sube la foto o el PDF ya firmado.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      ${t ? `<div class="trab-summary" style="margin-bottom:14px"><div class="tk">Trabajador</div><div class="tv">${esc(t.nombre)} — C.C. ${esc(t.identificacion)}</div></div>`
+          : `<div class="field" style="margin-bottom:14px"><label>Trabajador *</label><select id="entEscTrabajador"><option value="">Selecciona…</option>${opcionesTrab}</select></div>`}
+      <div class="field row2">
+        <div><label>Fecha *</label><input type="date" id="entEscFecha" value="${hoyLocal()}"></div>
+        <div><label>Título *</label><input id="entEscTitulo" value="${esc(tituloSugerido)}" placeholder="Ej. Entrega #3 · 26/07/2026"></div>
+      </div>
+      <div class="field">
+        <label>Archivo escaneado (foto o PDF) *</label>
+        <div id="entEscPreview"></div>
+        <input type="file" id="entEscArchivo" accept="image/*,.pdf" style="display:none">
+        <button type="button" class="btn btn-ghost btn-sm" id="entEscBtnArchivo" style="margin-top:8px">${I.plus} Elegir archivo</button>
+      </div>
+      <div id="entEscError" class="login-err"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardarEntEsc">${I.check} Guardar</button>
+    </div></div>`);
+  document.getElementById('entEscBtnArchivo').onclick = ()=> document.getElementById('entEscArchivo').click();
+  document.getElementById('entEscArchivo').onchange = async (e)=>{
+    const f = e.target.files[0]; if(!f) return;
+    const esPdf = f.type==='application/pdf' || /\.pdf$/i.test(f.name||'');
+    if(esPdf){
+      const rd = new FileReader();
+      dotEscaneadaState.archivo = await new Promise(res=>{ rd.onload=()=>res(rd.result); rd.readAsDataURL(f); });
+      dotEscaneadaState.archivoTipo = 'application/pdf';
+    } else {
+      dotEscaneadaState.archivo = await comprimirImagen(f, 1400);
+      dotEscaneadaState.archivoTipo = 'image/jpeg';
+    }
+    dotEscaneadaState.archivoNombre = f.name;
+    renderEntEscPreview();
+  };
+  renderEntEscPreview();
+  document.getElementById('btnGuardarEntEsc').onclick = guardarEntregaEscaneada;
+}
+
+function renderEntEscPreview(){
+  const host = document.getElementById('entEscPreview'); if(!host) return;
+  if(!dotEscaneadaState.archivo){ host.innerHTML = '<p class="muted-sm" style="margin-top:6px">Ningún archivo elegido todavía.</p>'; return; }
+  if(dotEscaneadaState.archivoTipo === 'application/pdf'){
+    host.innerHTML = `<div class="muted-sm" style="margin-top:6px">${I.pdf} ${esc(dotEscaneadaState.archivoNombre||'archivo.pdf')} (PDF cargado)</div>`;
+  } else {
+    host.innerHTML = `<img src="${dotEscaneadaState.archivo}" style="max-width:100%;max-height:220px;border:1px solid var(--line);border-radius:8px;margin-top:6px">`;
+  }
+}
+
+async function guardarEntregaEscaneada(){
+  const err = document.getElementById('entEscError'); err.textContent='';
+  const selTrab = document.getElementById('entEscTrabajador');
+  const trabajadorId = dotEscaneadaState.trabajadorId || (selTrab ? selTrab.value : null);
+  if(!trabajadorId){ err.textContent = 'Selecciona el trabajador.'; return; }
+  const fecha = document.getElementById('entEscFecha').value || hoyLocal();
+  const titulo = document.getElementById('entEscTitulo').value.trim();
+  if(!titulo){ err.textContent = 'Escribe un título.'; return; }
+  if(!dotEscaneadaState.archivo){ err.textContent = 'Sube el archivo escaneado.'; return; }
+  const btn = document.getElementById('btnGuardarEntEsc'); btn.disabled=true; btn.innerHTML='Guardando…';
+  const { error } = await sb.rpc('dot_entrega_escaneada_registrar', {
+    p_trabajador_id: trabajadorId,
+    p_fecha: fecha,
+    p_adjunto_titulo: titulo,
+    p_adjunto_archivo: dotEscaneadaState.archivo,
+    p_adjunto_tipo: dotEscaneadaState.archivoTipo
+  });
+  if(error){
+    btn.disabled=false; btn.innerHTML=`${I.check} Guardar`;
+    toast("No se pudo guardar: "+error.message,"err");
+    return;
+  }
+  await loadDotacionState();
+  closeModal();
+  toast("Entrega escaneada guardada","ok");
+  const yaEstabaEnFicha = location.hash === "#/dotacion/trabajador/"+trabajadorId;
+  if(yaEstabaEnFicha){ renderFichaTrabajador(trabajadorId); }
+  else { location.hash = "#/dotacion/trabajador/"+trabajadorId; }
 }
 
 function renderPasoEntrega1(){
@@ -5330,10 +5456,10 @@ async function renderFichaTrabajador(id){
     const t = DOTACION.trabajadores.find(x=>x.id===id);
     if(!t){ toast("Trabajador no encontrado","err"); location.hash="#/dotacion"; return; }
     const { data: entregas } = await sb.from("dot_entregas")
-      .select("id,fecha,responsable_nombre,responsable_cargo,observaciones,creado_en,creado_por")
+      .select("id,fecha,responsable_nombre,responsable_cargo,observaciones,creado_en,creado_por,tipo_registro,adjunto_titulo,adjunto_tipo")
       .eq("trabajador_id", id).order("fecha",{ascending:false});
     const listaEntregas = entregas || [];
-    const idsEnt = listaEntregas.map(e=>e.id);
+    const idsEnt = listaEntregas.filter(e=>e.tipo_registro!=='escaneado').map(e=>e.id);
     const { data: items } = idsEnt.length
       ? await sb.from("dot_entrega_items").select("entrega_id,nombre_item,cantidad,talla").in("entrega_id", idsEnt)
       : { data: [] };
@@ -5341,14 +5467,21 @@ async function renderFichaTrabajador(id){
     (items||[]).forEach(it=>{ (itemsPorEntrega[it.entrega_id] = itemsPorEntrega[it.entrega_id]||[]).push(it); });
 
     const filas = listaEntregas.map(e=>{
-      const its = (itemsPorEntrega[e.id]||[]).map(it=>`${esc(it.nombre_item)} × ${it.cantidad}${it.talla?' ('+esc(it.talla)+')':''}`).join(', ');
       const horaEnt = e.creado_en ? new Date(e.creado_en).toLocaleTimeString("es-CO",{hour:'2-digit',minute:'2-digit'}) : '';
+      const esEscaneada = e.tipo_registro === 'escaneado';
+      const itemsCol = esEscaneada
+        ? `<span class="badge cerrada" style="margin-right:6px"><span class="dot"></span>Escaneado</span>${esc(e.adjunto_titulo||'')}`
+        : ((itemsPorEntrega[e.id]||[]).map(it=>`${esc(it.nombre_item)} × ${it.cantidad}${it.talla?' ('+esc(it.talla)+')':''}`).join(', ')||'—');
+      const accionesCol = esEscaneada
+        ? `<div style="display:flex;gap:6px"><button class="icon-btn" title="Ver archivo" onclick="verAdjuntoEntrega('${e.id}','dot_entregas')">${I.eye}</button>
+           ${puedoTocarReciente(e.creado_en, e.creado_por)?`<button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntrega('${e.id}','${t.id}')">${I.trash}</button>`:''}</div>`
+        : (puedoTocarReciente(e.creado_en, e.creado_por)?`<div style="display:flex;gap:6px"><button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntrega('${e.id}','${t.id}')">${I.pen}</button>
+        <button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntrega('${e.id}','${t.id}')">${I.trash}</button></div>`:'');
       return `<tr>
         <td>${fmtDate(e.fecha)}${horaEnt?`<div class="muted-sm">${horaEnt}</div>`:''}</td>
-        <td>${its||'—'}</td>
+        <td>${itemsCol}</td>
         <td>${esc(e.responsable_nombre||'—')}</td>
-        <td>${puedoTocarReciente(e.creado_en, e.creado_por)?`<div style="display:flex;gap:6px"><button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntrega('${e.id}','${t.id}')">${I.pen}</button>
-        <button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntrega('${e.id}','${t.id}')">${I.trash}</button></div>`:''}</td>
+        <td>${accionesCol}</td>
       </tr>`;
     }).join('');
 
@@ -5716,7 +5849,7 @@ async function construirKardexPDF(trabajadorId){
   const { data: t } = await sb.from("dot_trabajadores").select("id,nombre,identificacion,cargo,area,contrato_id").eq("id",trabajadorId).maybeSingle();
   if(!t) return null;
   const { data: entregas } = await sb.from("dot_entregas")
-    .select("id,fecha,responsable_nombre,responsable_cargo,firma_trabajador,firma_responsable,foto_trabajador,creado_en,via,ip_address,dispositivo_ua")
+    .select("id,fecha,responsable_nombre,responsable_cargo,firma_trabajador,firma_responsable,foto_trabajador,creado_en,via,ip_address,dispositivo_ua,tipo_registro,adjunto_titulo,adjunto_archivo,adjunto_tipo")
     .eq("trabajador_id", trabajadorId).order("fecha",{ascending:true});
   const listaEntregas = entregas || [];
   if(!listaEntregas.length) return null;
@@ -5788,14 +5921,19 @@ async function construirKardexPDF(trabajadorId){
   // trabajadores de historial largo eso hacía que el kárdex tardara cada vez más).
   const dimsPorEntrega = {};
   await Promise.all(listaEntregas.map(async e=>{
-    if(e.foto_trabajador) dimsPorEntrega[e.id] = await getImageSize(e.foto_trabajador);
+    if(e.tipo_registro==='escaneado'){
+      if(e.adjunto_archivo && e.adjunto_tipo!=='application/pdf') dimsPorEntrega[e.id] = await getImageSize(e.adjunto_archivo);
+    } else if(e.foto_trabajador) dimsPorEntrega[e.id] = await getImageSize(e.foto_trabajador);
   }));
   let y = encabezado();
   y = tablaHead(y);
   let pag = 1;
   for(const e of listaEntregas){
+    const esEscaneada = e.tipo_registro === 'escaneado';
     const its = itemsPorEntrega[e.id]||[];
-    const lineas = its.length ? its.map(it=>"• "+it.nombre_item+" × "+it.cantidad+(it.talla?" ("+it.talla+")":"")) : ["—"];
+    const lineas = esEscaneada
+      ? [pdfTexto(e.adjunto_titulo||'Entrega escaneada')]
+      : (its.length ? its.map(it=>"• "+it.nombre_item+" × "+it.cantidad+(it.talla?" ("+it.talla+")":"")) : ["—"]);
     // splitTextToSize mide el texto con la fuente ACTIVA en el momento de llamarla — hay
     // que fijarla aquí, a la misma que se usa luego para dibujar (7.4), si no el ancho de
     // ajuste queda calculado con la fuente que haya quedado activa de la fila anterior
@@ -5833,18 +5971,31 @@ async function construirKardexPDF(trabajadorId){
     }
     doc.setFont("helvetica","normal"); doc.setFontSize(7.4); doc.setTextColor(20,20,20);
     doc.text(wrapped, x1+2, y+5);
-    if(e.foto_trabajador){
-      try{
-        if(dims && dims.w>0) doc.addImage(e.foto_trabajador,"JPEG",x2+2,y+2,colFotoW,fotoH);
-        else doc.addImage(e.foto_trabajador,"JPEG",x2+2,y+2,colFotoW,rowH-4); // sin dimensiones (raro): antiguo comportamiento de respaldo
-      }catch(err){}
-    }
-    if(e.firma_trabajador){ try{ doc.addImage(e.firma_trabajador,"PNG",x2f+3,y+2,x3-x2f-6,rowH-4); }catch(err){} }
-    if(e.firma_responsable){ try{ doc.addImage(e.firma_responsable,"PNG",x3+3,y+2,x4-x3-6,rowH-4); }catch(err){} }
-    else if(e.via==='remoto'){
-      doc.setFont("helvetica","italic"); doc.setFontSize(7.5); doc.setTextColor(130,130,150);
-      doc.text("Firmado remotamente", (x3+x4)/2, y+rowH/2, {align:"center"});
-      doc.setFont("helvetica","normal");
+    if(esEscaneada){
+      if(e.adjunto_tipo==='application/pdf'){
+        doc.setFont("helvetica","italic"); doc.setFontSize(6.6); doc.setTextColor(130,130,150);
+        doc.text(doc.splitTextToSize("Archivo PDF adjunto — ver en el sistema", x4-x2-4), x2+2, y+rowH/2-1);
+        doc.setFont("helvetica","normal");
+      } else if(e.adjunto_archivo){
+        try{
+          if(dims && dims.w>0) doc.addImage(e.adjunto_archivo,"JPEG",x2+2,y+2,colFotoW,fotoH);
+          else doc.addImage(e.adjunto_archivo,"JPEG",x2+2,y+2,colFotoW,rowH-4);
+        }catch(err){}
+      }
+    } else {
+      if(e.foto_trabajador){
+        try{
+          if(dims && dims.w>0) doc.addImage(e.foto_trabajador,"JPEG",x2+2,y+2,colFotoW,fotoH);
+          else doc.addImage(e.foto_trabajador,"JPEG",x2+2,y+2,colFotoW,rowH-4); // sin dimensiones (raro): antiguo comportamiento de respaldo
+        }catch(err){}
+      }
+      if(e.firma_trabajador){ try{ doc.addImage(e.firma_trabajador,"PNG",x2f+3,y+2,x3-x2f-6,rowH-4); }catch(err){} }
+      if(e.firma_responsable){ try{ doc.addImage(e.firma_responsable,"PNG",x3+3,y+2,x4-x3-6,rowH-4); }catch(err){} }
+      else if(e.via==='remoto'){
+        doc.setFont("helvetica","italic"); doc.setFontSize(7.5); doc.setTextColor(130,130,150);
+        doc.text("Firmado remotamente", (x3+x4)/2, y+rowH/2, {align:"center"});
+        doc.setFont("helvetica","normal");
+      }
     }
     doc.setFontSize(6); doc.setTextColor(120,120,140);
     if(e.responsable_nombre) doc.text(pdfTexto(e.responsable_nombre), x3+3, y+rowH-1.5);
@@ -6018,6 +6169,7 @@ async function descargarExcelDotSeleccion(contratoIds){
 let DTL = { entidades: [], trabajadores: [], entregas: [], predeterminados: [] };
 let dtlQuery = "";
 let dtlEntregaDraft = null;
+let dtlEscaneadaState = null;
 /* Filtro de la grilla de trabajadores — "todas" muestra a todos los que la cuenta pueda ver
    (RLS ya limita a las entidades con acceso), sin necesidad de elegir una entidad primero. */
 let dtlFiltroEntidad = localStorage.getItem('dtl_filtro_entidad') || 'todas';
@@ -6028,7 +6180,7 @@ const DTL_DECLARACION = "Declaro haber recibido a satisfacción los elementos de
 
 async function loadDtlState(){
   const [en, t, e] = await Promise.all([
-    sb.from("dtl_entidades").select("id,nombre,activo,creado_en").order("creado_en",{ascending:true}),
+    sb.from("dtl_entidades").select("id,nombre,activo,creado_en,modo_registro").order("creado_en",{ascending:true}),
     sb.from("dtl_trabajadores").select("id,nombre,identificacion,cargo,area,entidad_id,fecha_ingreso,correo,activo,inactivo_por_archivo,creado_en").order("nombre",{ascending:true}),
     sb.from("dtl_entregas").select("id,trabajador_id,fecha").order("fecha",{ascending:false})
   ]);
@@ -6540,6 +6692,14 @@ function abrirFormEntidadDtl(id, alGuardar, comoRaiz){
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
       <div class="field"><label>Nombre *</label><input id="entNombre" value="${esc(x?.nombre||'')}" placeholder="Nombre del contrato"></div>
+      <div class="field">
+        <label>Modo de registro</label>
+        <select id="entModoRegistro">
+          <option value="digital" ${(!x||x.modo_registro!=='escaneado')?'selected':''}>Digital (normal, con firmas capturadas en el celular)</option>
+          <option value="escaneado" ${x&&x.modo_registro==='escaneado'?'selected':''}>Escaneado (subir formato físico ya firmado, sin señal)</option>
+        </select>
+        <div class="muted-sm" style="margin-top:6px">Si eliges "Escaneado", nadie podrá registrar entregas digitales en este contrato — todas quedan como archivo adjunto. Pensado para supervisores sin señal en campo.</div>
+      </div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
@@ -6549,10 +6709,11 @@ function abrirFormEntidadDtl(id, alGuardar, comoRaiz){
   document.getElementById('btnGuardarEntidad').onclick = async ()=>{
     const nombre = document.getElementById('entNombre').value.trim();
     if(!nombre){ toast("Ponle un nombre","err"); return; }
+    const modo_registro = document.getElementById('entModoRegistro').value;
     const btn = document.getElementById('btnGuardarEntidad'); btn.disabled=true; btn.innerHTML="Guardando…";
     const { error } = x
-      ? await sb.from("dtl_entidades").update({ nombre }).eq("id", x.id)
-      : await sb.from("dtl_entidades").insert({ nombre });
+      ? await sb.from("dtl_entidades").update({ nombre, modo_registro }).eq("id", x.id)
+      : await sb.from("dtl_entidades").insert({ nombre, modo_registro });
     if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
     await loadDtlState();
     toast(x?"Contrato actualizado":"Contrato creado","ok");
@@ -6866,6 +7027,11 @@ function eliminarPredeterminadoDtl(id){
 async function abrirNuevaEntregaDtl(trabajadorId){
   const t = DTL.trabajadores.find(x=>x.id===trabajadorId);
   if(!t){ toast("Trabajador no encontrado","err"); return; }
+  const entidad = DTL.entidades.find(e=>e.id===t.entidad_id);
+  if(entidad?.modo_registro==='escaneado'){
+    abrirNuevaEntregaEscaneadaDtl(trabajadorId);
+    return;
+  }
   bloquear("Cargando…");
   try{ DTL.predeterminados = await cargarPredeterminadosDtl(t.entidad_id); } finally{ desbloquear(); }
   dtlEntregaDraft = {
@@ -6882,6 +7048,91 @@ async function abrirNuevaEntregaDtl(trabajadorId){
     fotoTrabajador: null
   };
   renderPasoDtl1();
+}
+
+/* ---------- Nueva entrega ESCANEADA de Dotación (mismo patrón que EPP) ---------- */
+function abrirNuevaEntregaEscaneadaDtl(trabajadorId){
+  const t = DTL.trabajadores.find(x=>x.id===trabajadorId);
+  if(!t){ toast("Trabajador no encontrado","err"); return; }
+  const nSugerido = DTL.entregas.filter(e=>e.trabajador_id===t.id).length + 1;
+  const tituloSugerido = `Entrega #${nSugerido} · ${fmtDate(hoyLocal())}`;
+  dtlEscaneadaState = { trabajadorId, archivo: null, archivoTipo: null, archivoNombre: null };
+  openModal(`<div class="modal" style="max-width:480px">
+    <div class="modal-head"><div><h2>Registrar entrega escaneada</h2><p>Este contrato usa formato físico — sube la foto o el PDF ya firmado.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="trab-summary" style="margin-bottom:14px"><div class="tk">Trabajador</div><div class="tv">${esc(t.nombre)} — C.C. ${esc(t.identificacion)}</div></div>
+      <div class="field row2">
+        <div><label>Fecha *</label><input type="date" id="entEscDtlFecha" value="${hoyLocal()}"></div>
+        <div><label>Título *</label><input id="entEscDtlTitulo" value="${esc(tituloSugerido)}" placeholder="Ej. Entrega #3 · 26/07/2026"></div>
+      </div>
+      <div class="field">
+        <label>Archivo escaneado (foto o PDF) *</label>
+        <div id="entEscDtlPreview"></div>
+        <input type="file" id="entEscDtlArchivo" accept="image/*,.pdf" style="display:none">
+        <button type="button" class="btn btn-ghost btn-sm" id="entEscDtlBtnArchivo" style="margin-top:8px">${I.plus} Elegir archivo</button>
+      </div>
+      <div id="entEscDtlError" class="login-err"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardarEntEscDtl">${I.check} Guardar</button>
+    </div></div>`);
+  document.getElementById('entEscDtlBtnArchivo').onclick = ()=> document.getElementById('entEscDtlArchivo').click();
+  document.getElementById('entEscDtlArchivo').onchange = async (e)=>{
+    const f = e.target.files[0]; if(!f) return;
+    const esPdf = f.type==='application/pdf' || /\.pdf$/i.test(f.name||'');
+    if(esPdf){
+      const rd = new FileReader();
+      dtlEscaneadaState.archivo = await new Promise(res=>{ rd.onload=()=>res(rd.result); rd.readAsDataURL(f); });
+      dtlEscaneadaState.archivoTipo = 'application/pdf';
+    } else {
+      dtlEscaneadaState.archivo = await comprimirImagen(f, 1400);
+      dtlEscaneadaState.archivoTipo = 'image/jpeg';
+    }
+    dtlEscaneadaState.archivoNombre = f.name;
+    renderEntEscDtlPreview();
+  };
+  renderEntEscDtlPreview();
+  document.getElementById('btnGuardarEntEscDtl').onclick = guardarEntregaEscaneadaDtl;
+}
+
+function renderEntEscDtlPreview(){
+  const host = document.getElementById('entEscDtlPreview'); if(!host) return;
+  if(!dtlEscaneadaState.archivo){ host.innerHTML = '<p class="muted-sm" style="margin-top:6px">Ningún archivo elegido todavía.</p>'; return; }
+  if(dtlEscaneadaState.archivoTipo === 'application/pdf'){
+    host.innerHTML = `<div class="muted-sm" style="margin-top:6px">${I.pdf} ${esc(dtlEscaneadaState.archivoNombre||'archivo.pdf')} (PDF cargado)</div>`;
+  } else {
+    host.innerHTML = `<img src="${dtlEscaneadaState.archivo}" style="max-width:100%;max-height:220px;border:1px solid var(--line);border-radius:8px;margin-top:6px">`;
+  }
+}
+
+async function guardarEntregaEscaneadaDtl(){
+  const err = document.getElementById('entEscDtlError'); err.textContent='';
+  const fecha = document.getElementById('entEscDtlFecha').value || hoyLocal();
+  const titulo = document.getElementById('entEscDtlTitulo').value.trim();
+  if(!titulo){ err.textContent = 'Escribe un título.'; return; }
+  if(!dtlEscaneadaState.archivo){ err.textContent = 'Sube el archivo escaneado.'; return; }
+  const btn = document.getElementById('btnGuardarEntEscDtl'); btn.disabled=true; btn.innerHTML='Guardando…';
+  const { error } = await sb.rpc('dtl_entrega_escaneada_registrar', {
+    p_trabajador_id: dtlEscaneadaState.trabajadorId,
+    p_fecha: fecha,
+    p_adjunto_titulo: titulo,
+    p_adjunto_archivo: dtlEscaneadaState.archivo,
+    p_adjunto_tipo: dtlEscaneadaState.archivoTipo
+  });
+  if(error){
+    btn.disabled=false; btn.innerHTML=`${I.check} Guardar`;
+    toast("No se pudo guardar: "+error.message,"err");
+    return;
+  }
+  const trabajadorId = dtlEscaneadaState.trabajadorId;
+  await loadDtlState();
+  closeModal();
+  toast("Entrega escaneada guardada","ok");
+  const yaEstabaEnFicha = location.hash === "#/dotacionlegal/trabajador/"+trabajadorId;
+  if(yaEstabaEnFicha){ renderFichaTrabajadorDtl(trabajadorId); }
+  else { location.hash = "#/dotacionlegal/trabajador/"+trabajadorId; }
 }
 
 function renderPasoDtl1(){
@@ -7178,23 +7429,31 @@ async function renderFichaTrabajadorDtl(id){
     const t = DTL.trabajadores.find(x=>x.id===id);
     if(!t){ toast("Trabajador no encontrado","err"); location.hash="#/dotacionlegal"; return; }
     const { data: entregas } = await sb.from("dtl_entregas")
-      .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,via,creado_en,creado_por")
+      .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,via,creado_en,creado_por,tipo_registro,adjunto_titulo,adjunto_tipo")
       .eq("trabajador_id", id).order("fecha",{ascending:false});
     const listaEntregas = entregas || [];
 
     const filas = listaEntregas.map(e=>{
+      const esEscaneada = e.tipo_registro === 'escaneado';
       const partes = [];
       if(e.pantalon_cantidad>0) partes.push(`Pantalón × ${e.pantalon_cantidad}${e.pantalon_talla?' ('+esc(e.pantalon_talla)+')':''}`);
       if(e.camisa_cantidad>0) partes.push(`Camisa × ${e.camisa_cantidad}${e.camisa_talla?' ('+esc(e.camisa_talla)+')':''}`);
       if(e.botas_cantidad>0) partes.push(`Botas × ${e.botas_cantidad}${e.botas_talla?' ('+esc(e.botas_talla)+')':''}`);
       if(e.adicional) partes.push(esc(e.adicional));
       const horaEnt = e.creado_en ? new Date(e.creado_en).toLocaleTimeString("es-CO",{hour:'2-digit',minute:'2-digit'}) : '';
+      const itemsCol = esEscaneada
+        ? `<span class="badge cerrada" style="margin-right:6px"><span class="dot"></span>Escaneado</span>${esc(e.adjunto_titulo||'')}`
+        : (partes.join(', ')||'—');
+      const accionesCol = esEscaneada
+        ? `<div style="display:flex;gap:6px"><button class="icon-btn" title="Ver archivo" onclick="verAdjuntoEntrega('${e.id}','dtl_entregas')">${I.eye}</button>
+           ${puedoTocarReciente(e.creado_en, e.creado_por)?`<button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntregaDtl('${e.id}','${t.id}')">${I.trash}</button>`:''}</div>`
+        : (puedoTocarReciente(e.creado_en, e.creado_por)?`<div style="display:flex;gap:6px"><button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntregaDtl('${e.id}','${t.id}')">${I.pen}</button>
+        <button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntregaDtl('${e.id}','${t.id}')">${I.trash}</button></div>`:'');
       return `<tr>
         <td>${fmtDate(e.fecha)}${horaEnt?`<div class="muted-sm">${horaEnt}</div>`:''}</td>
-        <td>${partes.join(', ')||'—'}</td>
+        <td>${itemsCol}</td>
         <td>${esc(e.responsable_nombre||(e.via==='remoto'?'(entrega remota)':'—'))}</td>
-        <td>${puedoTocarReciente(e.creado_en, e.creado_por)?`<div style="display:flex;gap:6px"><button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntregaDtl('${e.id}','${t.id}')">${I.pen}</button>
-        <button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntregaDtl('${e.id}','${t.id}')">${I.trash}</button></div>`:''}</td>
+        <td>${accionesCol}</td>
       </tr>`;
     }).join('');
 
@@ -7354,7 +7613,7 @@ async function construirKardexDtlPDF(trabajadorId){
   const { data: t } = await sb.from("dtl_trabajadores").select("id,nombre,identificacion,cargo,area,entidad_id").eq("id",trabajadorId).maybeSingle();
   if(!t) return null;
   const { data: entregas } = await sb.from("dtl_entregas")
-    .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,firma_trabajador,firma_responsable,foto_trabajador,creado_en,via,ip_address,dispositivo_ua")
+    .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,firma_trabajador,firma_responsable,foto_trabajador,creado_en,via,ip_address,dispositivo_ua,tipo_registro,adjunto_titulo,adjunto_archivo,adjunto_tipo")
     .eq("trabajador_id", trabajadorId).order("fecha",{ascending:true});
   const listaEntregas = entregas || [];
   if(!listaEntregas.length) return null;
@@ -7421,18 +7680,21 @@ async function construirKardexDtlPDF(trabajadorId){
   // en construirKardexPDF de EPP).
   const dimsPorEntrega = {};
   await Promise.all(listaEntregas.map(async e=>{
-    if(e.foto_trabajador) dimsPorEntrega[e.id] = await getImageSize(e.foto_trabajador);
+    if(e.tipo_registro==='escaneado'){
+      if(e.adjunto_archivo && e.adjunto_tipo!=='application/pdf') dimsPorEntrega[e.id] = await getImageSize(e.adjunto_archivo);
+    } else if(e.foto_trabajador) dimsPorEntrega[e.id] = await getImageSize(e.foto_trabajador);
   }));
   let y = encabezado();
   y = tablaHead(y);
   let pag = 1;
   for(const e of listaEntregas){
+    const esEscaneada = e.tipo_registro === 'escaneado';
     const partes = [];
     if(e.pantalon_cantidad>0) partes.push("• Pantalón × "+e.pantalon_cantidad+(e.pantalon_talla?" ("+e.pantalon_talla+")":""));
     if(e.camisa_cantidad>0) partes.push("• Camisa × "+e.camisa_cantidad+(e.camisa_talla?" ("+e.camisa_talla+")":""));
     if(e.botas_cantidad>0) partes.push("• Botas × "+e.botas_cantidad+(e.botas_talla?" ("+e.botas_talla+")":""));
     if(e.adicional) partes.push("• "+e.adicional);
-    const lineas = partes.length ? partes : ["—"];
+    const lineas = esEscaneada ? [pdfTexto(e.adjunto_titulo||'Entrega escaneada')] : (partes.length ? partes : ["—"]);
     doc.setFont("helvetica","normal"); doc.setFontSize(7.4);
     const wrapped = doc.splitTextToSize(pdfTexto(lineas.join("\n")), x2-x1-4);
     const tieneAuditoria = !!(e.ip_address || e.dispositivo_ua);
@@ -7465,18 +7727,31 @@ async function construirKardexDtlPDF(trabajadorId){
     }
     doc.setFont("helvetica","normal"); doc.setFontSize(7.4); doc.setTextColor(20,20,20);
     doc.text(wrapped, x1+2, y+5);
-    if(e.foto_trabajador){
-      try{
-        if(dims && dims.w>0) doc.addImage(e.foto_trabajador,"JPEG",x2+2,y+2,colFotoW,fotoH);
-        else doc.addImage(e.foto_trabajador,"JPEG",x2+2,y+2,colFotoW,rowH-4);
-      }catch(err){}
-    }
-    if(e.firma_trabajador){ try{ doc.addImage(e.firma_trabajador,"PNG",x2f+3,y+2,x3-x2f-6,rowH-4); }catch(err){} }
-    if(e.firma_responsable){ try{ doc.addImage(e.firma_responsable,"PNG",x3+3,y+2,x4-x3-6,rowH-4); }catch(err){} }
-    else if(e.via==='remoto'){
-      doc.setFont("helvetica","italic"); doc.setFontSize(7.5); doc.setTextColor(130,130,150);
-      doc.text("Firmado remotamente", (x3+x4)/2, y+rowH/2, {align:"center"});
-      doc.setFont("helvetica","normal");
+    if(esEscaneada){
+      if(e.adjunto_tipo==='application/pdf'){
+        doc.setFont("helvetica","italic"); doc.setFontSize(6.6); doc.setTextColor(130,130,150);
+        doc.text(doc.splitTextToSize("Archivo PDF adjunto — ver en el sistema", x4-x2-4), x2+2, y+rowH/2-1);
+        doc.setFont("helvetica","normal");
+      } else if(e.adjunto_archivo){
+        try{
+          if(dims && dims.w>0) doc.addImage(e.adjunto_archivo,"JPEG",x2+2,y+2,colFotoW,fotoH);
+          else doc.addImage(e.adjunto_archivo,"JPEG",x2+2,y+2,colFotoW,rowH-4);
+        }catch(err){}
+      }
+    } else {
+      if(e.foto_trabajador){
+        try{
+          if(dims && dims.w>0) doc.addImage(e.foto_trabajador,"JPEG",x2+2,y+2,colFotoW,fotoH);
+          else doc.addImage(e.foto_trabajador,"JPEG",x2+2,y+2,colFotoW,rowH-4);
+        }catch(err){}
+      }
+      if(e.firma_trabajador){ try{ doc.addImage(e.firma_trabajador,"PNG",x2f+3,y+2,x3-x2f-6,rowH-4); }catch(err){} }
+      if(e.firma_responsable){ try{ doc.addImage(e.firma_responsable,"PNG",x3+3,y+2,x4-x3-6,rowH-4); }catch(err){} }
+      else if(e.via==='remoto'){
+        doc.setFont("helvetica","italic"); doc.setFontSize(7.5); doc.setTextColor(130,130,150);
+        doc.text("Firmado remotamente", (x3+x4)/2, y+rowH/2, {align:"center"});
+        doc.setFont("helvetica","normal");
+      }
     }
     doc.setFontSize(6); doc.setTextColor(120,120,140);
     if(e.responsable_nombre) doc.text(pdfTexto(e.responsable_nombre), x3+3, y+rowH-1.5);
