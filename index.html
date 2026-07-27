@@ -644,6 +644,7 @@ let STATE = { listas: [], userEmail: "" };
 let MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], nombre:"", uid:null };
 /* Mapa uid -> nombre/correo, para mostrar "Creado por: X" sin exponer toda acc_perfiles */
 let PERFILES_NOMBRE = {};
+let PERFILES_CORREO = {};
 
 /* Ajustes globales de la empresa (tabla app_config, fila única). Legible por anon
    porque el enlace público de Dotación también necesita saber si la foto es obligatoria. */
@@ -677,7 +678,8 @@ async function cargarMiPerfil(){
     uid
   };
   PERFILES_NOMBRE = {};
-  (pn||[]).forEach(x=>{ PERFILES_NOMBRE[x.id] = x.nombre || x.email || "—"; });
+  PERFILES_CORREO = {};
+  (pn||[]).forEach(x=>{ PERFILES_NOMBRE[x.id] = x.nombre || x.email || "—"; PERFILES_CORREO[x.id] = x.email || ""; });
 }
 function tieneModulo(m){ return MIPERFIL.esAdmin || (MIPERFIL.activo && MIPERFIL.modulos.includes(m)); }
 function tieneContratoDotacion(id){ return MIPERFIL.esAdmin || MIPERFIL.contratos.includes(id); }
@@ -697,6 +699,7 @@ function puedoTocarReciente(creadoEn, creadoPor){
   return creadoPor===MIPERFIL.uid && (Date.now() - new Date(creadoEn).getTime()) < 24*60*60*1000;
 }
 function nombreDe(uid){ return uid ? (PERFILES_NOMBRE[uid] || "—") : "—"; }
+function correoDe(uid){ return uid ? (PERFILES_CORREO[uid] || "") : ""; }
 
 /* Pantalla de candado: se usa cuando el usuario no tiene acceso a un módulo o está desactivado */
 function renderSinAcceso(tituloModulo){
@@ -781,6 +784,24 @@ async function porLotes(ids, fn, tam=150){
     if(error) return { error };
   }
   return { error: null };
+}
+/* Trae TODAS las filas de una consulta, sin importar cuántas sean — Supabase/PostgREST
+   limita a 1000 filas por página si no se pide explícitamente un rango, así que una
+   tabla que ya pasó de 1000 filas (dot_entregas, dtl_entregas... con el uso diario, tarde
+   o temprano cualquier tabla que crece sin parar llega ahí) se quedaba TRUNCADA en
+   silencio — sin error, solo con menos filas de las que en realidad hay. Recibe una
+   función que arma la consulta desde cero (para poder pedirle un ".range()" distinto en
+   cada vuelta) en vez del resultado ya armado. */
+async function cargarTodasFilas(armarConsulta, tam=1000){
+  let desde = 0, todas = [];
+  while(true){
+    const { data, error } = await armarConsulta().range(desde, desde+tam-1);
+    if(error) return { data: null, error };
+    todas = todas.concat(data||[]);
+    if(!data || data.length < tam) break;
+    desde += tam;
+  }
+  return { data: todas, error: null };
 }
 function hoyLocal(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function pdfTexto(s){ return String(s==null?'':s).replace(/[^\x09\x0A\x0D\x20-\xFF]/g,''); }
@@ -1027,7 +1048,7 @@ function wireLogout(){
     b.onclick = async ()=>{
       await sb.auth.signOut(); STATE.listas=[]; STATE.userEmail="";
       MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], nombre:"", uid:null };
-      PERFILES_NOMBRE = {};
+      PERFILES_NOMBRE = {}; PERFILES_CORREO = {};
       location.hash=""; router();
     };
   });
@@ -2489,6 +2510,47 @@ function hacerArrastrable(el, c, wrap){
   el.addEventListener('mousedown',onDown); el.addEventListener('touchstart',onDown,{passive:false});
 }
 
+/* Convierte una foto/captura de una firma en papel (fondo blanco/claro con tinta oscura)
+   en un PNG con fondo TRANSPARENTE, para que se vea igual de limpia que una firma hecha
+   a mano en el lienzo — usado en las plantillas de firma de EPP/Dotación. Los píxeles
+   claros (papel) se vuelven transparentes; los oscuros (tinta) quedan opacos, con una
+   franja intermedia para que el borde del trazo no se vea dentado. */
+function quitarFondoFirma(file){
+  return new Promise((res, rej) => {
+    const rd = new FileReader();
+    rd.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const maxW = 700;
+        const sc = Math.min(1, maxW/img.width);
+        const w = Math.max(1, Math.round(img.width*sc)), h = Math.max(1, Math.round(img.height*sc));
+        const cv = document.createElement('canvas'); cv.width=w; cv.height=h;
+        const ctx = cv.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        let imgData;
+        try{ imgData = ctx.getImageData(0,0,w,h); }catch(e){ rej(e); return; }
+        const d = imgData.data;
+        const claro = 205, oscuro = 130; // umbral papel/tinta, con transición suave entre los dos
+        for(let i=0;i<d.length;i+=4){
+          const luminancia = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
+          let alpha;
+          if(luminancia >= claro) alpha = 0;
+          else if(luminancia <= oscuro) alpha = 255;
+          else alpha = Math.round(255 * (claro - luminancia) / (claro - oscuro));
+          d[i]=14; d[i+1]=23; d[i+2]=51; // mismo azul-tinta que usa la firma dibujada a mano (#0e1733)
+          d[i+3] = Math.round(alpha * (d[i+3]/255)); // respeta también la transparencia que ya trajera el archivo
+        }
+        ctx.putImageData(imgData,0,0);
+        res(cv.toDataURL('image/png'));
+      };
+      img.onerror = () => rej(new Error('No se pudo leer la imagen'));
+      img.src = rd.result;
+    };
+    rd.onerror = () => rej(new Error('No se pudo leer el archivo'));
+    rd.readAsDataURL(file);
+  });
+}
+
 function comprimirImagen(file, maxW){
   return new Promise(res=>{
     const rd=new FileReader();
@@ -3194,6 +3256,104 @@ async function verAdjuntoEntrega(entregaId, tabla){
       <div class="modal-body" style="text-align:center"><img src="${data.adjunto_archivo}" style="max-width:100%;border-radius:8px"></div>
     </div>`);
   }
+}
+
+/* Editar una entrega escaneada: corregir el título y/o reemplazar el archivo. Compartida
+   entre EPP y Dotación (recibe la tabla). Igual que editar una entrega digital, solo se
+   ofrece dentro de las 24h (el botón que la llama ya está gated por puedoTocarReciente). */
+async function abrirEditarEntregaEscaneada(entregaId, trabajadorId, tabla){
+  bloquear("Cargando…");
+  const { data, error } = await sb.from(tabla).select("adjunto_titulo,adjunto_tipo").eq("id",entregaId).maybeSingle();
+  desbloquear();
+  if(error || !data){ toast("No se pudo cargar la entrega","err"); return; }
+  editEscaneadaState = { entregaId, trabajadorId, tabla, archivoNuevo:null, archivoNuevoTipo:null };
+  openModal(`<div class="modal" style="max-width:480px">
+    <div class="modal-head"><div><h2>Editar entrega escaneada</h2><p>Corrige el título o reemplaza el archivo.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Título *</label><input id="editEscTitulo" value="${esc(data.adjunto_titulo||'')}"></div>
+      <div class="field">
+        <label>Reemplazar archivo <span class="opt">(opcional)</span></label>
+        <div id="editEscPreview"><p class="muted-sm" style="margin-top:6px">Si no eliges uno nuevo, se conserva el archivo actual.</p></div>
+        <input type="file" id="editEscArchivo" accept="image/*,.pdf" style="display:none">
+        <button type="button" class="btn btn-ghost btn-sm" id="editEscBtnArchivo" style="margin-top:8px">${I.plus} Elegir archivo nuevo</button>
+      </div>
+      <div id="editEscError" class="login-err"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardarEditEsc">${I.check} Guardar</button>
+    </div></div>`);
+  document.getElementById('editEscBtnArchivo').onclick = ()=> document.getElementById('editEscArchivo').click();
+  document.getElementById('editEscArchivo').onchange = async (e)=>{
+    const f = e.target.files[0]; if(!f) return;
+    const esPdf = f.type==='application/pdf' || /\.pdf$/i.test(f.name||'');
+    if(esPdf){
+      const rd = new FileReader();
+      editEscaneadaState.archivoNuevo = await new Promise(res=>{ rd.onload=()=>res(rd.result); rd.readAsDataURL(f); });
+      editEscaneadaState.archivoNuevoTipo = 'application/pdf';
+      document.getElementById('editEscPreview').innerHTML = `<div class="muted-sm" style="margin-top:6px">${I.pdf} ${esc(f.name)} (PDF nuevo cargado)</div>`;
+    } else {
+      editEscaneadaState.archivoNuevo = await comprimirImagen(f, 1400);
+      editEscaneadaState.archivoNuevoTipo = 'image/jpeg';
+      document.getElementById('editEscPreview').innerHTML = `<img src="${editEscaneadaState.archivoNuevo}" style="max-width:100%;max-height:220px;border:1px solid var(--line);border-radius:8px;margin-top:6px">`;
+    }
+  };
+  document.getElementById('btnGuardarEditEsc').onclick = guardarEditarEntregaEscaneada;
+}
+
+async function guardarEditarEntregaEscaneada(){
+  const err = document.getElementById('editEscError'); err.textContent='';
+  const titulo = document.getElementById('editEscTitulo').value.trim();
+  if(!titulo){ err.textContent = 'Escribe un título.'; return; }
+  const btn = document.getElementById('btnGuardarEditEsc'); btn.disabled=true; btn.innerHTML='Guardando…';
+  const payload = { adjunto_titulo: titulo };
+  if(editEscaneadaState.archivoNuevo){
+    payload.adjunto_archivo = editEscaneadaState.archivoNuevo;
+    payload.adjunto_tipo = editEscaneadaState.archivoNuevoTipo;
+  }
+  const { error } = await sb.from(editEscaneadaState.tabla).update(payload).eq("id", editEscaneadaState.entregaId);
+  if(error){
+    btn.disabled=false; btn.innerHTML=`${I.check} Guardar`;
+    toast("No se pudo guardar: "+error.message,"err");
+    return;
+  }
+  const { trabajadorId, tabla } = editEscaneadaState;
+  toast("Entrega actualizada","ok");
+  if(tabla === 'dot_entregas'){ renderFichaTrabajador(trabajadorId); } else { renderFichaTrabajadorDtl(trabajadorId); }
+}
+
+/* Descarga en un ZIP todos los archivos escaneados de UN trabajador — reemplaza al
+   kárdex PDF cuando su contrato/entidad está en modo "escaneado" (no tiene sentido
+   armar el formato de kárdex digital si no hay ítems/firmas capturadas). */
+async function descargarZipAdjuntosTrabajador(tabla, trabajadorId, nombreTrabajador){
+  if(!window.JSZip){ toast("No se pudo cargar el compresor ZIP (revisa tu conexión)","err"); return; }
+  bloquear("Preparando ZIP…");
+  try{
+    const { data, error } = await sb.from(tabla)
+      .select("id,fecha,adjunto_titulo,adjunto_archivo,adjunto_tipo")
+      .eq("trabajador_id", trabajadorId).eq("tipo_registro","escaneado").order("fecha",{ascending:true});
+    if(error){ toast("No se pudo cargar los adjuntos: "+error.message,"err"); return; }
+    const lista = (data||[]).filter(e=>e.adjunto_archivo);
+    if(!lista.length){ toast("Este trabajador no tiene adjuntos guardados todavía","err"); return; }
+    const zip = new JSZip();
+    const usados = {};
+    lista.forEach((e,i)=>{
+      const ext = e.adjunto_tipo==='application/pdf' ? '.pdf' : '.jpg';
+      let base = (e.adjunto_titulo||('Entrega_'+(i+1))).replace(/[^\w\sáéíóúñ-]/gi,'').trim().replace(/\s+/g,'_').slice(0,60) || ('adjunto_'+(i+1));
+      if(usados[base]!=null){ usados[base]++; base = base+'_'+usados[base]; } else usados[base]=0;
+      try{ zip.file(base+ext, _dataUrlABytes(e.adjunto_archivo)); }catch(err){}
+    });
+    const blob = await zip.generateAsync({ type:'blob', compression:'DEFLATE' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url;
+    const nombreBase = (nombreTrabajador||'trabajador').replace(/[^\w\sáéíóúñ-]/gi,'').trim().replace(/\s+/g,'_').slice(0,50);
+    a.download = 'Adjuntos_'+nombreBase+'.zip';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 6000);
+    toast(`ZIP con ${lista.length} adjunto(s) generado`,"ok");
+  }catch(e){ console.error(e); toast("No se pudo generar el ZIP: "+(e.message||''),"err"); }
+  finally{ desbloquear(); }
 }
 
 async function componerPdfFirmado(doc, firmantes){
@@ -3993,6 +4153,7 @@ let DOTACION = { contratos: [], trabajadores: [], catalogo: [], entregas: [], en
 let dotQuery = "";
 let entregaDraft = null;
 let dotEscaneadaState = null;
+let editEscaneadaState = null; /* compartido EPP/Dotación — la tabla ("dot_entregas"/"dtl_entregas") ya distingue cuál es */
 let contratoActualId = localStorage.getItem('dot_contrato_actual') || null; // null hasta que se carguen los contratos; "todos" = vista combinada
 /* Selección múltiple para marcar inactivos / eliminar en bloque (solo admin) */
 let dotMostrarInactivos = false;
@@ -4001,9 +4162,9 @@ let seleccionadosDot = new Set();
 async function loadDotacionState(){
   const [co, t, e, ei] = await Promise.all([
     sb.from("dot_contratos").select("id,nombre,activo,creado_en,modo_registro").order("creado_en",{ascending:true}),
-    sb.from("dot_trabajadores").select("id,nombre,identificacion,cargo,area,contrato_id,activo,inactivo_por_archivo,creado_en").order("nombre",{ascending:true}),
-    sb.from("dot_entregas").select("id,trabajador_id,fecha").order("fecha",{ascending:false}),
-    sb.from("dot_entrega_items").select("entrega_id,nombre_item,cantidad")
+    cargarTodasFilas(()=> sb.from("dot_trabajadores").select("id,nombre,identificacion,cargo,area,contrato_id,activo,inactivo_por_archivo,creado_en").order("nombre",{ascending:true}).order("id",{ascending:true})),
+    cargarTodasFilas(()=> sb.from("dot_entregas").select("id,trabajador_id,fecha").order("fecha",{ascending:false}).order("id",{ascending:true})),
+    cargarTodasFilas(()=> sb.from("dot_entrega_items").select("entrega_id,nombre_item,cantidad").order("id",{ascending:true}))
   ]);
   const err = co.error || t.error || e.error || ei.error;
   if(err){ console.warn(err); toast("Error cargando EPP: "+err.message,"err"); }
@@ -4995,7 +5156,13 @@ function abrirFormPredeterminado(id){
       <button class="btn btn-ghost btn-sm" id="btnPdRefirmar" style="margin-bottom:10px">${I.pen} Firmar de nuevo</button>`:''}
       <div id="pdPadWrap" style="${p?'display:none':''}">
         <div class="sig-box" id="sigBox"><canvas id="sigCanvas"></canvas><div class="sig-placeholder" id="sigPh">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div></div>
-        <div class="sig-actions"><button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar</button></div>
+        <div class="sig-actions">
+          <button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="btnPdAdjuntarFirma">${I.plus} Adjuntar imagen de firma</button>
+        </div>
+        <p class="muted-sm" style="margin-top:4px">Si ya tienes tu firma guardada como foto o imagen en el computador, la puedes subir — le quitamos el fondo automáticamente para que quede igual de limpia que si la dibujaras aquí.</p>
+        <input type="file" id="pdArchivoFirma" accept="image/*" style="display:none">
+        <div id="pdFirmaSubidaPreview"></div>
       </div>
     </div>
     <div class="modal-foot">
@@ -5003,6 +5170,7 @@ function abrirFormPredeterminado(id){
       <button class="btn btn-primary" id="btnGuardarPredet">${I.check} Guardar</button>
     </div></div>`, ()=>abrirPredeterminadosModal());
   let usarPad = !p;
+  let firmaSubida = null;
   if(usarPad){ initSignature(); document.getElementById('sigClear').onclick = ()=> sigPad.clear(); }
   const reBtn = document.getElementById('btnPdRefirmar');
   if(reBtn) reBtn.onclick = ()=>{
@@ -5012,6 +5180,16 @@ function abrirFormPredeterminado(id){
     usarPad = true;
     initSignature(); document.getElementById('sigClear').onclick = ()=> sigPad.clear();
   };
+  document.getElementById('btnPdAdjuntarFirma').onclick = ()=> document.getElementById('pdArchivoFirma').click();
+  document.getElementById('pdArchivoFirma').onchange = async (e)=>{
+    const f = e.target.files[0]; if(!f) return;
+    const prev = document.getElementById('pdFirmaSubidaPreview');
+    prev.innerHTML = `<p class="muted-sm">Procesando…</p>`;
+    try{
+      firmaSubida = await quitarFondoFirma(f);
+      prev.innerHTML = `<div style="text-align:center;margin-top:8px;padding:10px;background:repeating-conic-gradient(#e9ecf5 0% 25%,#fff 0% 50%) 50%/16px 16px"><img src="${firmaSubida}" style="height:80px;max-width:100%"></div>`;
+    }catch(err){ prev.innerHTML = `<p class="muted-sm" style="color:var(--danger)">No se pudo procesar la imagen</p>`; firmaSubida = null; }
+  };
   document.getElementById('btnGuardarPredet').onclick = async ()=>{
     const nombre = document.getElementById('pdNombre').value.trim();
     const respNombre = document.getElementById('pdRespNombre').value.trim();
@@ -5020,7 +5198,8 @@ function abrirFormPredeterminado(id){
     if(!respNombre){ toast("Falta el nombre del responsable","err"); return; }
     if(!p && DOTACION.predeterminados.length>=PREDET_MAX){ toast(`Ya tienes el máximo de ${PREDET_MAX} plantillas`,"err"); return; }
     let firma = p ? p.firma : null;
-    if(usarPad){
+    if(firmaSubida){ firma = firmaSubida; }
+    else if(usarPad){
       if(!sigPad || sigPad.isEmpty()){ toast("Falta la firma","err"); return; }
       firma = sigPad.dataURL();
     }
@@ -5455,8 +5634,10 @@ async function renderFichaTrabajador(id){
     await loadDotacionState();
     const t = DOTACION.trabajadores.find(x=>x.id===id);
     if(!t){ toast("Trabajador no encontrado","err"); location.hash="#/dotacion"; return; }
+    const contratoDelTrab = DOTACION.contratos.find(c=>c.id===t.contrato_id);
+    const esContratoEscaneado = contratoDelTrab?.modo_registro === 'escaneado';
     const { data: entregas } = await sb.from("dot_entregas")
-      .select("id,fecha,responsable_nombre,responsable_cargo,observaciones,creado_en,creado_por,tipo_registro,adjunto_titulo,adjunto_tipo")
+      .select("id,fecha,responsable_nombre,responsable_cargo,observaciones,creado_en,creado_por,tipo_registro,adjunto_titulo,adjunto_tipo,ip_address,dispositivo_ua")
       .eq("trabajador_id", id).order("fecha",{ascending:false});
     const listaEntregas = entregas || [];
     const idsEnt = listaEntregas.filter(e=>e.tipo_registro!=='escaneado').map(e=>e.id);
@@ -5469,18 +5650,24 @@ async function renderFichaTrabajador(id){
     const filas = listaEntregas.map(e=>{
       const horaEnt = e.creado_en ? new Date(e.creado_en).toLocaleTimeString("es-CO",{hour:'2-digit',minute:'2-digit'}) : '';
       const esEscaneada = e.tipo_registro === 'escaneado';
+      const auditLinea = (e.ip_address||e.dispositivo_ua)
+        ? `<div class="muted-sm">${e.ip_address?'IP '+esc(e.ip_address):''}${e.ip_address&&e.dispositivo_ua?' · ':''}${e.dispositivo_ua?esc(resumenDispositivoUA(e.dispositivo_ua)):''}</div>` : '';
       const itemsCol = esEscaneada
         ? `<span class="badge cerrada" style="margin-right:6px"><span class="dot"></span>Escaneado</span>${esc(e.adjunto_titulo||'')}`
         : ((itemsPorEntrega[e.id]||[]).map(it=>`${esc(it.nombre_item)} × ${it.cantidad}${it.talla?' ('+esc(it.talla)+')':''}`).join(', ')||'—');
+      const responsableCol = esEscaneada
+        ? `${esc(nombreDe(e.creado_por))}${correoDe(e.creado_por)?`<div class="muted-sm">${esc(correoDe(e.creado_por))}</div>`:''}`
+        : esc(e.responsable_nombre||'—');
       const accionesCol = esEscaneada
         ? `<div style="display:flex;gap:6px"><button class="icon-btn" title="Ver archivo" onclick="verAdjuntoEntrega('${e.id}','dot_entregas')">${I.eye}</button>
-           ${puedoTocarReciente(e.creado_en, e.creado_por)?`<button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntrega('${e.id}','${t.id}')">${I.trash}</button>`:''}</div>`
+           ${puedoTocarReciente(e.creado_en, e.creado_por)?`<button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntregaEscaneada('${e.id}','${t.id}','dot_entregas')">${I.pen}</button>
+           <button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntrega('${e.id}','${t.id}')">${I.trash}</button>`:''}</div>`
         : (puedoTocarReciente(e.creado_en, e.creado_por)?`<div style="display:flex;gap:6px"><button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntrega('${e.id}','${t.id}')">${I.pen}</button>
         <button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntrega('${e.id}','${t.id}')">${I.trash}</button></div>`:'');
       return `<tr>
-        <td>${fmtDate(e.fecha)}${horaEnt?`<div class="muted-sm">${horaEnt}</div>`:''}</td>
+        <td>${fmtDate(e.fecha)}${horaEnt?`<div class="muted-sm">${horaEnt}</div>`:''}${auditLinea}</td>
         <td>${itemsCol}</td>
-        <td>${esc(e.responsable_nombre||'—')}</td>
+        <td>${responsableCol}</td>
         <td>${accionesCol}</td>
       </tr>`;
     }).join('');
@@ -5495,7 +5682,9 @@ async function renderFichaTrabajador(id){
           <div><h1>${esc(t.nombre)}</h1><p>C.C. ${esc(t.identificacion)}${t.cargo?' · '+esc(t.cargo):''}${t.area?' · '+esc(t.area):''} · ${esc(DOTACION.contratos.find(c=>c.id===t.contrato_id)?.nombre||'—')}</p></div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
             ${MIPERFIL.esAdmin?`<button class="btn btn-ghost" id="btnEditarTrab">${I.pen} Editar datos</button>`:''}
-            ${listaEntregas.length?`<button class="btn btn-ghost" id="btnKardex">${I.pdf} Imprimir kárdex</button>`:''}
+            ${listaEntregas.length?(esContratoEscaneado
+              ? `<button class="btn btn-ghost" id="btnZipAdjuntos">${I.doc} Descargar ZIP</button>`
+              : `<button class="btn btn-ghost" id="btnKardex">${I.pdf} Imprimir kárdex</button>`):''}
             ${puedeEscribir()?`<button class="btn btn-primary" id="btnNuevaEntregaFicha" title="${t.activo===false?'No se puede registrar entrega: el trabajador está inactivo':''}" ${t.activo===false?'disabled':''}>${I.plus} Registrar entrega</button>`:''}
           </div>
         </div>
@@ -5507,6 +5696,7 @@ async function renderFichaTrabajador(id){
     document.getElementById('btnVolverDot').onclick = ()=> location.hash="#/dotacion";
     const bet = document.getElementById('btnEditarTrab'); if(bet) bet.onclick = ()=> abrirTrabajadorForm(t.id);
     const bk = document.getElementById('btnKardex'); if(bk) bk.onclick = ()=> generarKardexPDF(t.id);
+    const bzip = document.getElementById('btnZipAdjuntos'); if(bzip) bzip.onclick = ()=> descargarZipAdjuntosTrabajador('dot_entregas', t.id, t.nombre);
     const bnef = document.getElementById('btnNuevaEntregaFicha'); if(bnef) bnef.onclick = ()=> abrirNuevaEntrega(t.id);
   } finally { desbloquear(); }
 }
@@ -6181,8 +6371,8 @@ const DTL_DECLARACION = "Declaro haber recibido a satisfacción los elementos de
 async function loadDtlState(){
   const [en, t, e] = await Promise.all([
     sb.from("dtl_entidades").select("id,nombre,activo,creado_en,modo_registro").order("creado_en",{ascending:true}),
-    sb.from("dtl_trabajadores").select("id,nombre,identificacion,cargo,area,entidad_id,fecha_ingreso,correo,activo,inactivo_por_archivo,creado_en").order("nombre",{ascending:true}),
-    sb.from("dtl_entregas").select("id,trabajador_id,fecha").order("fecha",{ascending:false})
+    cargarTodasFilas(()=> sb.from("dtl_trabajadores").select("id,nombre,identificacion,cargo,area,entidad_id,fecha_ingreso,correo,activo,inactivo_por_archivo,creado_en").order("nombre",{ascending:true}).order("id",{ascending:true})),
+    cargarTodasFilas(()=> sb.from("dtl_entregas").select("id,trabajador_id,fecha").order("fecha",{ascending:false}).order("id",{ascending:true}))
   ]);
   const err = en.error || t.error || e.error;
   if(err){ console.warn(err); toast("Error cargando Dotación: "+err.message,"err"); }
@@ -6965,7 +7155,13 @@ function abrirFormPredeterminadoDtl(id){
       <button class="btn btn-ghost btn-sm" id="btnPdlRefirmar" style="margin-bottom:10px">${I.pen} Firmar de nuevo</button>`:''}
       <div id="pdlPadWrap" style="${p?'display:none':''}">
         <div class="sig-box" id="sigBox"><canvas id="sigCanvas"></canvas><div class="sig-placeholder" id="sigPh">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div></div>
-        <div class="sig-actions"><button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar</button></div>
+        <div class="sig-actions">
+          <button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="btnPdlAdjuntarFirma">${I.plus} Adjuntar imagen de firma</button>
+        </div>
+        <p class="muted-sm" style="margin-top:4px">Si ya tienes tu firma guardada como foto o imagen en el computador, la puedes subir — le quitamos el fondo automáticamente para que quede igual de limpia que si la dibujaras aquí.</p>
+        <input type="file" id="pdlArchivoFirma" accept="image/*" style="display:none">
+        <div id="pdlFirmaSubidaPreview"></div>
       </div>
     </div>
     <div class="modal-foot">
@@ -6973,6 +7169,7 @@ function abrirFormPredeterminadoDtl(id){
       <button class="btn btn-primary" id="btnGuardarPredetDtl">${I.check} Guardar</button>
     </div></div>`, ()=>abrirPredeterminadosDtlModal());
   let usarPad = !p;
+  let firmaSubidaDtl = null;
   if(usarPad){ initSignature(); document.getElementById('sigClear').onclick = ()=> sigPad.clear(); }
   const reBtn = document.getElementById('btnPdlRefirmar');
   if(reBtn) reBtn.onclick = ()=>{
@@ -6982,6 +7179,16 @@ function abrirFormPredeterminadoDtl(id){
     usarPad = true;
     initSignature(); document.getElementById('sigClear').onclick = ()=> sigPad.clear();
   };
+  document.getElementById('btnPdlAdjuntarFirma').onclick = ()=> document.getElementById('pdlArchivoFirma').click();
+  document.getElementById('pdlArchivoFirma').onchange = async (e)=>{
+    const f = e.target.files[0]; if(!f) return;
+    const prev = document.getElementById('pdlFirmaSubidaPreview');
+    prev.innerHTML = `<p class="muted-sm">Procesando…</p>`;
+    try{
+      firmaSubidaDtl = await quitarFondoFirma(f);
+      prev.innerHTML = `<div style="text-align:center;margin-top:8px;padding:10px;background:repeating-conic-gradient(#e9ecf5 0% 25%,#fff 0% 50%) 50%/16px 16px"><img src="${firmaSubidaDtl}" style="height:80px;max-width:100%"></div>`;
+    }catch(err){ prev.innerHTML = `<p class="muted-sm" style="color:var(--danger)">No se pudo procesar la imagen</p>`; firmaSubidaDtl = null; }
+  };
   document.getElementById('btnGuardarPredetDtl').onclick = async ()=>{
     const nombre = document.getElementById('pdlNombre').value.trim();
     const respNombre = document.getElementById('pdlRespNombre').value.trim();
@@ -6990,7 +7197,8 @@ function abrirFormPredeterminadoDtl(id){
     if(!respNombre){ toast("Falta el nombre del responsable","err"); return; }
     if(!p && DTL.predeterminados.length>=PREDET_DTL_MAX){ toast(`Ya tienes el máximo de ${PREDET_DTL_MAX} plantillas`,"err"); return; }
     let firma = p ? p.firma : null;
-    if(usarPad){
+    if(firmaSubidaDtl){ firma = firmaSubidaDtl; }
+    else if(usarPad){
       if(!sigPad || sigPad.isEmpty()){ toast("Falta la firma","err"); return; }
       firma = sigPad.dataURL();
     }
@@ -7428,8 +7636,10 @@ async function renderFichaTrabajadorDtl(id){
     await loadDtlState();
     const t = DTL.trabajadores.find(x=>x.id===id);
     if(!t){ toast("Trabajador no encontrado","err"); location.hash="#/dotacionlegal"; return; }
+    const entidadDelTrab = DTL.entidades.find(en=>en.id===t.entidad_id);
+    const esContratoEscaneadoDtl = entidadDelTrab?.modo_registro === 'escaneado';
     const { data: entregas } = await sb.from("dtl_entregas")
-      .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,via,creado_en,creado_por,tipo_registro,adjunto_titulo,adjunto_tipo")
+      .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,via,creado_en,creado_por,tipo_registro,adjunto_titulo,adjunto_tipo,ip_address,dispositivo_ua")
       .eq("trabajador_id", id).order("fecha",{ascending:false});
     const listaEntregas = entregas || [];
 
@@ -7441,18 +7651,24 @@ async function renderFichaTrabajadorDtl(id){
       if(e.botas_cantidad>0) partes.push(`Botas × ${e.botas_cantidad}${e.botas_talla?' ('+esc(e.botas_talla)+')':''}`);
       if(e.adicional) partes.push(esc(e.adicional));
       const horaEnt = e.creado_en ? new Date(e.creado_en).toLocaleTimeString("es-CO",{hour:'2-digit',minute:'2-digit'}) : '';
+      const auditLinea = (e.ip_address||e.dispositivo_ua)
+        ? `<div class="muted-sm">${e.ip_address?'IP '+esc(e.ip_address):''}${e.ip_address&&e.dispositivo_ua?' · ':''}${e.dispositivo_ua?esc(resumenDispositivoUA(e.dispositivo_ua)):''}</div>` : '';
       const itemsCol = esEscaneada
         ? `<span class="badge cerrada" style="margin-right:6px"><span class="dot"></span>Escaneado</span>${esc(e.adjunto_titulo||'')}`
         : (partes.join(', ')||'—');
+      const responsableCol = esEscaneada
+        ? `${esc(nombreDe(e.creado_por))}${correoDe(e.creado_por)?`<div class="muted-sm">${esc(correoDe(e.creado_por))}</div>`:''}`
+        : esc(e.responsable_nombre||(e.via==='remoto'?'(entrega remota)':'—'));
       const accionesCol = esEscaneada
         ? `<div style="display:flex;gap:6px"><button class="icon-btn" title="Ver archivo" onclick="verAdjuntoEntrega('${e.id}','dtl_entregas')">${I.eye}</button>
-           ${puedoTocarReciente(e.creado_en, e.creado_por)?`<button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntregaDtl('${e.id}','${t.id}')">${I.trash}</button>`:''}</div>`
+           ${puedoTocarReciente(e.creado_en, e.creado_por)?`<button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntregaEscaneada('${e.id}','${t.id}','dtl_entregas')">${I.pen}</button>
+           <button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntregaDtl('${e.id}','${t.id}')">${I.trash}</button>`:''}</div>`
         : (puedoTocarReciente(e.creado_en, e.creado_por)?`<div style="display:flex;gap:6px"><button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntregaDtl('${e.id}','${t.id}')">${I.pen}</button>
         <button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntregaDtl('${e.id}','${t.id}')">${I.trash}</button></div>`:'');
       return `<tr>
-        <td>${fmtDate(e.fecha)}${horaEnt?`<div class="muted-sm">${horaEnt}</div>`:''}</td>
+        <td>${fmtDate(e.fecha)}${horaEnt?`<div class="muted-sm">${horaEnt}</div>`:''}${auditLinea}</td>
         <td>${itemsCol}</td>
-        <td>${esc(e.responsable_nombre||(e.via==='remoto'?'(entrega remota)':'—'))}</td>
+        <td>${responsableCol}</td>
         <td>${accionesCol}</td>
       </tr>`;
     }).join('');
@@ -7467,7 +7683,9 @@ async function renderFichaTrabajadorDtl(id){
           <div><h1>${esc(t.nombre)}</h1><p>C.C. ${esc(t.identificacion)}${t.cargo?' · '+esc(t.cargo):''}${t.area?' · '+esc(t.area):''} · ${esc(nombreEntidadDtl(t.entidad_id))}${t.fecha_ingreso?' · Ingresó '+fmtDate(t.fecha_ingreso):''}${t.correo?' · '+esc(t.correo):''}</p></div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
             ${MIPERFIL.esAdmin?`<button class="btn btn-ghost" id="btnEditarTrabDtl">${I.pen} Editar datos</button>`:''}
-            ${listaEntregas.length?`<button class="btn btn-ghost" id="btnKardexDtl">${I.pdf} Imprimir kárdex</button>`:''}
+            ${listaEntregas.length?(esContratoEscaneadoDtl
+              ? `<button class="btn btn-ghost" id="btnZipAdjuntosDtl">${I.doc} Descargar ZIP</button>`
+              : `<button class="btn btn-ghost" id="btnKardexDtl">${I.pdf} Imprimir kárdex</button>`):''}
             ${puedeEscribir()?`<button class="btn btn-primary" id="btnNuevaEntregaFichaDtl" title="${t.activo===false?'No se puede registrar entrega: el trabajador está inactivo':''}" ${t.activo===false?'disabled':''}>${I.plus} Registrar entrega</button>`:''}
           </div>
         </div>
@@ -7479,6 +7697,7 @@ async function renderFichaTrabajadorDtl(id){
     document.getElementById('btnVolverDtl').onclick = ()=> location.hash="#/dotacionlegal";
     const bet = document.getElementById('btnEditarTrabDtl'); if(bet) bet.onclick = ()=> abrirTrabajadorDtlForm(t.id);
     const bk = document.getElementById('btnKardexDtl'); if(bk) bk.onclick = ()=> generarKardexDtlPDF(t.id);
+    const bzipDtl = document.getElementById('btnZipAdjuntosDtl'); if(bzipDtl) bzipDtl.onclick = ()=> descargarZipAdjuntosTrabajador('dtl_entregas', t.id, t.nombre);
     const bnef = document.getElementById('btnNuevaEntregaFichaDtl'); if(bnef) bnef.onclick = ()=> abrirNuevaEntregaDtl(t.id);
   } finally { desbloquear(); }
 }
@@ -8436,7 +8655,7 @@ sb.auth.onAuthStateChange((event)=>{
     // de por el botón, hay que limpiar MIPERFIL/STATE aquí también — si no, quedan con los datos
     // del usuario anterior y el siguiente que inicie sesión en esta misma pestaña los hereda.
     MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], nombre:"", uid:null };
-    PERFILES_NOMBRE = {};
+    PERFILES_NOMBRE = {}; PERFILES_CORREO = {};
     STATE.listas = []; STATE.userEmail = "";
     renderLogin();
   }
