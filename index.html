@@ -3356,6 +3356,96 @@ async function descargarZipAdjuntosTrabajador(tabla, trabajadorId, nombreTrabaja
   finally{ desbloquear(); }
 }
 
+/* ---------- Historial de entregas por contrato/entidad, con filtro de mes (EPP y Dotación) ---------- */
+/* "YYYY-MM" (lo que da <input type="month">) -> {desde, hasta} en "YYYY-MM-DD", el primer y último día de ese mes */
+function rangoDelMes(mesStr){
+  const [y,m] = mesStr.split('-').map(Number);
+  const desde = mesStr+'-01';
+  const ultimoDia = new Date(y, m, 0).getDate();
+  const hasta = mesStr+'-'+String(ultimoDia).padStart(2,'0');
+  return { desde, hasta };
+}
+function fmtMesLabel(mesStr){
+  const nombres = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const [y,m] = mesStr.split('-').map(Number);
+  return nombres[m-1]+' de '+y;
+}
+
+/* ZIP de todos los adjuntos escaneados de TODOS los trabajadores de un contrato/entidad
+   (no solo uno), opcionalmente acotado a un rango de fechas — usado por el filtro de mes
+   del historial. mapaNombres: { trabajador_id: nombre } para nombrar los archivos. */
+async function descargarZipAdjuntosContrato(tabla, idsTrabajadores, mapaNombres, filtroFechas, nombreZip){
+  if(!window.JSZip){ toast("No se pudo cargar el compresor ZIP (revisa tu conexión)","err"); return; }
+  if(!idsTrabajadores.length){ toast("No hay trabajadores en este contrato","err"); return; }
+  bloquear("Preparando ZIP…");
+  try{
+    let todas = [];
+    const { error } = await porLotes(idsTrabajadores, async (lote)=>{
+      let q = sb.from(tabla).select("id,trabajador_id,adjunto_titulo,adjunto_archivo,adjunto_tipo")
+        .in("trabajador_id", lote).eq("tipo_registro","escaneado");
+      if(filtroFechas){ q = q.gte("fecha", filtroFechas.desde).lte("fecha", filtroFechas.hasta); }
+      const { data, error } = await q;
+      if(error) return { error };
+      todas = todas.concat(data||[]);
+      return { error: null };
+    });
+    if(error){ toast("No se pudo cargar los adjuntos: "+error.message,"err"); return; }
+    const lista = todas.filter(e=>e.adjunto_archivo);
+    if(!lista.length){ toast("No hay adjuntos guardados en ese rango de fechas","err"); return; }
+    const zip = new JSZip();
+    const usados = {};
+    lista.forEach((e,i)=>{
+      const ext = e.adjunto_tipo==='application/pdf' ? '.pdf' : '.jpg';
+      const nombreTrab = (mapaNombres[e.trabajador_id]||'Trabajador').replace(/[^\w\sáéíóúñ-]/gi,'').trim().replace(/\s+/g,'_').slice(0,35);
+      let base = nombreTrab+'_'+((e.adjunto_titulo||('Entrega_'+(i+1))).replace(/[^\w\sáéíóúñ-]/gi,'').trim().replace(/\s+/g,'_').slice(0,45));
+      if(usados[base]!=null){ usados[base]++; base = base+'_'+usados[base]; } else usados[base]=0;
+      try{ zip.file(base+ext, _dataUrlABytes(e.adjunto_archivo)); }catch(err){}
+    });
+    const blob = await zip.generateAsync({ type:'blob', compression:'DEFLATE' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download = nombreZip;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 6000);
+    toast(`ZIP con ${lista.length} adjunto(s) generado`,"ok");
+  }catch(e){ console.error(e); toast("No se pudo generar el ZIP: "+(e.message||''),"err"); }
+  finally{ desbloquear(); }
+}
+
+/* ZIP de kárdex de una lista de trabajadores (ya filtrada por contrato/entidad), cada uno
+   acotado al mismo rango de fechas opcional — usado por el filtro de mes del historial.
+   modulo: 'dot' (EPP) o 'dtl' (Dotación), decide qué construirKardex...PDF llamar. */
+async function descargarZipKardexContratoFiltrado(modulo, trabajadores, filtroFechas, nombreZip){
+  if(!window.jspdf || !window.jspdf.jsPDF){ toast("No se pudo cargar el generador de PDF (revisa tu conexión)","err"); return; }
+  if(!window.JSZip){ toast("No se pudo cargar el compresor ZIP (revisa tu conexión)","err"); return; }
+  if(!trabajadores.length){ toast("No hay trabajadores para exportar","err"); return; }
+  bloquear("Preparando ZIP…");
+  try{
+    const zip = new JSZip();
+    const usados = {};
+    let incluidos = 0;
+    for(let i=0;i<trabajadores.length;i++){
+      const t = trabajadores[i];
+      bloquearMsg(`Generando kárdex ${i+1} de ${trabajadores.length}…`);
+      try{
+        const r = modulo==='dot' ? await construirKardexPDF(t.id, filtroFechas) : await construirKardexDtlPDF(t.id, filtroFechas);
+        if(!r) continue;
+        let base = r.nombreBase || ('trabajador_'+(i+1));
+        if(usados[base]!=null){ usados[base]++; base = base+'_'+usados[base]; } else usados[base]=0;
+        zip.file(base+'.pdf', r.doc.output('arraybuffer'));
+        incluidos++;
+      }catch(e){ console.warn('kardex zip filtrado', t.id, e); }
+    }
+    if(!incluidos){ toast("Nadie tiene entregas registradas en ese rango de fechas","err"); return; }
+    const blob = await zip.generateAsync({ type:'blob', compression:'DEFLATE' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download = nombreZip;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 6000);
+    toast(`ZIP con ${incluidos} kárdex generado`,"ok");
+  }catch(e){ console.error(e); toast("No se pudo generar el ZIP: "+(e.message||''),"err"); }
+  finally{ desbloquear(); }
+}
+
 async function componerPdfFirmado(doc, firmantes){
   const { PDFDocument, StandardFonts, rgb } = window.PDFLib;
   const pdfDoc = await PDFDocument.load(_dataUrlABytes(doc.pdf));
@@ -4292,6 +4382,7 @@ async function renderDotacionAdmin(silent){
           ${puedeEscribir()?`<button class="action-card" id="btnPredeterminados" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.firma}</div><span class="ac-title">Firmas</span><span class="ac-chevron">›</span></button>`:''}
           ${MIPERFIL.esAdmin?`<button class="action-card" id="btnCorregirCargos"><div class="ac-ic">${I.corregir}</div><span class="ac-title">Corregir cargos</span><span class="ac-chevron">›</span></button>`:''}
           ${totalTrab?`<button class="action-card" id="btnExcelEpp"><div class="ac-ic">${I.doc}</div><span class="ac-title">Descargar Excel</span><span class="ac-chevron">›</span></button>`:''}
+          ${puedeEscribir()?`<button class="action-card" id="btnHistorialDot" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.cal}</div><span class="ac-title">Historial de entregas</span><span class="ac-chevron">›</span></button>`:''}
         </div>
       </div>
 
@@ -4315,6 +4406,7 @@ async function renderDotacionAdmin(silent){
   const bzk=document.getElementById("btnZipKardex"); if(bzk) bzk.onclick = abrirSeleccionZipDot;
   const bxl=document.getElementById("btnExcelEpp"); if(bxl) bxl.onclick = descargarExcelDot;
   const bcc=document.getElementById("btnCorregirCargos"); if(bcc) bcc.onclick = abrirCorregirCargosDot;
+  const bhd=document.getElementById("btnHistorialDot"); if(bhd) bhd.onclick = abrirHistorialEntregasDot;
   const bceEpp=document.getElementById("btnCopiarEnlaceEpp"); if(bceEpp) bceEpp.onclick = ()=> copyText(location.href.split("#")[0]+"#/dotacion/entrega", "Enlace de entrega remota copiado");
   const bqrEpp=document.getElementById("btnQrEpp"); if(bqrEpp) bqrEpp.onclick = ()=> mostrarQR(location.href.split("#")[0]+"#/dotacion/entrega", "Entrega remota de EPP");
   renderDotacionBody();
@@ -4538,6 +4630,81 @@ async function abrirEntregasHoyDot(){
       <span class="muted-sm" style="white-space:nowrap">${hora}</span>
     </div>`;
   }).join('')}</div>`;
+}
+
+/* Historial de entregas de TODO el contrato actual, con filtro de mes — para supervisores que
+   necesitan revisar/descargar solo lo que hicieron en un mes específico. El ZIP respeta el modo
+   del contrato: escaneado -> adjuntos originales, digital -> kárdex recortado a ese mes. */
+async function abrirHistorialEntregasDot(){
+  if(contratoActualId==='todos'){ toast("Elige un contrato específico primero","err"); return; }
+  const c = contratoActual();
+  const mesInicial = hoyLocal().slice(0,7);
+  openModal(`<div class="modal lg">
+    <div class="modal-head"><div><h2>Historial de entregas</h2><p>${esc(c?.nombre||'')}</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="field" style="max-width:220px">
+        <label>Mes</label>
+        <input type="month" id="historialDotMes" value="${mesInicial}">
+      </div>
+      <div id="historialDotLista" style="margin-top:12px"><div class="empty"><h3>Cargando…</h3></div></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
+      <button class="btn btn-primary" id="btnDescargarHistorialDot">${I.doc} Descargar ZIP</button>
+    </div>
+  </div>`);
+
+  async function cargar(mes){
+    const host = document.getElementById('historialDotLista');
+    if(!host) return;
+    host.innerHTML = `<div class="empty"><h3>Cargando…</h3></div>`;
+    const { desde, hasta } = rangoDelMes(mes);
+    const trabajadores = trabajadoresDelContrato();
+    const idsTrab = trabajadores.map(t=>t.id);
+    if(!idsTrab.length){ host.innerHTML = `<div class="empty"><div class="ic">${I.box}</div><h3>Sin trabajadores</h3></div>`; return; }
+    let todas = [];
+    const { error } = await porLotes(idsTrab, async (lote)=>{
+      const { data, error } = await sb.from("dot_entregas")
+        .select("id,trabajador_id,fecha,creado_en,creado_por,responsable_nombre,via,tipo_registro,adjunto_titulo")
+        .in("trabajador_id", lote).gte("fecha", desde).lte("fecha", hasta);
+      if(error) return { error };
+      todas = todas.concat(data||[]);
+      return { error: null };
+    });
+    if(error){ host.innerHTML = `<div class="empty"><h3>No se pudo cargar</h3><p>${esc(error.message)}</p></div>`; return; }
+    todas.sort((a,b)=> (b.fecha||'').localeCompare(a.fecha||'') || (b.creado_en||'').localeCompare(a.creado_en||''));
+    if(!todas.length){ host.innerHTML = `<div class="empty"><div class="ic">${I.box}</div><h3>Sin entregas</h3><p>No hay entregas registradas en ${fmtMesLabel(mes)}.</p></div>`; return; }
+    host.innerHTML = `<p class="muted-sm" style="margin:0 0 8px">${todas.length} entrega(s) en ${fmtMesLabel(mes)}</p>
+      <div style="display:flex;flex-direction:column;gap:8px;max-height:420px;overflow:auto">${todas.map(e=>{
+        const t = trabajadores.find(x=>x.id===e.trabajador_id);
+        const esEscaneada = e.tipo_registro==='escaneado';
+        const responsable = esEscaneada ? nombreDe(e.creado_por) : (e.via==='remoto'?'(entrega remota)':(e.responsable_nombre||'—'));
+        return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--line);border-radius:9px">
+          <div><div style="font-weight:700;font-size:13.5px">${esc(t?.nombre||'—')}</div>
+            <div class="muted-sm">${esEscaneada?'Escaneado: '+esc(e.adjunto_titulo||''):'Entregado por '+esc(responsable)}</div></div>
+          <span class="muted-sm" style="white-space:nowrap">${fmtDate(e.fecha)}</span>
+        </div>`;
+      }).join('')}</div>`;
+  }
+
+  document.getElementById('historialDotMes').onchange = (e)=> cargar(e.target.value);
+  document.getElementById('btnDescargarHistorialDot').onclick = ()=>{
+    const mesInput = document.getElementById('historialDotMes');
+    const mes = (mesInput && mesInput.value) || mesInicial;
+    const filtroFechas = rangoDelMes(mes);
+    const trabajadores = trabajadoresDelContrato();
+    const nombreSafe = String(c?.nombre||'contrato').replace(/[^\w\sáéíóúñ-]/gi,'').trim().replace(/\s+/g,'_').slice(0,40);
+    const nombreZip = 'Historial_EPP_'+nombreSafe+'_'+mes+'.zip';
+    if(c?.modo_registro==='escaneado'){
+      const mapaNombres = {}; trabajadores.forEach(t=>{ mapaNombres[t.id]=t.nombre; });
+      descargarZipAdjuntosContrato('dot_entregas', trabajadores.map(t=>t.id), mapaNombres, filtroFechas, nombreZip);
+    } else {
+      descargarZipKardexContratoFiltrado('dot', trabajadores, filtroFechas, nombreZip);
+    }
+  };
+
+  cargar(mesInicial);
 }
 
 function trabajadorCard(t){
@@ -5638,7 +5805,7 @@ async function renderFichaTrabajador(id){
     const esContratoEscaneado = contratoDelTrab?.modo_registro === 'escaneado';
     const { data: entregas } = await sb.from("dot_entregas")
       .select("id,fecha,responsable_nombre,responsable_cargo,observaciones,creado_en,creado_por,tipo_registro,adjunto_titulo,adjunto_tipo,ip_address,dispositivo_ua")
-      .eq("trabajador_id", id).order("fecha",{ascending:false});
+      .eq("trabajador_id", id).order("fecha",{ascending:false}).order("creado_en",{ascending:false});
     const listaEntregas = entregas || [];
     const idsEnt = listaEntregas.filter(e=>e.tipo_registro!=='escaneado').map(e=>e.id);
     const { data: items } = idsEnt.length
@@ -6035,12 +6202,14 @@ function getImageSize(dataUrl){
 /* ---------- Kárdex acumulado en PDF (evidencia por si hay un reclamo) ---------- */
 /* Arma el PDF del kárdex de UN trabajador. Devuelve {doc, nombreBase} o null si no tiene entregas.
    No guarda el archivo — lo reutilizan tanto la descarga individual como el ZIP masivo. */
-async function construirKardexPDF(trabajadorId){
+async function construirKardexPDF(trabajadorId, filtroFechas){
   const { data: t } = await sb.from("dot_trabajadores").select("id,nombre,identificacion,cargo,area,contrato_id").eq("id",trabajadorId).maybeSingle();
   if(!t) return null;
-  const { data: entregas } = await sb.from("dot_entregas")
+  let q = sb.from("dot_entregas")
     .select("id,fecha,responsable_nombre,responsable_cargo,firma_trabajador,firma_responsable,foto_trabajador,creado_en,via,ip_address,dispositivo_ua,tipo_registro,adjunto_titulo,adjunto_archivo,adjunto_tipo")
-    .eq("trabajador_id", trabajadorId).order("fecha",{ascending:true});
+    .eq("trabajador_id", trabajadorId);
+  if(filtroFechas){ q = q.gte("fecha", filtroFechas.desde).lte("fecha", filtroFechas.hasta); }
+  const { data: entregas } = await q.order("fecha",{ascending:false}).order("creado_en",{ascending:false});
   const listaEntregas = entregas || [];
   if(!listaEntregas.length) return null;
   const ids = listaEntregas.map(e=>e.id);
@@ -6497,6 +6666,7 @@ async function renderDtlAdmin(silent){
           ${puedeEscribir()?`<button class="action-card" id="btnPredeterminadosDtl" ${dtlFiltroEntidad==='todas'?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.firma}</div><span class="ac-title">Firmas</span><span class="ac-chevron">›</span></button>`:''}
           ${MIPERFIL.esAdmin?`<button class="action-card" id="btnCorregirCargosDtl"><div class="ac-ic">${I.corregir}</div><span class="ac-title">Corregir cargos</span><span class="ac-chevron">›</span></button>`:''}
           ${totalTrab?`<button class="action-card" id="btnExcelDtl"><div class="ac-ic">${I.doc}</div><span class="ac-title">Descargar Excel</span><span class="ac-chevron">›</span></button>`:''}
+          ${puedeEscribir()?`<button class="action-card" id="btnHistorialDtl" ${dtlFiltroEntidad==='todas'?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.cal}</div><span class="ac-title">Historial de entregas</span><span class="ac-chevron">›</span></button>`:''}
         </div>
       </div>
 
@@ -6535,6 +6705,7 @@ async function renderDtlAdmin(silent){
   const bzk=document.getElementById("btnZipKardexDtl"); if(bzk) bzk.onclick = abrirSeleccionZipDtl;
   const bxl=document.getElementById("btnExcelDtl"); if(bxl) bxl.onclick = descargarExcelDtl;
   const bcc=document.getElementById("btnCorregirCargosDtl"); if(bcc) bcc.onclick = abrirCorregirCargosDtl;
+  const bhdtl=document.getElementById("btnHistorialDtl"); if(bhdtl) bhdtl.onclick = abrirHistorialEntregasDtl;
   const bce=document.getElementById("btnCopiarEnlacePublico"); if(bce) bce.onclick = ()=> copyText(location.href.split("#")[0]+"#/dotacionlegal/entrega", "Enlace de entrega remota copiado");
   const bqr=document.getElementById("btnQrEnlacePublico"); if(bqr) bqr.onclick = ()=> mostrarQR(location.href.split("#")[0]+"#/dotacionlegal/entrega", "Entrega remota de dotación");
   const behdtl=document.getElementById("btnEntregasHoyDtl"); if(behdtl) behdtl.onclick = abrirEntregasHoyDtl;
@@ -6724,6 +6895,80 @@ async function abrirEntregasHoyDtl(){
       <span class="muted-sm" style="white-space:nowrap">${hora}</span>
     </div>`;
   }).join('')}</div>`;
+}
+
+/* Historial de entregas de TODA la entidad actual, con filtro de mes — mismo patrón que
+   [[abrirHistorialEntregasDot]] para EPP. */
+async function abrirHistorialEntregasDtl(){
+  if(dtlFiltroEntidad==='todas'){ toast("Elige un contrato específico primero","err"); return; }
+  const entidad = DTL.entidades.find(x=>x.id===dtlFiltroEntidad);
+  const mesInicial = hoyLocal().slice(0,7);
+  openModal(`<div class="modal lg">
+    <div class="modal-head"><div><h2>Historial de entregas</h2><p>${esc(entidad?.nombre||'')}</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="field" style="max-width:220px">
+        <label>Mes</label>
+        <input type="month" id="historialDtlMes" value="${mesInicial}">
+      </div>
+      <div id="historialDtlLista" style="margin-top:12px"><div class="empty"><h3>Cargando…</h3></div></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
+      <button class="btn btn-primary" id="btnDescargarHistorialDtl">${I.doc} Descargar ZIP</button>
+    </div>
+  </div>`);
+
+  async function cargar(mes){
+    const host = document.getElementById('historialDtlLista');
+    if(!host) return;
+    host.innerHTML = `<div class="empty"><h3>Cargando…</h3></div>`;
+    const { desde, hasta } = rangoDelMes(mes);
+    const trabajadores = trabajadoresDeEntidad();
+    const idsTrab = trabajadores.map(t=>t.id);
+    if(!idsTrab.length){ host.innerHTML = `<div class="empty"><div class="ic">${I.box}</div><h3>Sin trabajadores</h3></div>`; return; }
+    let todas = [];
+    const { error } = await porLotes(idsTrab, async (lote)=>{
+      const { data, error } = await sb.from("dtl_entregas")
+        .select("id,trabajador_id,fecha,creado_en,creado_por,responsable_nombre,via,tipo_registro,adjunto_titulo")
+        .in("trabajador_id", lote).gte("fecha", desde).lte("fecha", hasta);
+      if(error) return { error };
+      todas = todas.concat(data||[]);
+      return { error: null };
+    });
+    if(error){ host.innerHTML = `<div class="empty"><h3>No se pudo cargar</h3><p>${esc(error.message)}</p></div>`; return; }
+    todas.sort((a,b)=> (b.fecha||'').localeCompare(a.fecha||'') || (b.creado_en||'').localeCompare(a.creado_en||''));
+    if(!todas.length){ host.innerHTML = `<div class="empty"><div class="ic">${I.box}</div><h3>Sin entregas</h3><p>No hay entregas registradas en ${fmtMesLabel(mes)}.</p></div>`; return; }
+    host.innerHTML = `<p class="muted-sm" style="margin:0 0 8px">${todas.length} entrega(s) en ${fmtMesLabel(mes)}</p>
+      <div style="display:flex;flex-direction:column;gap:8px;max-height:420px;overflow:auto">${todas.map(e=>{
+        const t = trabajadores.find(x=>x.id===e.trabajador_id);
+        const esEscaneada = e.tipo_registro==='escaneado';
+        const responsable = esEscaneada ? nombreDe(e.creado_por) : (e.via==='remoto'?'(entrega remota)':(e.responsable_nombre||'—'));
+        return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--line);border-radius:9px">
+          <div><div style="font-weight:700;font-size:13.5px">${esc(t?.nombre||'—')}</div>
+            <div class="muted-sm">${esEscaneada?'Escaneado: '+esc(e.adjunto_titulo||''):'Entregado por '+esc(responsable)}</div></div>
+          <span class="muted-sm" style="white-space:nowrap">${fmtDate(e.fecha)}</span>
+        </div>`;
+      }).join('')}</div>`;
+  }
+
+  document.getElementById('historialDtlMes').onchange = (e)=> cargar(e.target.value);
+  document.getElementById('btnDescargarHistorialDtl').onclick = ()=>{
+    const mesInput = document.getElementById('historialDtlMes');
+    const mes = (mesInput && mesInput.value) || mesInicial;
+    const filtroFechas = rangoDelMes(mes);
+    const trabajadores = trabajadoresDeEntidad();
+    const nombreSafe = String(entidad?.nombre||'contrato').replace(/[^\w\sáéíóúñ-]/gi,'').trim().replace(/\s+/g,'_').slice(0,40);
+    const nombreZip = 'Historial_Dotacion_'+nombreSafe+'_'+mes+'.zip';
+    if(entidad?.modo_registro==='escaneado'){
+      const mapaNombres = {}; trabajadores.forEach(t=>{ mapaNombres[t.id]=t.nombre; });
+      descargarZipAdjuntosContrato('dtl_entregas', trabajadores.map(t=>t.id), mapaNombres, filtroFechas, nombreZip);
+    } else {
+      descargarZipKardexContratoFiltrado('dtl', trabajadores, filtroFechas, nombreZip);
+    }
+  };
+
+  cargar(mesInicial);
 }
 
 function trabajadorDtlCard(t){
@@ -7640,7 +7885,7 @@ async function renderFichaTrabajadorDtl(id){
     const esContratoEscaneadoDtl = entidadDelTrab?.modo_registro === 'escaneado';
     const { data: entregas } = await sb.from("dtl_entregas")
       .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,via,creado_en,creado_por,tipo_registro,adjunto_titulo,adjunto_tipo,ip_address,dispositivo_ua")
-      .eq("trabajador_id", id).order("fecha",{ascending:false});
+      .eq("trabajador_id", id).order("fecha",{ascending:false}).order("creado_en",{ascending:false});
     const listaEntregas = entregas || [];
 
     const filas = listaEntregas.map(e=>{
@@ -7828,12 +8073,14 @@ function resumenDispositivoUA(ua){
 }
 
 /* ---------- Kárdex acumulado en PDF ---------- */
-async function construirKardexDtlPDF(trabajadorId){
+async function construirKardexDtlPDF(trabajadorId, filtroFechas){
   const { data: t } = await sb.from("dtl_trabajadores").select("id,nombre,identificacion,cargo,area,entidad_id").eq("id",trabajadorId).maybeSingle();
   if(!t) return null;
-  const { data: entregas } = await sb.from("dtl_entregas")
+  let q = sb.from("dtl_entregas")
     .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,firma_trabajador,firma_responsable,foto_trabajador,creado_en,via,ip_address,dispositivo_ua,tipo_registro,adjunto_titulo,adjunto_archivo,adjunto_tipo")
-    .eq("trabajador_id", trabajadorId).order("fecha",{ascending:true});
+    .eq("trabajador_id", trabajadorId);
+  if(filtroFechas){ q = q.gte("fecha", filtroFechas.desde).lte("fecha", filtroFechas.hasta); }
+  const { data: entregas } = await q.order("fecha",{ascending:false}).order("creado_en",{ascending:false});
   const listaEntregas = entregas || [];
   if(!listaEntregas.length) return null;
   const nombreEntidad = (DTL.entidades.find(x=>x.id===t.entidad_id)||{}).nombre || "";
