@@ -893,7 +893,7 @@ document.getElementById("overlay").addEventListener("mousedown", e=>{
    ROUTER
    ============================================================ */
 function esRutaPublica(){
-  return location.hash.startsWith("#/lista/") || location.hash.startsWith("#/firmar/") || location.hash.startsWith("#/responsable/") || location.hash.startsWith("#/firmadoc/") || location.hash.startsWith("#/dotacionlegal/entrega") || location.hash.startsWith("#/dotacion/entrega");
+  return location.hash.startsWith("#/lista/") || location.hash.startsWith("#/firmar/") || location.hash.startsWith("#/responsable/") || location.hash.startsWith("#/firmadoc/") || location.hash.startsWith("#/dotacionlegal/entrega") || location.hash.startsWith("#/dotacion/entrega") || location.hash.startsWith("#/inspeccion/");
 }
 
 async function router(){
@@ -908,6 +908,8 @@ async function router(){
   if(mFdoc){ await renderFirmaDoc(decodeURIComponent(mFdoc[1])); return; }
   if(location.hash.startsWith("#/dotacionlegal/entrega")){ await renderDtlPublico(); return; }
   if(location.hash === "#/dotacion/entrega"){ await renderDotPublicoUniversal(); return; }
+  const mInsp = location.hash.match(/^#\/inspeccion\/(.+)$/);
+  if(mInsp){ await renderInspeccionPublica(decodeURIComponent(mInsp[1])); return; }
   // ----- Rutas de ADMINISTRACIÓN (requieren sesión) -----
   const { data:{ session } } = await sb.auth.getSession();
   if(!session){ renderLogin(); return; }
@@ -948,7 +950,7 @@ async function router(){
   } else if(location.hash === "#/inspecciones" || location.hash.startsWith("#/inspecciones/")){
     if(!tieneModulo('inspecciones')){ renderSinAcceso("Inspecciones"); return; }
     const mFormatoInsp = location.hash.match(/^#\/inspecciones\/formato\/(.+)$/);
-    if(mFormatoInsp && !MIPERFIL.esAdmin){ renderSinAcceso("Inspecciones"); }
+    if(mFormatoInsp && !puedeEscribir()){ renderSinAcceso("Inspecciones"); }
     else if(mFormatoInsp){ await renderConstructorFormatoInsp(mFormatoInsp[1]==='nueva' ? null : decodeURIComponent(mFormatoInsp[1])); }
     else { await renderInspeccionesAdmin(); }   // MÓDULO: Inspecciones
   } else {
@@ -8550,19 +8552,21 @@ function renderDtlPublicoExito(){
    celular por un inspector logueado, con firma del inspector y del
    responsable del área — por contrato, mismo patrón que EPP/Dotación.
    ============================================================ */
-let INSPECCIONES = { contratos: [], formatos: [], predeterminados: [], inspecciones: [] };
+let INSPECCIONES = { contratos: [], formatos: [], predeterminados: [], enlaces: [], inspecciones: [] };
 let contratoInspActualId = localStorage.getItem('insp_contrato_actual') || null;
 
 async function loadInspeccionesState(){
-  const [co, fo, ins] = await Promise.all([
+  const [co, fo, en, ins] = await Promise.all([
     sb.from("insp_contratos").select("id,nombre,activo,creado_en").order("creado_en",{ascending:true}),
     sb.from("insp_formatos").select("id,nombre,activo,tiene_fotos").order("nombre",{ascending:true}),
-    cargarTodasFilas(()=> sb.from("insp_inspecciones").select("id,contrato_id,formato_nombre,creado_en,creado_por,inspector_nombre").order("creado_en",{ascending:false}).order("id",{ascending:true}))
+    sb.from("insp_enlaces").select("id,contrato_id,formato_id,predeterminado_id,nombre,activo,creado_en").order("creado_en",{ascending:true}),
+    cargarTodasFilas(()=> sb.from("insp_inspecciones").select("id,enlace_id,contrato_id,formato_nombre,creado_en,creado_por,inspector_nombre").order("creado_en",{ascending:false}).order("id",{ascending:true}))
   ]);
-  const err = co.error || fo.error || ins.error;
+  const err = co.error || fo.error || en.error || ins.error;
   if(err){ console.warn(err); toast("Error cargando Inspecciones: "+err.message,"err"); }
   INSPECCIONES.contratos = co.data || [];
   INSPECCIONES.formatos = fo.data || [];
+  INSPECCIONES.enlaces = en.data || [];
   INSPECCIONES.inspecciones = ins.data || [];
   // Si el contrato guardado ya no existe (o nunca se eligió uno), cae al primero activo, o al primero que haya
   const existe = contratoInspActualId==='todos' || INSPECCIONES.contratos.some(x=>x.id===contratoInspActualId);
@@ -8585,6 +8589,10 @@ function contratoInspActual(){ return INSPECCIONES.contratos.find(x=>x.id===cont
 function inspeccionesDelContrato(){
   return contratoInspActualId==='todos' ? INSPECCIONES.inspecciones : INSPECCIONES.inspecciones.filter(i=>i.contrato_id===contratoInspActualId);
 }
+function enlacesDelContrato(){
+  return contratoInspActualId==='todos' ? INSPECCIONES.enlaces : INSPECCIONES.enlaces.filter(e=>e.contrato_id===contratoInspActualId);
+}
+function linkInspeccion(enlaceId){ return location.href.split("#")[0] + "#/inspeccion/" + enlaceId; }
 
 /* ---------- Contratos (clientes) ---------- */
 function abrirGestionContratosInsp(){
@@ -8973,15 +8981,16 @@ async function renderInspeccionesAdmin(silent){
       <div class="panel-section dot-pc-only">
         <div class="section-label">Acciones</div>
         <div class="action-grid">
-          ${puedeEscribir()?`<button class="action-card" id="btnNuevaInspeccion" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.plus}</div><span class="ac-title">Nueva inspección</span><span class="ac-chevron">›</span></button>`:''}
+          ${puedeEscribir()?`<button class="action-card" id="btnNuevoEnlaceInsp" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.link}</div><span class="ac-title">Nuevo enlace</span><span class="ac-chevron">›</span></button>`:''}
           <button class="action-card" id="btnHistorialInsp" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.cal}</div><span class="ac-title">Historial de inspecciones</span><span class="ac-chevron">›</span></button>
-          ${MIPERFIL.esAdmin?`<button class="action-card" id="btnFormatosInsp"><div class="ac-ic">${I.doc}</div><span class="ac-title">Formatos</span><span class="ac-chevron">›</span></button>`:''}
+          ${puedeEscribir()?`<button class="action-card" id="btnFormatosInsp"><div class="ac-ic">${I.doc}</div><span class="ac-title">Formatos</span><span class="ac-chevron">›</span></button>`:''}
+          ${puedeEscribir()?`<button class="action-card" id="btnFirmasInsp" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.firma}</div><span class="ac-title">Firmas</span><span class="ac-chevron">›</span></button>`:''}
         </div>
       </div>
 
       <div class="panel-section">
-        <div class="section-label">Últimas inspecciones</div>
-        <div id="inspRecientesLista"></div>
+        <div class="section-label">Enlaces de inspección</div>
+        <div id="enlacesInspGrid"></div>
       </div>
     </div>`;
 
@@ -8992,31 +9001,311 @@ async function renderInspeccionesAdmin(silent){
     renderInspeccionesAdmin();
   };
   const bgc = document.getElementById("btnGestionContratosInsp"); if(bgc) bgc.onclick = abrirGestionContratosInsp;
-  const bni = document.getElementById("btnNuevaInspeccion"); if(bni) bni.onclick = abrirNuevaInspeccion;
+  const bne = document.getElementById("btnNuevoEnlaceInsp"); if(bne) bne.onclick = abrirNuevoEnlaceInsp;
   const bhi = document.getElementById("btnHistorialInsp"); if(bhi) bhi.onclick = abrirHistorialInspecciones;
   const bfi = document.getElementById("btnFormatosInsp"); if(bfi) bfi.onclick = abrirGestionFormatosInsp;
-  renderInspRecientesLista();
+  const bfirmas = document.getElementById("btnFirmasInsp"); if(bfirmas) bfirmas.onclick = abrirPredeterminadosInsp;
+  renderEnlacesInspGrid();
   if(silent) window.scrollTo(0, scrollY);
 }
 
-function renderInspRecientesLista(){
-  const host = document.getElementById('inspRecientesLista'); if(!host) return;
-  const lista = inspeccionesDelContrato().slice(0, 10);
-  if(!lista.length){ host.innerHTML = `<div class="empty" style="padding:30px 20px"><div class="ic">${I.box}</div><h3>Sin inspecciones todavía</h3><p>Registra la primera con "Nueva inspección".</p></div>`; return; }
+function renderEnlacesInspGrid(){
+  const host = document.getElementById('enlacesInspGrid'); if(!host) return;
+  const lista = enlacesDelContrato();
+  if(!lista.length){
+    host.innerHTML = `<div class="empty" style="padding:30px 20px"><div class="ic">${I.box}</div><h3>Sin enlaces todavía</h3><p>Crea uno con "Nuevo enlace" para empezar a recibir inspecciones.</p></div>`;
+    return;
+  }
+  host.innerHTML = '<div class="grid">' + lista.map(en=>{
+    const formato = INSPECCIONES.formatos.find(f=>f.id===en.formato_id);
+    const predet = INSPECCIONES.predeterminados.find(p=>p.id===en.predeterminado_id);
+    const nombreContrato = INSPECCIONES.contratos.find(c=>c.id===en.contrato_id)?.nombre || '';
+    const n = INSPECCIONES.inspecciones.filter(i=>i.enlace_id===en.id).length;
+    const act = en.activo;
+    return `
+      <div class="lcard">
+        <div class="lcard-top">
+          <span class="tipo">${esc(formato?.nombre || 'Formato eliminado')}</span>
+          <span class="badge ${act?'activa':'cerrada'}"><span class="dot"></span>${act?'Activo':'Inactivo'}</span>
+        </div>
+        <h3>${esc(en.nombre || formato?.nombre || 'Enlace')}</h3>
+        <div class="meta">
+          <div>${I.user}<span>${esc(predet?.responsable_nombre||'—')}${predet?.responsable_cargo?' · '+esc(predet.responsable_cargo):''}</span></div>
+          <div>${I.building}<span>${esc(nombreContrato)}</span></div>
+          <div>${I.cal}<span>Creado ${fmtDate((en.creado_en||'').slice(0,10))}</span></div>
+        </div>
+        <div class="lcard-foot">
+          <div class="attn">
+            <span class="num">${n}</span>
+            <span class="lab">inspección${n===1?'':'es'}<br>registrada${n===1?'':'s'}</span>
+          </div>
+          <div class="card-actions">
+            <button class="icon-btn" title="Ver detalle" data-act="ver" data-id="${en.id}">${I.eye}</button>
+            <button class="icon-btn" title="Copiar enlace" data-act="link" data-id="${en.id}">${I.link}</button>
+            <button class="icon-btn" title="Compartir QR" data-act="qr" data-id="${en.id}">${I.qr}</button>
+            ${puedeEscribir()?`<button class="icon-btn" title="${act?'Desactivar':'Activar'}" data-act="toggle" data-id="${en.id}">${act?I.lock:I.check}</button>
+            <button class="icon-btn danger" title="Eliminar" data-act="del" data-id="${en.id}">${I.trash}</button>`:''}
+          </div>
+        </div>
+      </div>`;
+  }).join('') + '</div>';
+
+  host.querySelectorAll('[data-act]').forEach(b=>{
+    b.onclick = ()=>{
+      const id = b.dataset.id, act = b.dataset.act;
+      if(act==='ver') abrirDetalleEnlaceInsp(id);
+      else if(act==='link') copyText(linkInspeccion(id), "Enlace de inspección copiado");
+      else if(act==='qr') mostrarQR(linkInspeccion(id), "Enlace de inspección");
+      else if(act==='toggle') toggleActivoEnlaceInsp(id);
+      else if(act==='del') eliminarEnlaceInsp(id);
+    };
+  });
+}
+
+async function toggleActivoEnlaceInsp(id){
+  const en = INSPECCIONES.enlaces.find(x=>x.id===id); if(!en) return;
+  const { error } = await sb.from("insp_enlaces").update({ activo: !en.activo }).eq("id", id);
+  if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
+  await loadInspeccionesState();
+  renderEnlacesInspGrid();
+  toast(en.activo?"Enlace desactivado":"Enlace activado","ok");
+}
+
+function eliminarEnlaceInsp(id){
+  openModal(`<div class="modal" style="max-width:420px">
+    <div class="modal-head"><div><h2>Eliminar enlace</h2><p>Esta acción no se puede deshacer.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminará el enlace y nadie podrá seguir registrando inspecciones con él. Las inspecciones ya guardadas no se ven afectadas.</p></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-danger" id="confDelEnlaceInsp">${I.trash} Sí, eliminar</button></div></div>`);
+  document.getElementById("confDelEnlaceInsp").onclick = async ()=>{
+    const btn = document.getElementById("confDelEnlaceInsp"); btn.disabled=true; btn.innerHTML="Eliminando…";
+    const { error } = await sb.from("insp_enlaces").delete().eq("id", id);
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`; toast("No se pudo eliminar: "+error.message,"err"); return; }
+    await loadInspeccionesState();
+    toast("Enlace eliminado","ok");
+    closeModal();
+    renderEnlacesInspGrid();
+  };
+}
+
+/* ---------- Detalle de un enlace: lista de inspecciones hechas a través de él ---------- */
+async function abrirDetalleEnlaceInsp(enlaceId){
+  const en = INSPECCIONES.enlaces.find(x=>x.id===enlaceId);
+  const formato = en ? INSPECCIONES.formatos.find(f=>f.id===en.formato_id) : null;
+  openModal(`<div class="modal lg">
+    <div class="modal-head"><div><h2>${esc(en?.nombre || formato?.nombre || 'Enlace')}</h2><p>${esc(formato?.nombre||'')}</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body" id="detalleEnlaceInspBody"><div class="empty"><h3>Cargando…</h3></div></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
+  </div>`);
+  const host = document.getElementById('detalleEnlaceInspBody');
+  const { data, error } = await sb.from("insp_inspecciones")
+    .select("id,formato_nombre,inspector_nombre,creado_en")
+    .eq("enlace_id", enlaceId).order("creado_en",{ascending:false});
+  if(error){ host.innerHTML = `<div class="empty"><h3>No se pudo cargar</h3><p>${esc(error.message)}</p></div>`; return; }
+  const lista = data || [];
+  if(!lista.length){ host.innerHTML = `<div class="empty"><div class="ic">${I.box}</div><h3>Sin inspecciones todavía</h3><p>Comparte el enlace para que empiecen a llegar.</p></div>`; return; }
   host.innerHTML = `<div class="table-wrap"><table class="dt">
-    <thead><tr><th>Fecha</th><th>Formato</th><th>Inspector</th><th>Contrato</th><th></th></tr></thead>
+    <thead><tr><th>Fecha</th><th>Inspector</th><th></th></tr></thead>
     <tbody>${lista.map(x=>{
       const hora = x.creado_en ? new Date(x.creado_en).toLocaleTimeString("es-CO",{hour:'2-digit',minute:'2-digit'}) : '';
-      const nombreContrato = INSPECCIONES.contratos.find(c=>c.id===x.contrato_id)?.nombre || '';
       return `<tr>
         <td>${fmtDate((x.creado_en||'').slice(0,10))}${hora?`<div class="muted-sm">${hora}</div>`:''}</td>
-        <td>${esc(x.formato_nombre||'—')}</td>
         <td>${esc(x.inspector_nombre||'—')}</td>
-        <td>${esc(nombreContrato)}</td>
         <td><button class="icon-btn" title="Ver / descargar PDF" onclick="verInspeccion('${x.id}')">${I.eye}</button></td>
       </tr>`;
     }).join('')}</tbody>
   </table></div>`;
+}
+
+/* ---------- Nuevo enlace: formato + predeterminado del responsable + etiqueta ---------- */
+function abrirNuevoEnlaceInsp(){
+  if(contratoInspActualId==='todos'){ toast("Elige un contrato específico primero","err"); return; }
+  const formatos = INSPECCIONES.formatos.filter(f=>f.activo);
+  const predets = INSPECCIONES.predeterminados;
+  if(!formatos.length){ toast('No hay formatos activos — créalo primero desde "Formatos"',"err"); return; }
+  openModal(`<div class="modal" style="max-width:480px">
+    <div class="modal-head"><div><h2>Nuevo enlace de inspección</h2><p>Los inspectores usarán este enlace para registrar sus inspecciones.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Formato *</label>
+        <select id="neFormato">${formatos.map(f=>`<option value="${f.id}">${esc(f.nombre)}</option>`).join('')}</select>
+      </div>
+      <div class="field">
+        <label>Firma del responsable del área *</label>
+        ${predets.length
+          ? `<select id="neResponsable">${predets.map(p=>`<option value="${p.id}">${esc(p.nombre)} — ${esc(p.responsable_nombre)}</option>`).join('')}</select>`
+          : `<p class="muted-sm">Todavía no has guardado ninguna firma de responsable. <a href="#" id="neIrFirmas">Créala primero en "Firmas"</a>.</p>`}
+      </div>
+      <div class="field"><label>Etiqueta <span class="opt">(opcional)</span></label><input id="neNombre" placeholder="Ej. Turno mañana"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      ${predets.length?`<button class="btn btn-primary" id="btnGuardarEnlaceInsp">${I.check} Crear enlace</button>`:''}
+    </div></div>`);
+  const irFirmas = document.getElementById('neIrFirmas');
+  if(irFirmas) irFirmas.onclick = (e)=>{ e.preventDefault(); abrirPredeterminadosInsp(); };
+  const btn = document.getElementById('btnGuardarEnlaceInsp');
+  if(btn) btn.onclick = async ()=>{
+    const formato_id = document.getElementById('neFormato').value;
+    const predeterminado_id = document.getElementById('neResponsable').value;
+    const nombre = document.getElementById('neNombre').value.trim() || null;
+    btn.disabled = true; btn.innerHTML = "Creando…";
+    const { data, error } = await sb.from("insp_enlaces").insert({ contrato_id: contratoInspActualId, formato_id, predeterminado_id, nombre }).select().single();
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Crear enlace`; toast("No se pudo crear: "+error.message,"err"); return; }
+    await loadInspeccionesState();
+    mostrarEnlaceCreadoInsp(data.id);
+  };
+}
+
+function mostrarEnlaceCreadoInsp(enlaceId){
+  const url = linkInspeccion(enlaceId);
+  openModal(`<div class="modal" style="max-width:440px">
+    <div class="modal-head"><div><h2>¡Enlace creado!</h2><p>Compártelo con los inspectores.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="field"><input readonly value="${esc(url)}" onclick="this.select()"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="btnCerrarEnlaceCreado">Cerrar</button>
+      <button class="btn btn-ghost" id="btnQrEnlaceCreado">${I.qr} QR</button>
+      <button class="btn btn-primary" id="btnCopiarEnlaceCreado">${I.link} Copiar enlace</button>
+    </div></div>`);
+  document.getElementById('btnCerrarEnlaceCreado').onclick = ()=>{ closeModal(); renderEnlacesInspGrid(); };
+  document.getElementById('btnCopiarEnlaceCreado').onclick = ()=> copyText(url, "Enlace copiado");
+  document.getElementById('btnQrEnlaceCreado').onclick = ()=> mostrarQR(url, "Enlace de inspección");
+}
+
+/* ---------- Firmas (predeterminados del responsable del área) — calco de
+   abrirPredeterminadosModal de EPP, sin el tope PREDET_MAX (aquí se eligen de un
+   <select> al crear un enlace, no de chips en un asistente). ---------- */
+async function abrirPredeterminadosInsp(){
+  if(contratoInspActualId==='todos'){ toast("Elige un contrato específico primero","err"); return; }
+  bloquear("Cargando firmas…");
+  try{ await loadInspeccionesState(); } finally{ desbloquear(); }
+  openModal(`<div class="modal" style="max-width:560px">
+    <div class="modal-head"><div><h2>Firmas del responsable del área</h2><p>Guarda el nombre, cargo y firma de quien responde por el área, para asociarla a un enlace de inspección.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <button class="btn btn-primary btn-sm" id="btnNuevoPredetInsp" style="margin-bottom:14px">${I.plus} Nueva firma</button>
+      <div id="predetInspLista"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
+  </div>`);
+  document.getElementById('btnNuevoPredetInsp').onclick = ()=> abrirFormPredeterminadoInsp(null);
+  renderPredeterminadosInspLista();
+}
+
+function renderPredeterminadosInspLista(){
+  const host = document.getElementById('predetInspLista'); if(!host) return;
+  const items = INSPECCIONES.predeterminados;
+  host.innerHTML = items.length ? items.map(p=>`
+    <div class="cat-row">
+      <img src="${p.firma}" alt="firma" style="height:34px;max-width:70px;border:1px solid var(--line);border-radius:6px;background:#fff;object-fit:contain">
+      <span style="flex:1;font-weight:600;font-size:13.5px">${esc(p.nombre)}<div class="muted-sm" style="font-weight:400">${esc(p.responsable_nombre)}${p.responsable_cargo?' · '+esc(p.responsable_cargo):''}</div></span>
+      <button class="icon-btn" title="Editar" data-predet-edit="${p.id}">${I.pen}</button>
+      <button class="icon-btn danger" title="Eliminar" data-predet-del="${p.id}">${I.trash}</button>
+    </div>`).join('') : `<p class="muted-sm">Aún no has guardado ninguna firma.</p>`;
+  host.querySelectorAll('[data-predet-edit]').forEach(b=>{ b.onclick = ()=> abrirFormPredeterminadoInsp(b.dataset.predetEdit); });
+  host.querySelectorAll('[data-predet-del]').forEach(b=>{ b.onclick = ()=> eliminarPredeterminadoInsp(b.dataset.predetDel); });
+}
+
+function abrirFormPredeterminadoInsp(id){
+  const p = id ? INSPECCIONES.predeterminados.find(x=>x.id===id) : null;
+  openSubModal(`<div class="modal" style="max-width:480px">
+    <div class="modal-head"><div><h2>${p?'Editar firma':'Nueva firma'}</h2><p>Ej. "Coordinadora Corabastos"…</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Nombre de la plantilla *</label><input id="piNombre" value="${esc(p?.nombre||'')}" placeholder="Ej. Responsable turno mañana"></div>
+      <div class="field row2">
+        <div><label>Nombre del responsable *</label><input id="piRespNombre" value="${esc(p?.responsable_nombre||'')}" placeholder="Nombre completo"></div>
+        <div><label>Cargo</label><input id="piRespCargo" value="${esc(p?.responsable_cargo||'')}" placeholder="Cargo"></div>
+      </div>
+      <label style="font-weight:700;font-size:13px;display:block;margin:10px 0 6px">Firma *</label>
+      ${p?`<div id="piFirmaGuardada" style="text-align:center;margin-bottom:10px"><img src="${p.firma}" style="height:80px;max-width:100%;border:1px solid var(--line);border-radius:8px;background:#fff;padding:4px"></div>
+      <button class="btn btn-ghost btn-sm" id="btnPiRefirmar" style="margin-bottom:10px">${I.pen} Firmar de nuevo</button>`:''}
+      <div id="piPadWrap" style="${p?'display:none':''}">
+        <div class="sig-box" id="sigBox"><canvas id="sigCanvas"></canvas><div class="sig-placeholder" id="sigPh">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div></div>
+        <div class="sig-actions">
+          <button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="btnPiAdjuntarFirma">${I.plus} Adjuntar imagen de firma</button>
+        </div>
+        <p class="muted-sm" style="margin-top:4px">Si ya tienes la firma guardada como foto o imagen en el computador, la puedes subir — le quitamos el fondo automáticamente.</p>
+        <input type="file" id="piArchivoFirma" accept="image/*" style="display:none">
+        <div id="piFirmaSubidaPreview"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardarPredetInsp">${I.check} Guardar</button>
+    </div></div>`, ()=>abrirPredeterminadosInsp());
+  let usarPad = !p;
+  let firmaSubida = null;
+  if(usarPad){ initSignature(); document.getElementById('sigClear').onclick = ()=> sigPad.clear(); }
+  const reBtn = document.getElementById('btnPiRefirmar');
+  if(reBtn) reBtn.onclick = ()=>{
+    document.getElementById('piFirmaGuardada').style.display='none';
+    reBtn.style.display='none';
+    document.getElementById('piPadWrap').style.display='block';
+    usarPad = true;
+    initSignature(); document.getElementById('sigClear').onclick = ()=> sigPad.clear();
+  };
+  document.getElementById('btnPiAdjuntarFirma').onclick = ()=> document.getElementById('piArchivoFirma').click();
+  document.getElementById('piArchivoFirma').onchange = async (e)=>{
+    const f = e.target.files[0]; if(!f) return;
+    const prev = document.getElementById('piFirmaSubidaPreview');
+    prev.innerHTML = `<p class="muted-sm">Procesando…</p>`;
+    try{
+      firmaSubida = await quitarFondoFirma(f);
+      prev.innerHTML = `<div style="text-align:center;margin-top:8px;padding:10px;background:repeating-conic-gradient(#e9ecf5 0% 25%,#fff 0% 50%) 50%/16px 16px"><img src="${firmaSubida}" style="height:80px;max-width:100%"></div>`;
+    }catch(err){ prev.innerHTML = `<p class="muted-sm" style="color:var(--danger)">No se pudo procesar la imagen</p>`; firmaSubida = null; }
+  };
+  document.getElementById('btnGuardarPredetInsp').onclick = async ()=>{
+    const nombre = document.getElementById('piNombre').value.trim();
+    const respNombre = document.getElementById('piRespNombre').value.trim();
+    const respCargo = document.getElementById('piRespCargo').value.trim() || null;
+    if(!nombre){ toast("Ponle un nombre a la plantilla","err"); return; }
+    if(!respNombre){ toast("Falta el nombre del responsable","err"); return; }
+    let firma = p ? p.firma : null;
+    if(firmaSubida){ firma = firmaSubida; }
+    else if(usarPad){
+      if(!sigPad || sigPad.isEmpty()){ toast("Falta la firma","err"); return; }
+      firma = sigPad.dataURL();
+    }
+    const btn = document.getElementById('btnGuardarPredetInsp'); btn.disabled=true; btn.innerHTML="Guardando…";
+    const payload = { nombre, responsable_nombre: respNombre, responsable_cargo: respCargo, firma };
+    const { error } = p
+      ? await sb.from("insp_predeterminados").update(payload).eq("id", p.id)
+      : await sb.from("insp_predeterminados").insert({ ...payload, contrato_id: contratoInspActualId });
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
+    await loadInspeccionesState();
+    toast(p?"Firma actualizada":"Firma creada","ok");
+    closeModal();
+  };
+}
+
+function eliminarPredeterminadoInsp(id){
+  const p = INSPECCIONES.predeterminados.find(x=>x.id===id);
+  const enUso = INSPECCIONES.enlaces.filter(e=>e.predeterminado_id===id);
+  if(enUso.length){
+    toast(`No se puede eliminar: la usa${enUso.length===1?' 1 enlace':' '+enUso.length+' enlaces'}. Cambia primero esos enlaces a otra firma.`,"err");
+    return;
+  }
+  openSubModal(`<div class="modal" style="max-width:420px">
+    <div class="modal-head"><div><h2>Eliminar firma</h2><p>Esta acción no se puede deshacer.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminará la firma <b>${esc(p?.nombre||'')}</b>.</p></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-danger" id="confDelPredetInsp">${I.trash} Sí, eliminar</button></div></div>`, ()=>abrirPredeterminadosInsp());
+  document.getElementById("confDelPredetInsp").onclick = async ()=>{
+    const btn=document.getElementById("confDelPredetInsp"); btn.disabled=true; btn.innerHTML="Eliminando…";
+    const { error } = await sb.from("insp_predeterminados").delete().eq("id", id);
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`; toast("No se pudo eliminar: "+error.message,"err"); return; }
+    await loadInspeccionesState();
+    toast("Firma eliminada","ok");
+    closeModal();
+  };
 }
 
 /* ---------- Asistente de 3 pasos: nueva inspección ---------- */
@@ -9026,58 +9315,6 @@ function claseEstadoInsp(estado){
   if(e==='n/a' || e==='na') return 'na';
   if(e.startsWith('no')) return 'mal';
   return 'bien';
-}
-
-async function abrirNuevaInspeccion(){
-  if(contratoInspActualId==='todos'){ toast("Elige un contrato específico primero","err"); return; }
-  const activos = INSPECCIONES.formatos.filter(f=>f.activo);
-  if(!activos.length){ toast("No hay formatos de inspección activos — créalo primero desde \"Formatos\"","err"); return; }
-  if(activos.length===1){ await iniciarNuevaInspeccionConFormato(activos[0].id); return; }
-  openModal(`<div class="modal" style="max-width:440px">
-    <div class="modal-head"><div><h2>Elige el formato</h2><p>¿Qué tipo de inspección vas a hacer?</p></div>
-      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body">${activos.map(f=>`<button type="button" class="btn btn-ghost" style="width:100%;justify-content:flex-start;margin-bottom:8px" data-elegir-formato="${f.id}">${esc(f.nombre)}</button>`).join('')}</div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button></div>
-  </div>`);
-  document.querySelectorAll('[data-elegir-formato]').forEach(b=>{ b.onclick = ()=> iniciarNuevaInspeccionConFormato(b.dataset.elegirFormato); });
-}
-
-async function iniciarNuevaInspeccionConFormato(formatoId){
-  bloquear("Cargando formato…");
-  const { data, error } = await sb.from("insp_formatos").select("id,nombre,tiene_fotos,estructura").eq("id",formatoId).maybeSingle();
-  desbloquear();
-  if(error || !data){ toast("No se pudo cargar el formato","err"); return; }
-  inspeccionDraft = {
-    contratoId: contratoInspActualId,
-    formatoId: data.id,
-    formatoNombre: data.nombre,
-    estructura: Array.isArray(data.estructura) ? data.estructura : [],
-    tieneFotos: data.tiene_fotos!==false,
-    respuestas: {},
-    fotos: [],
-    inspectorNombre: MIPERFIL.nombre || '',
-    firmaInspector: null,
-    responsableNombre: '',
-    responsableCargo: '',
-    predeterminadoId: null,
-    firmaResponsable: null
-  };
-  renderPasoInspeccionFormulario();
-}
-
-function renderPasoInspeccionFormulario(){
-  const c = contratoInspActual();
-  openModal(`<div class="modal lg">
-    <div class="modal-head"><div><h2>${esc(inspeccionDraft.formatoNombre)}</h2><p>Paso 1 de 3 — ${esc(c?.nombre||'')}</p></div>
-      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body" id="inspFormBody"></div>
-    <div class="modal-foot">
-      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" id="btnInspContinuar">${I.check} Continuar a firmas</button>
-    </div>
-  </div>`);
-  renderInspFormBody();
-  document.getElementById('btnInspContinuar').onclick = validarYContinuarInspPaso1;
 }
 
 function renderInspFormBody(){
@@ -9234,170 +9471,20 @@ function wireInspFormBody(host){
   wireFotosInspGrid();
 }
 
-function validarYContinuarInspPaso1(){
+/* Valida los campos "requeridos" de las secciones tipo info (ej. Área inspeccionada)
+   contra inspeccionDraft.respuestas. Se reutiliza tanto en la página pública como en
+   cualquier otro lugar que use este mismo draft. */
+function validarCamposRequeridosInsp(){
   for(const s of inspeccionDraft.estructura){
-    if(s.tipo==='info'){
-      for(const c of (s.campos||[])){
-        if(c.requerido){
-          const v = inspeccionDraft.respuestas[c.id];
-          const vacio = c.tipo==='seleccion_multiple' ? !(Array.isArray(v)&&v.length) : !v;
-          if(vacio){ toast(`Falta "${c.etiqueta}"`,"err"); return; }
-        }
-      }
+    if(s.tipo!=='info') continue;
+    for(const c of (s.campos||[])){
+      if(!c.requerido) continue;
+      const v = inspeccionDraft.respuestas[c.id];
+      const vacio = c.tipo==='seleccion_multiple' ? !(Array.isArray(v)&&v.length) : !v;
+      if(vacio){ toast(`Falta "${c.etiqueta}"`,"err"); return false; }
     }
   }
-  renderPasoInspeccionFirmaInspector();
-}
-
-function renderPasoInspeccionFirmaInspector(){
-  openModal(`<div class="modal" style="max-width:560px">
-    <div class="modal-head"><div><h2>Firma del inspector</h2><p>Paso 2 de 3</p></div>
-      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body">
-      <div class="field"><label>Nombre del inspector *</label><input id="inspNombreInspector" value="${esc(inspeccionDraft.inspectorNombre)}"></div>
-      <p class="muted-sm" style="margin:14px 0 10px">Firma aquí:</p>
-      <div class="sig-box" id="sigBox"><canvas id="sigCanvas"></canvas><div class="sig-placeholder" id="sigPh">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div></div>
-      <div class="sig-actions"><button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar</button></div>
-    </div>
-    <div class="modal-foot">
-      <button class="btn btn-ghost" onclick="renderPasoInspeccionFormulario()">${I.back} Atrás</button>
-      <button class="btn btn-green" id="btnFirmaInspectorOk">${I.check} Firmar y continuar</button>
-    </div>
-  </div>`);
-  initSignature();
-  document.getElementById('sigClear').onclick = ()=> sigPad.clear();
-  document.getElementById('btnFirmaInspectorOk').onclick = ()=>{
-    const nombre = document.getElementById('inspNombreInspector').value.trim();
-    if(!nombre){ toast("Falta el nombre del inspector","err"); return; }
-    if(!sigPad || sigPad.isEmpty()){ toast("Falta la firma del inspector","err"); return; }
-    inspeccionDraft.inspectorNombre = nombre;
-    inspeccionDraft.firmaInspector = sigPad.dataURL();
-    renderPasoInspeccionFirmaResponsable();
-  };
-}
-
-function renderPasoInspeccionFirmaResponsable(){
-  const plantilla = inspeccionDraft.predeterminadoId ? INSPECCIONES.predeterminados.find(x=>x.id===inspeccionDraft.predeterminadoId) : null;
-  openModal(`<div class="modal" style="max-width:560px">
-    <div class="modal-head"><div><h2>Firma del responsable del área</h2><p>Paso 3 de 3</p></div>
-      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body">
-      ${INSPECCIONES.predeterminados.length?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px" id="predetChipsInsp">
-        ${INSPECCIONES.predeterminados.map(p=>`<button type="button" class="chip-predet ${p.id===inspeccionDraft.predeterminadoId?'active':''}" data-predet-id="${p.id}" title="${esc(p.nombre)}">${esc(p.nombre)}</button>`).join('')}
-      </div>`:''}
-      <div class="field row2">
-        <div><input id="inspRespNombre" value="${esc(inspeccionDraft.responsableNombre)}" placeholder="Nombre del responsable" ${plantilla?'readonly':''}></div>
-        <div><input id="inspRespCargo" value="${esc(inspeccionDraft.responsableCargo)}" placeholder="Cargo" ${plantilla?'readonly':''}></div>
-      </div>
-      ${plantilla?`
-      <div id="firmaRInspGuardada" style="text-align:center;margin:12px 0"><img src="${plantilla.firma}" style="height:80px;max-width:100%;border:1px solid var(--line);border-radius:8px;background:#fff;padding:4px"></div>
-      <p class="muted-sm" style="text-align:center;margin-bottom:10px">Firma guardada en "${esc(plantilla.nombre)}"</p>
-      <div style="display:flex;justify-content:center;margin-bottom:6px">
-        <button class="btn btn-ghost btn-sm" id="btnRefirmarRInsp">${I.pen} Firmar de nuevo (solo para esta inspección)</button>
-      </div>`:''}
-      <div id="padWrapRInsp" style="${plantilla?'display:none':''}">
-        <div class="sig-box" id="sigBox"><canvas id="sigCanvas"></canvas><div class="sig-placeholder" id="sigPh">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div></div>
-        <div class="sig-actions"><button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar</button></div>
-        ${!plantilla && INSPECCIONES.predeterminados.length<PREDET_MAX?`
-        <label class="chk" style="margin-top:8px"><input type="checkbox" id="chkGuardarPredetInsp"> Guardar como firma predeterminada de este responsable</label>
-        <div class="field" id="nuevaPredetInspNombreWrap" style="margin-top:6px;display:none"><input id="nuevaPredetInspNombre" placeholder="Nombre de la plantilla, ej. Responsable Corabastos"></div>`:''}
-      </div>
-    </div>
-    <div class="modal-foot">
-      <button class="btn btn-ghost" onclick="renderPasoInspeccionFirmaInspector()">${I.back} Atrás</button>
-      <button class="btn btn-green" id="btnFirmaRespInspOk">${I.check} Guardar inspección</button>
-    </div>
-  </div>`);
-  let usarGuardada = !!plantilla;
-  if(!usarGuardada){ initSignature(); document.getElementById('sigClear').onclick = ()=> sigPad.clear(); }
-  document.querySelectorAll('#predetChipsInsp [data-predet-id]').forEach(chip=>{
-    chip.onclick = ()=>{
-      const id = chip.dataset.predetId;
-      inspeccionDraft.predeterminadoId = inspeccionDraft.predeterminadoId===id ? null : id;
-      renderPasoInspeccionFirmaResponsable();
-    };
-  });
-  const chkGuardarPredet = document.getElementById('chkGuardarPredetInsp');
-  if(chkGuardarPredet) chkGuardarPredet.onchange = ()=>{
-    document.getElementById('nuevaPredetInspNombreWrap').style.display = chkGuardarPredet.checked ? 'block' : 'none';
-  };
-  const reBtn = document.getElementById('btnRefirmarRInsp');
-  if(reBtn) reBtn.onclick = ()=>{
-    document.getElementById('firmaRInspGuardada').style.display='none';
-    reBtn.parentElement.style.display='none';
-    document.getElementById('padWrapRInsp').style.display='block';
-    usarGuardada = false;
-    initSignature(); document.getElementById('sigClear').onclick = ()=> sigPad.clear();
-  };
-  document.getElementById('btnFirmaRespInspOk').onclick = async ()=>{
-    const nombre = document.getElementById('inspRespNombre').value.trim();
-    const cargo = document.getElementById('inspRespCargo').value.trim();
-    if(!nombre){ toast("Falta el nombre del responsable del área","err"); return; }
-    inspeccionDraft.responsableNombre = nombre;
-    inspeccionDraft.responsableCargo = cargo;
-    let firma;
-    if(usarGuardada){
-      firma = plantilla.firma;
-    } else {
-      if(!sigPad || sigPad.isEmpty()){ toast("Falta la firma del responsable","err"); return; }
-      firma = sigPad.dataURL();
-      const chk = document.getElementById('chkGuardarPredetInsp');
-      if(chk && chk.checked){
-        const nombrePlantilla = document.getElementById('nuevaPredetInspNombre').value.trim() || ('Plantilla '+(INSPECCIONES.predeterminados.length+1));
-        const { error } = await sb.from("insp_predeterminados").insert({
-          nombre: nombrePlantilla, responsable_nombre: nombre, responsable_cargo: cargo||null, firma, contrato_id: contratoInspActualId
-        });
-        if(error) toast("La inspección se va a guardar, pero no se pudo guardar la plantilla: "+error.message,"err");
-        else await loadInspeccionesState();
-      }
-    }
-    const btn = document.getElementById('btnFirmaRespInspOk'); btn.disabled=true; btn.innerHTML="Guardando…";
-    await guardarInspeccionFinal(firma);
-  };
-}
-
-async function guardarInspeccionFinal(firmaResponsable){
-  bloquear("Guardando inspección…");
-  let nuevaId = null;
-  try{
-    const { data, error } = await sb.rpc('insp_inspeccion_registrar', {
-      p_contrato_id: inspeccionDraft.contratoId,
-      p_formato_id: inspeccionDraft.formatoId,
-      p_respuestas: inspeccionDraft.respuestas,
-      p_inspector_nombre: inspeccionDraft.inspectorNombre,
-      p_firma_inspector: inspeccionDraft.firmaInspector,
-      p_responsable_nombre: inspeccionDraft.responsableNombre,
-      p_responsable_cargo: inspeccionDraft.responsableCargo || null,
-      p_firma_responsable: firmaResponsable,
-      p_fotos: inspeccionDraft.fotos
-    });
-    if(error){ toast("No se pudo guardar la inspección: "+error.message,"err"); return; }
-    nuevaId = data;
-    await loadInspeccionesState();
-  } finally { desbloquear(); }
-  if(!nuevaId) return;
-  toast("Inspección guardada correctamente","ok");
-  inspeccionDraft = null;
-  renderInspeccionExito(nuevaId);
-  renderInspeccionesAdmin(true);
-}
-
-/* Pantalla de éxito con descarga inmediata — la inspección YA quedó guardada; este
-   botón es solo por si el inspector la necesita de una vez, en el mismo celular. */
-function renderInspeccionExito(id){
-  openModal(`<div class="modal" style="max-width:440px">
-    <div class="modal-head"><div><h2>¡Listo!</h2><p>La inspección quedó guardada.</p></div>
-      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body" style="text-align:center;padding:10px 0">
-      <div class="success-screen"><div class="ic">${I.check}</div></div>
-      <p style="color:var(--ink-2)">Ya puedes descargarla en PDF si la necesitas ahora mismo.</p>
-    </div>
-    <div class="modal-foot">
-      <button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
-      <button class="btn btn-primary" id="btnDescargarInspAhora">${I.doc} Descargar PDF</button>
-    </div>
-  </div>`);
-  document.getElementById('btnDescargarInspAhora').onclick = ()=> generarInspeccionPDF(id);
+  return true;
 }
 
 /* ---------- Historial de inspecciones del contrato, con filtro de mes (mismo
@@ -9638,10 +9725,19 @@ async function dibujarFotosPDF(doc, y, fotos, ctx){
   return y+2;
 }
 
-async function construirInspeccionPDF(id){
-  const { data: insp } = await sb.from("insp_inspecciones").select("*").eq("id",id).maybeSingle();
+/* idOrData: un id (string, hace el fetch de siempre — panel administrado) o el
+   objeto de datos ya cargado (respuesta de insp_publica_registrar — el enlace
+   público no tiene sesión para volver a consultar la tabla). */
+async function construirInspeccionPDF(idOrData){
+  let insp;
+  if(typeof idOrData === 'string'){
+    const { data } = await sb.from("insp_inspecciones").select("*").eq("id",idOrData).maybeSingle();
+    insp = data;
+  } else {
+    insp = idOrData;
+  }
   if(!insp) return null;
-  const nombreContrato = (INSPECCIONES.contratos.find(c=>c.id===insp.contrato_id)||{}).nombre || "";
+  const nombreContrato = insp.contrato_nombre != null ? insp.contrato_nombre : ((INSPECCIONES.contratos.find(c=>c.id===insp.contrato_id)||{}).nombre || "");
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({unit:"mm", format:"a4"});
@@ -9745,6 +9841,108 @@ async function generarInspeccionPDF(id){
     toast("PDF generado","ok");
   }catch(e){ console.error(e); toast("No se pudo generar el PDF: "+(e.message||''),"err"); }
   finally{ desbloquear(); }
+}
+
+/* ---------- Página pública del enlace de inspección (sin login) — mismo patrón
+   que renderPublic (Asistencia): fetch por RPC security definer, formulario, y al
+   enviar se llama otra RPC security definer que guarda y devuelve todo lo necesario
+   para armar el PDF de una vez (esta página nunca tiene sesión para volver a
+   consultar la tabla). Reutiliza renderInspFormBody y todo el motor del formulario
+   dinámico ya escrito — no le importa si vive en un modal o en una página pública. ---------- */
+async function renderInspeccionPublica(enlaceId){
+  document.body.style.overflow = "";
+  bloquear("Cargando…");
+  let resp;
+  try{ resp = await sb.rpc("insp_enlace_publico", { p_enlace_id: enlaceId }); }
+  finally{ desbloquear(); }
+  const r = resp && resp.data;
+  if(resp.error || !r || !r.ok){
+    document.getElementById("app").innerHTML = `
+      <div class="pub-wrap"><div class="pub-card"><div class="locked-screen">
+        <div class="ic">${I.lockBig}</div>
+        <h2>Enlace no disponible</h2>
+        <p>Este enlace no existe o ya no está activo. Verifica con quien te lo compartió.</p>
+      </div></div></div>`;
+    return;
+  }
+
+  inspeccionDraft = {
+    enlaceId,
+    formatoNombre: r.formato.nombre,
+    estructura: Array.isArray(r.formato.estructura) ? r.formato.estructura : [],
+    tieneFotos: r.formato.tiene_fotos !== false,
+    respuestas: {},
+    fotos: []
+  };
+
+  document.getElementById("app").innerHTML = `
+    <div class="pub-wrap">
+      <div class="pub-card">
+        <div class="pub-head">
+          <div class="acc"></div>
+          <h1>${esc(inspeccionDraft.formatoNombre)}</h1>
+          <div class="sub"><span>${I.building} ${esc(r.contrato_nombre||'—')}</span></div>
+        </div>
+        <div class="pub-body" id="pubBody">
+          <div class="pub-logo">
+            <img src="${LOGO}" alt="Don Aseo Ltda.">
+            <div><div class="pt1">Don Aseo Ltda.</div><div class="pt2">NIT 812.000.152-7 · ${CODIGO}</div></div>
+          </div>
+          <div id="inspFormBody"></div>
+          <div class="field">
+            <label>Tu nombre (inspector) *</label>
+            <input id="pInspNombre" placeholder="Nombres y apellidos" autocomplete="off">
+          </div>
+          <div class="field" style="margin-bottom:8px">
+            <label>Firma digital *</label>
+            <div class="sig-box" id="sigBox">
+              <canvas id="sigCanvas"></canvas>
+              <div class="sig-placeholder" id="sigPh">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div>
+            </div>
+            <div class="sig-actions"><button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar firma</button></div>
+          </div>
+          <button class="btn btn-green" id="pEnviarInsp" style="width:100%;padding:14px;margin-top:8px">${I.check} Enviar inspección</button>
+        </div>
+      </div>
+    </div>`;
+
+  renderInspFormBody();
+  initSignature();
+  document.getElementById("sigClear").onclick = ()=> sigPad.clear();
+  document.getElementById("pEnviarInsp").onclick = ()=> enviarInspeccionPublica(enlaceId);
+}
+
+async function enviarInspeccionPublica(enlaceId){
+  if(!validarCamposRequeridosInsp()) return;
+  const nombre = document.getElementById('pInspNombre').value.trim();
+  if(!nombre){ toast("Escribe tu nombre","err"); return; }
+  if(!sigPad || sigPad.isEmpty()){ toast("Falta tu firma","err"); return; }
+  const firma = sigPad.dataURL();
+  const btn = document.getElementById('pEnviarInsp');
+  btn.disabled = true; btn.innerHTML = "Enviando…";
+  const { data, error } = await sb.rpc("insp_publica_registrar", {
+    p_enlace_id: enlaceId,
+    p_respuestas: inspeccionDraft.respuestas,
+    p_inspector_nombre: nombre,
+    p_firma_inspector: firma,
+    p_fotos: inspeccionDraft.fotos
+  });
+  if(error || !data || !data.ok){
+    btn.disabled = false; btn.innerHTML = `${I.check} Enviar inspección`;
+    const motivo = data && data.motivo;
+    const msg = motivo==='sin_responsable' ? "Este enlace no tiene una firma de responsable configurada — avisa a quien te lo compartió."
+      : motivo==='formato_inactivo' ? "Este formato ya no está disponible."
+      : motivo==='no_encontrado' ? "Este enlace ya no está activo."
+      : "No se pudo enviar: "+((error&&error.message)||motivo||'');
+    toast(msg,"err");
+    return;
+  }
+  try{
+    const r = await construirInspeccionPDF(data);
+    if(r) r.doc.save("Inspeccion_"+r.nombreBase+".pdf");
+  }catch(e){ console.error(e); }
+  inspeccionDraft = null;
+  document.getElementById("app").innerHTML = pantallaFirmaOk("¡Listo!", "Tu inspección quedó guardada y el PDF se está descargando.");
 }
 
 /* ============================================================
