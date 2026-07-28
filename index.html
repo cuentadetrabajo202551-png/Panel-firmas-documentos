@@ -357,6 +357,10 @@ table.dt tr:hover td{background:#fafbfe}
 .dt .icon-btn svg{width:15px;height:15px}
 .dt .acc-mini{display:flex;gap:5px;flex-wrap:nowrap;align-items:center}
 .muted-sm{color:var(--ink-3);font-size:12.5px}
+.grid-insp{grid-template-columns:repeat(auto-fill,minmax(400px,1fr))}
+.grid-insp .card-actions{flex-wrap:wrap;row-gap:7px}
+.grid-insp .card-actions .icon-btn{width:32px;height:32px;border-radius:8px}
+.grid-insp .card-actions .icon-btn svg{width:16px;height:16px}
 
 /* ---------- Public form ---------- */
 .pub-wrap{max-width:660px;margin:0 auto;padding:30px 20px 80px}
@@ -8560,7 +8564,6 @@ function renderDtlPublicoExito(){
    ============================================================ */
 let INSPECCIONES = { contratos: [], formatos: [], predeterminados: [], enlaces: [], inspecciones: [] };
 let contratoInspActualId = localStorage.getItem('insp_contrato_actual') || null;
-let inspMostrarInactivos = false;
 
 async function loadInspeccionesState(){
   const [co, fo, en, ins] = await Promise.all([
@@ -8973,10 +8976,7 @@ async function renderInspeccionesAdmin(silent){
       </div>
 
       <div class="panel-section">
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
-          <div class="section-label" style="margin:0">Formatos</div>
-          <label class="chk" style="white-space:nowrap"><input type="checkbox" id="chkMostrarInactivosFormatosInsp" ${inspMostrarInactivos?'checked':''}> Mostrar inactivos</label>
-        </div>
+        <div class="section-label">Formatos</div>
         <div id="formatosInspGrid"></div>
       </div>
     </div>`;
@@ -8991,7 +8991,6 @@ async function renderInspeccionesAdmin(silent){
   const bhi = document.getElementById("btnHistorialInsp"); if(bhi) bhi.onclick = abrirHistorialInspecciones;
   const bcf = document.getElementById("btnCrearFormatoInsp"); if(bcf) bcf.onclick = ()=>{ location.hash = "#/inspecciones/formato/nueva"; };
   const bfirmas = document.getElementById("btnFirmasInsp"); if(bfirmas) bfirmas.onclick = abrirPredeterminadosInsp;
-  document.getElementById("chkMostrarInactivosFormatosInsp").onchange = (e)=>{ inspMostrarInactivos = e.target.checked; renderFormatosInspGrid(); };
   renderFormatosInspGrid();
   if(silent) window.scrollTo(0, scrollY);
   if(!silent){ if(_inspTimer) clearInterval(_inspTimer); _inspTimer = setInterval(_tickInsp, 20000); }
@@ -9000,12 +8999,12 @@ async function renderInspeccionesAdmin(silent){
 function renderFormatosInspGrid(){
   const host = document.getElementById('formatosInspGrid'); if(!host) return;
   const enTodos = contratoInspActualId==='todos';
-  const lista = INSPECCIONES.formatos.filter(f=> inspMostrarInactivos || f.activo);
+  const lista = INSPECCIONES.formatos;
   if(!lista.length){
     host.innerHTML = `<div class="empty" style="padding:30px 20px"><div class="ic">${I.doc}</div><h3>Sin formatos todavía</h3><p>Crea uno con "Crear formato" para empezar.</p></div>`;
     return;
   }
-  host.innerHTML = '<div class="grid">' + lista.map(f=>{
+  host.innerHTML = '<div class="grid grid-insp">' + lista.map(f=>{
     const en = enTodos ? null : INSPECCIONES.enlaces.find(e=>e.formato_id===f.id && e.contrato_id===contratoInspActualId);
     const predet = en ? INSPECCIONES.predeterminados.find(p=>p.id===en.predeterminado_id) : null;
     const n = en ? INSPECCIONES.inspecciones.filter(i=>i.enlace_id===en.id).length : 0;
