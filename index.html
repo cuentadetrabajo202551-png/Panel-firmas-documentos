@@ -9036,8 +9036,7 @@ function renderFormatosInspGrid(){
                  <button class="icon-btn" title="Copiar enlace" data-fa="link" data-id="${en.id}">${I.link}</button>
                  <button class="icon-btn" title="Compartir QR" data-fa="qr" data-id="${en.id}">${I.qr}</button>
                  ${puedeEscribir()?`<button class="icon-btn" title="Cambiar firma del responsable" data-fa="firma" data-id="${en.id}">${I.firma}</button>
-                 <button class="icon-btn" title="${en.activo?'Desactivar enlace':'Activar enlace'}" data-fa="toggleEnlace" data-id="${en.id}">${en.activo?I.lock:I.check}</button>
-                 <button class="icon-btn danger" title="Eliminar enlace" data-fa="delEnlace" data-id="${en.id}">${I.trash}</button>`:''}`
+                 <button class="icon-btn" title="${en.activo?'Desactivar enlace':'Activar enlace'}" data-fa="toggleEnlace" data-id="${en.id}">${en.activo?I.lock:I.check}</button>`:''}`
               : (puedeEscribir() && !enTodos && act ? `<button class="btn btn-primary btn-sm" data-fa="asociar" data-id="${f.id}">${I.firma} Asociar firma del responsable</button>` : '')}
           </div>
         </div>
@@ -9045,6 +9044,7 @@ function renderFormatosInspGrid(){
           <button class="icon-btn" title="Editar formato" data-fa="editar" data-id="${f.id}">${I.pen}</button>
           <button class="icon-btn" title="Duplicar formato" data-fa="duplicar" data-id="${f.id}">${I.copy}</button>
           <button class="icon-btn ${act?'danger':''}" title="${act?'Desactivar formato':'Activar formato'}" data-fa="toggleFormato" data-id="${f.id}">${act?I.lock:I.check}</button>
+          <button class="icon-btn danger" title="Eliminar tarjeta (formato + enlace)" data-fa="delFormato" data-id="${f.id}">${I.trash}</button>
         </div>`:''}
       </div>`;
   }).join('') + '</div>';
@@ -9057,11 +9057,11 @@ function renderFormatosInspGrid(){
       else if(act==='qr') mostrarQR(linkInspeccion(id), "Enlace de inspección");
       else if(act==='firma') cambiarFirmaEnlaceInsp(id);
       else if(act==='toggleEnlace') toggleActivoEnlaceInsp(id);
-      else if(act==='delEnlace') eliminarEnlaceInsp(id);
       else if(act==='asociar') abrirNuevoEnlaceInsp(id);
       else if(act==='editar') location.hash = "#/inspecciones/formato/"+id;
       else if(act==='duplicar') duplicarFormatoInsp(id);
       else if(act==='toggleFormato') toggleActivoFormatoInsp(id);
+      else if(act==='delFormato') eliminarFormatoInsp(id);
     };
   });
 }
@@ -9075,19 +9075,20 @@ async function toggleActivoEnlaceInsp(id){
   toast(en.activo?"Enlace desactivado":"Enlace activado","ok");
 }
 
-function eliminarEnlaceInsp(id){
-  openModal(`<div class="modal" style="max-width:420px">
-    <div class="modal-head"><div><h2>Eliminar enlace</h2><p>Esta acción no se puede deshacer.</p></div>
+function eliminarFormatoInsp(id){
+  const f = INSPECCIONES.formatos.find(x=>x.id===id);
+  openModal(`<div class="modal" style="max-width:440px">
+    <div class="modal-head"><div><h2>Eliminar formato</h2><p>Esta acción no se puede deshacer.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminará el enlace y nadie podrá seguir registrando inspecciones con él. Las inspecciones ya guardadas no se ven afectadas.</p></div>
+    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminará la tarjeta "${esc(f?.nombre||'')}" junto con su enlace — nadie podrá seguir usando ese link para registrar inspecciones. Las inspecciones que ya se hayan registrado con este formato <b>no se pierden</b>: siguen guardadas y visibles en el Historial.</p></div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-danger" id="confDelEnlaceInsp">${I.trash} Sí, eliminar</button></div></div>`);
-  document.getElementById("confDelEnlaceInsp").onclick = async ()=>{
-    const btn = document.getElementById("confDelEnlaceInsp"); btn.disabled=true; btn.innerHTML="Eliminando…";
-    const { error } = await sb.from("insp_enlaces").delete().eq("id", id);
+      <button class="btn btn-danger" id="confDelFormatoInsp">${I.trash} Sí, eliminar</button></div></div>`);
+  document.getElementById("confDelFormatoInsp").onclick = async ()=>{
+    const btn = document.getElementById("confDelFormatoInsp"); btn.disabled=true; btn.innerHTML="Eliminando…";
+    const { error } = await sb.from("insp_formatos").delete().eq("id", id);
     if(error){ btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`; toast("No se pudo eliminar: "+error.message,"err"); return; }
     await loadInspeccionesState();
-    toast("Enlace eliminado","ok");
+    toast("Formato eliminado","ok");
     closeModal();
     renderFormatosInspGrid();
   };
