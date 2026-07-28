@@ -2218,6 +2218,12 @@ function _tickDtl(){
   if(document.hidden) return;
   renderDtlAdmin(true);
 }
+let _inspTimer = null;
+function _tickInsp(){
+  if(location.hash!=="#/inspecciones"){ if(_inspTimer){ clearInterval(_inspTimer); _inspTimer=null; } return; }
+  if(document.hidden) return;
+  renderInspeccionesAdmin(true);
+}
 
 async function renderDocsAdmin(silent){
   const scrollY = window.scrollY;
@@ -8554,6 +8560,7 @@ function renderDtlPublicoExito(){
    ============================================================ */
 let INSPECCIONES = { contratos: [], formatos: [], predeterminados: [], enlaces: [], inspecciones: [] };
 let contratoInspActualId = localStorage.getItem('insp_contrato_actual') || null;
+let inspMostrarInactivos = false;
 
 async function loadInspeccionesState(){
   const [co, fo, en, ins] = await Promise.all([
@@ -8608,6 +8615,13 @@ function abrirGestionContratosInsp(){
   document.getElementById('btnNuevoContratoInsp').onclick = ()=> abrirFormContratoInsp(null);
   renderContratosInspLista();
 }
+/* Refresca (en silencio) el panel principal de Inspecciones si es lo que se ve
+   detrás de un modal — necesario porque crear/renombrar/archivar un contrato desde
+   dentro de un modal no vuelve a dibujar el <select> del panel por sí solo. */
+function refrescarPanelInspSiVisible(){
+  if(location.hash==="#/inspecciones") renderInspeccionesAdmin(true);
+}
+
 function renderContratosInspLista(){
   const host = document.getElementById('contratosInspLista'); if(!host) return;
   host.innerHTML = INSPECCIONES.contratos.map(x=>`
@@ -8623,6 +8637,7 @@ function renderContratosInspLista(){
       const { error } = await sb.from("insp_contratos").update({ activo: !x.activo }).eq("id", x.id);
       if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
       await loadInspeccionesState(); renderContratosInspLista();
+      refrescarPanelInspSiVisible();
       toast(x.activo?"Contrato archivado":"Contrato reactivado","ok");
     };
   });
@@ -8654,43 +8669,8 @@ function abrirFormContratoInsp(id, alGuardar, comoRaiz){
     toast(x?"Contrato actualizado":"Contrato creado","ok");
     closeModal();
     if(comoRaiz && alGuardar) alGuardar();
+    refrescarPanelInspSiVisible();
   };
-}
-
-/* ---------- Formatos (plantillas de inspección) ---------- */
-function abrirGestionFormatosInsp(){
-  openModal(`<div class="modal" style="max-width:520px">
-    <div class="modal-head"><div><h2>Formatos de inspección</h2><p>Cada uno define las secciones y preguntas de un tipo de inspección.</p></div>
-      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body">
-      <button class="btn btn-primary btn-sm" id="btnNuevoFormatoInsp" style="margin-bottom:14px">${I.plus} Nuevo formato</button>
-      <div id="formatosInspLista"></div>
-    </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
-  </div>`);
-  document.getElementById('btnNuevoFormatoInsp').onclick = ()=>{ closeModal(); location.hash = "#/inspecciones/formato/nueva"; };
-  renderFormatosInspLista();
-}
-function renderFormatosInspLista(){
-  const host = document.getElementById('formatosInspLista'); if(!host) return;
-  host.innerHTML = INSPECCIONES.formatos.map(x=>`
-    <div class="cat-row">
-      <span style="flex:1;font-weight:600;font-size:13.5px;${x.activo?'':'opacity:.45'}">${esc(x.nombre)}${x.activo?'':' (inactivo)'}</span>
-      ${x.activo && contratoInspActualId!=='todos'?`<button class="icon-btn" title="Generar enlace para el contrato actual" data-fi-enlace="${x.id}">${I.link}</button>`:''}
-      <button class="icon-btn" title="Editar" data-fi-edit="${x.id}">${I.pen}</button>
-      <button class="icon-btn ${x.activo?'danger':''}" title="${x.activo?'Desactivar':'Activar'}" data-fi-toggle="${x.id}">${x.activo?I.lock:I.check}</button>
-    </div>`).join('') || '<p class="muted-sm">Sin formatos todavía.</p>';
-  host.querySelectorAll('[data-fi-edit]').forEach(b=>{ b.onclick = ()=>{ closeModal(); location.hash = "#/inspecciones/formato/"+b.dataset.fiEdit; }; });
-  host.querySelectorAll('[data-fi-enlace]').forEach(b=>{ b.onclick = ()=>{ closeModal(); abrirNuevoEnlaceInsp(b.dataset.fiEnlace); }; });
-  host.querySelectorAll('[data-fi-toggle]').forEach(b=>{
-    b.onclick = async ()=>{
-      const x = INSPECCIONES.formatos.find(f=>f.id===b.dataset.fiToggle);
-      const { error } = await sb.from("insp_formatos").update({ activo: !x.activo }).eq("id", x.id);
-      if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
-      await loadInspeccionesState(); renderFormatosInspLista();
-      toast(x.activo?"Formato desactivado":"Formato activado","ok");
-    };
-  });
 }
 
 /* ---------- Constructor de formatos: secciones info / checklist / tabla_dinamica ---------- */
@@ -8909,7 +8889,6 @@ async function guardarFormatoInsp(){
     if(s.tipo==='checklist' && (!s.estados||!s.estados.length)){ toast(`La sección "${s.titulo||'sin título'}" necesita al menos un estado (ej. Cumple, No cumple)`,"err"); return; }
     if(s.tipo==='tabla_dinamica' && (!s.columnas||!s.columnas.length)){ toast(`La tabla "${s.titulo||'sin título'}" necesita al menos una columna`,"err"); return; }
   }
-  const esNuevo = !formatoEditorId;
   const btn = document.getElementById('btnGuardarFormatoInsp');
   if(btn){ btn.disabled=true; btn.innerHTML="Guardando…"; }
   bloquear("Guardando formato…");
@@ -8917,25 +8896,12 @@ async function guardarFormatoInsp(){
   const res = formatoEditorId
     ? await sb.from("insp_formatos").update(payload).eq("id", formatoEditorId)
     : await sb.from("insp_formatos").insert(payload).select().single();
-  if(res.error){ desbloquear(); if(btn){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar formato`; } toast("No se pudo guardar: "+res.error.message,"err"); return; }
-
-  // Si es un formato NUEVO y hay un contrato específico activo, se le arma de una
-  // vez su enlace (con la firma de responsable más reciente de ese contrato) para
-  // que la tarjeta ya aparezca lista en "Enlaces de inspección" — así el usuario no
-  // tiene que pasar por un paso aparte de "nuevo enlace" cada vez.
-  let mensaje = "Formato guardado";
-  if(esNuevo && contratoInspActualId && contratoInspActualId!=='todos'){
-    const { data: predets } = await sb.from("insp_predeterminados").select("id").eq("contrato_id", contratoInspActualId).order("creado_en",{ascending:true});
-    if(predets && predets.length){
-      const predeterminado_id = predets[predets.length-1].id;
-      const { error: e2 } = await sb.from("insp_enlaces").insert({ contrato_id: contratoInspActualId, formato_id: res.data.id, predeterminado_id });
-      mensaje = e2 ? "Formato guardado, pero no se pudo generar el enlace automáticamente: "+e2.message : "Formato guardado y enlace listo en \"Enlaces de inspección\"";
-    } else {
-      mensaje = "Formato guardado. Para activar su enlace, crea primero una firma del responsable en \"Firmas\" y genera el enlace desde \"Formatos\"";
-    }
-  }
   desbloquear();
-  toast(mensaje, mensaje.includes("no se pudo")?"err":"ok");
+  if(res.error){ if(btn){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar formato`; } toast("No se pudo guardar: "+res.error.message,"err"); return; }
+  // El enlace (firma del responsable) se asocia aparte, desde su tarjeta en el panel
+  // — así queda claro que es un paso deliberado, no algo automático que pueda tomar
+  // el predeterminado equivocado.
+  toast(formatoEditorId?"Formato actualizado":"Formato creado — asígnale su firma del responsable desde su tarjeta","ok");
   location.hash = "#/inspecciones";
 }
 
@@ -9001,14 +8967,17 @@ async function renderInspeccionesAdmin(silent){
         <div class="section-label">Acciones</div>
         <div class="action-grid">
           <button class="action-card" id="btnHistorialInsp" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.cal}</div><span class="ac-title">Historial de inspecciones</span><span class="ac-chevron">›</span></button>
-          ${puedeEscribir()?`<button class="action-card" id="btnFormatosInsp"><div class="ac-ic">${I.doc}</div><span class="ac-title">Formatos</span><span class="ac-chevron">›</span></button>`:''}
+          ${puedeEscribir()?`<button class="action-card" id="btnCrearFormatoInsp"><div class="ac-ic">${I.plus}</div><span class="ac-title">Crear formato</span><span class="ac-chevron">›</span></button>`:''}
           ${puedeEscribir()?`<button class="action-card" id="btnFirmasInsp" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.firma}</div><span class="ac-title">Firmas</span><span class="ac-chevron">›</span></button>`:''}
         </div>
       </div>
 
       <div class="panel-section">
-        <div class="section-label">Enlaces de inspección</div>
-        <div id="enlacesInspGrid"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+          <div class="section-label" style="margin:0">Formatos</div>
+          <label class="chk" style="white-space:nowrap"><input type="checkbox" id="chkMostrarInactivosFormatosInsp" ${inspMostrarInactivos?'checked':''}> Mostrar inactivos</label>
+        </div>
+        <div id="formatosInspGrid"></div>
       </div>
     </div>`;
 
@@ -9020,36 +8989,42 @@ async function renderInspeccionesAdmin(silent){
   };
   const bgc = document.getElementById("btnGestionContratosInsp"); if(bgc) bgc.onclick = abrirGestionContratosInsp;
   const bhi = document.getElementById("btnHistorialInsp"); if(bhi) bhi.onclick = abrirHistorialInspecciones;
-  const bfi = document.getElementById("btnFormatosInsp"); if(bfi) bfi.onclick = abrirGestionFormatosInsp;
+  const bcf = document.getElementById("btnCrearFormatoInsp"); if(bcf) bcf.onclick = ()=>{ location.hash = "#/inspecciones/formato/nueva"; };
   const bfirmas = document.getElementById("btnFirmasInsp"); if(bfirmas) bfirmas.onclick = abrirPredeterminadosInsp;
-  renderEnlacesInspGrid();
+  document.getElementById("chkMostrarInactivosFormatosInsp").onchange = (e)=>{ inspMostrarInactivos = e.target.checked; renderFormatosInspGrid(); };
+  renderFormatosInspGrid();
   if(silent) window.scrollTo(0, scrollY);
+  if(!silent){ if(_inspTimer) clearInterval(_inspTimer); _inspTimer = setInterval(_tickInsp, 20000); }
 }
 
-function renderEnlacesInspGrid(){
-  const host = document.getElementById('enlacesInspGrid'); if(!host) return;
-  const lista = enlacesDelContrato();
+function renderFormatosInspGrid(){
+  const host = document.getElementById('formatosInspGrid'); if(!host) return;
+  const enTodos = contratoInspActualId==='todos';
+  const lista = INSPECCIONES.formatos.filter(f=> inspMostrarInactivos || f.activo);
   if(!lista.length){
-    host.innerHTML = `<div class="empty" style="padding:30px 20px"><div class="ic">${I.box}</div><h3>Sin enlaces todavía</h3><p>Crea uno con "Nuevo enlace" para empezar a recibir inspecciones.</p></div>`;
+    host.innerHTML = `<div class="empty" style="padding:30px 20px"><div class="ic">${I.doc}</div><h3>Sin formatos todavía</h3><p>Crea uno con "Crear formato" para empezar.</p></div>`;
     return;
   }
-  host.innerHTML = '<div class="grid">' + lista.map(en=>{
-    const formato = INSPECCIONES.formatos.find(f=>f.id===en.formato_id);
-    const predet = INSPECCIONES.predeterminados.find(p=>p.id===en.predeterminado_id);
-    const nombreContrato = INSPECCIONES.contratos.find(c=>c.id===en.contrato_id)?.nombre || '';
-    const n = INSPECCIONES.inspecciones.filter(i=>i.enlace_id===en.id).length;
-    const act = en.activo;
+  host.innerHTML = '<div class="grid">' + lista.map(f=>{
+    const en = enTodos ? null : INSPECCIONES.enlaces.find(e=>e.formato_id===f.id && e.contrato_id===contratoInspActualId);
+    const predet = en ? INSPECCIONES.predeterminados.find(p=>p.id===en.predeterminado_id) : null;
+    const n = en ? INSPECCIONES.inspecciones.filter(i=>i.enlace_id===en.id).length : 0;
+    const act = f.activo;
     return `
       <div class="lcard">
         <div class="lcard-top">
-          <span class="tipo">${esc(formato?.nombre || 'Formato eliminado')}</span>
+          <span class="tipo">${f.tiene_fotos?'Con fotos':'Sin fotos'}</span>
           <span class="badge ${act?'activa':'cerrada'}"><span class="dot"></span>${act?'Activo':'Inactivo'}</span>
         </div>
-        <h3>${esc(en.nombre || formato?.nombre || 'Enlace')}</h3>
+        <h3>${esc(f.nombre)}</h3>
         <div class="meta">
-          <div>${I.user}<span>${esc(predet?.responsable_nombre||'—')}${predet?.responsable_cargo?' · '+esc(predet.responsable_cargo):''}</span></div>
-          <div>${I.building}<span>${esc(nombreContrato)}</span></div>
-          <div>${I.cal}<span>Creado ${fmtDate((en.creado_en||'').slice(0,10))}</span></div>
+          ${enTodos
+            ? `<div>${I.building}<span>Elige un contrato para gestionar su enlace</span></div>`
+            : en
+              ? `<div>${I.user}<span>${esc(predet?.responsable_nombre||'—')}${predet?.responsable_cargo?' · '+esc(predet.responsable_cargo):''}</span></div>
+                 <div>${I.cal}<span>Enlace creado ${fmtDate((en.creado_en||'').slice(0,10))}</span></div>
+                 <div>${en.activo?I.check:I.lock}<span>Enlace ${en.activo?'activo':'inactivo'}</span></div>`
+              : `<div>${I.link}<span>Sin enlace en este contrato todavía</span></div>`}
         </div>
         <div class="lcard-foot">
           <div class="attn">
@@ -9057,24 +9032,37 @@ function renderEnlacesInspGrid(){
             <span class="lab">inspección${n===1?'':'es'}<br>registrada${n===1?'':'s'}</span>
           </div>
           <div class="card-actions">
-            <button class="icon-btn" title="Ver detalle" data-act="ver" data-id="${en.id}">${I.eye}</button>
-            <button class="icon-btn" title="Copiar enlace" data-act="link" data-id="${en.id}">${I.link}</button>
-            <button class="icon-btn" title="Compartir QR" data-act="qr" data-id="${en.id}">${I.qr}</button>
-            ${puedeEscribir()?`<button class="icon-btn" title="${act?'Desactivar':'Activar'}" data-act="toggle" data-id="${en.id}">${act?I.lock:I.check}</button>
-            <button class="icon-btn danger" title="Eliminar" data-act="del" data-id="${en.id}">${I.trash}</button>`:''}
+            ${en
+              ? `<button class="icon-btn" title="Ver detalle" data-fa="ver" data-id="${en.id}">${I.eye}</button>
+                 <button class="icon-btn" title="Copiar enlace" data-fa="link" data-id="${en.id}">${I.link}</button>
+                 <button class="icon-btn" title="Compartir QR" data-fa="qr" data-id="${en.id}">${I.qr}</button>
+                 ${puedeEscribir()?`<button class="icon-btn" title="Cambiar firma del responsable" data-fa="firma" data-id="${en.id}">${I.firma}</button>
+                 <button class="icon-btn" title="${en.activo?'Desactivar enlace':'Activar enlace'}" data-fa="toggleEnlace" data-id="${en.id}">${en.activo?I.lock:I.check}</button>
+                 <button class="icon-btn danger" title="Eliminar enlace" data-fa="delEnlace" data-id="${en.id}">${I.trash}</button>`:''}`
+              : (puedeEscribir() && !enTodos && act ? `<button class="btn btn-primary btn-sm" data-fa="asociar" data-id="${f.id}">${I.firma} Asociar firma del responsable</button>` : '')}
           </div>
         </div>
+        ${puedeEscribir()?`<div class="card-actions" style="padding-top:10px;border-top:1px solid var(--line-2);margin-top:10px">
+          <button class="icon-btn" title="Editar formato" data-fa="editar" data-id="${f.id}">${I.pen}</button>
+          <button class="icon-btn" title="Duplicar formato" data-fa="duplicar" data-id="${f.id}">${I.copy}</button>
+          <button class="icon-btn ${act?'danger':''}" title="${act?'Desactivar formato':'Activar formato'}" data-fa="toggleFormato" data-id="${f.id}">${act?I.lock:I.check}</button>
+        </div>`:''}
       </div>`;
   }).join('') + '</div>';
 
-  host.querySelectorAll('[data-act]').forEach(b=>{
+  host.querySelectorAll('[data-fa]').forEach(b=>{
     b.onclick = ()=>{
-      const id = b.dataset.id, act = b.dataset.act;
+      const id = b.dataset.id, act = b.dataset.fa;
       if(act==='ver') abrirDetalleEnlaceInsp(id);
       else if(act==='link') copyText(linkInspeccion(id), "Enlace de inspección copiado");
       else if(act==='qr') mostrarQR(linkInspeccion(id), "Enlace de inspección");
-      else if(act==='toggle') toggleActivoEnlaceInsp(id);
-      else if(act==='del') eliminarEnlaceInsp(id);
+      else if(act==='firma') cambiarFirmaEnlaceInsp(id);
+      else if(act==='toggleEnlace') toggleActivoEnlaceInsp(id);
+      else if(act==='delEnlace') eliminarEnlaceInsp(id);
+      else if(act==='asociar') abrirNuevoEnlaceInsp(id);
+      else if(act==='editar') location.hash = "#/inspecciones/formato/"+id;
+      else if(act==='duplicar') duplicarFormatoInsp(id);
+      else if(act==='toggleFormato') toggleActivoFormatoInsp(id);
     };
   });
 }
@@ -9084,7 +9072,7 @@ async function toggleActivoEnlaceInsp(id){
   const { error } = await sb.from("insp_enlaces").update({ activo: !en.activo }).eq("id", id);
   if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
   await loadInspeccionesState();
-  renderEnlacesInspGrid();
+  renderFormatosInspGrid();
   toast(en.activo?"Enlace desactivado":"Enlace activado","ok");
 }
 
@@ -9102,7 +9090,56 @@ function eliminarEnlaceInsp(id){
     await loadInspeccionesState();
     toast("Enlace eliminado","ok");
     closeModal();
-    renderEnlacesInspGrid();
+    renderFormatosInspGrid();
+  };
+}
+
+async function toggleActivoFormatoInsp(id){
+  const f = INSPECCIONES.formatos.find(x=>x.id===id); if(!f) return;
+  const { error } = await sb.from("insp_formatos").update({ activo: !f.activo }).eq("id", id);
+  if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
+  await loadInspeccionesState();
+  renderFormatosInspGrid();
+  toast(f.activo?"Formato desactivado":"Formato activado","ok");
+}
+
+async function duplicarFormatoInsp(id){
+  bloquear("Duplicando formato…");
+  const { data, error } = await sb.from("insp_formatos").select("nombre,tiene_fotos,estructura").eq("id",id).maybeSingle();
+  if(error || !data){ desbloquear(); toast("No se pudo cargar el formato","err"); return; }
+  const { error: errIns } = await sb.from("insp_formatos").insert({ nombre: (data.nombre||"Formato")+" (copia)", tiene_fotos: data.tiene_fotos, estructura: data.estructura, activo: true });
+  desbloquear();
+  if(errIns){ toast("No se pudo duplicar: "+errIns.message,"err"); return; }
+  await loadInspeccionesState();
+  renderFormatosInspGrid();
+  toast("Formato duplicado — asígnale su propio enlace cuando quieras","ok");
+}
+
+function cambiarFirmaEnlaceInsp(enlaceId){
+  const en = INSPECCIONES.enlaces.find(x=>x.id===enlaceId); if(!en) return;
+  const predets = INSPECCIONES.predeterminados;
+  if(!predets.length){ toast('No hay firmas guardadas — créala primero en "Firmas"',"err"); return; }
+  openModal(`<div class="modal" style="max-width:440px">
+    <div class="modal-head"><div><h2>Cambiar firma del responsable</h2><p>Se usará en las próximas inspecciones registradas con este enlace.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Firma del responsable *</label>
+        <select id="cfResponsable">${predets.map(p=>`<option value="${p.id}" ${p.id===en.predeterminado_id?'selected':''}>${esc(p.nombre)} — ${esc(p.responsable_nombre)}</option>`).join('')}</select>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardarFirmaEnlace">${I.check} Guardar</button>
+    </div></div>`);
+  document.getElementById('btnGuardarFirmaEnlace').onclick = async ()=>{
+    const predeterminado_id = document.getElementById('cfResponsable').value;
+    const btn = document.getElementById('btnGuardarFirmaEnlace'); btn.disabled=true; btn.innerHTML="Guardando…";
+    const { error } = await sb.from("insp_enlaces").update({ predeterminado_id }).eq("id", enlaceId);
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
+    await loadInspeccionesState();
+    toast("Firma actualizada","ok");
+    closeModal();
+    renderFormatosInspGrid();
   };
 }
 
@@ -9118,7 +9155,7 @@ async function abrirDetalleEnlaceInsp(enlaceId){
   </div>`);
   const host = document.getElementById('detalleEnlaceInspBody');
   const { data, error } = await sb.from("insp_inspecciones")
-    .select("id,formato_nombre,inspector_nombre,creado_en")
+    .select("id,formato_nombre,inspector_nombre,creado_en,ip_address,dispositivo_ua")
     .eq("enlace_id", enlaceId).order("creado_en",{ascending:false});
   if(error){ host.innerHTML = `<div class="empty"><h3>No se pudo cargar</h3><p>${esc(error.message)}</p></div>`; return; }
   const lista = data || [];
@@ -9127,18 +9164,26 @@ async function abrirDetalleEnlaceInsp(enlaceId){
     <thead><tr><th>Fecha</th><th>Inspector</th><th></th></tr></thead>
     <tbody>${lista.map(x=>{
       const hora = x.creado_en ? new Date(x.creado_en).toLocaleTimeString("es-CO",{hour:'2-digit',minute:'2-digit'}) : '';
+      const auditLinea = (x.ip_address||x.dispositivo_ua)
+        ? `<div class="muted-sm">${x.ip_address?'IP '+esc(x.ip_address):''}${x.ip_address&&x.dispositivo_ua?' · ':''}${x.dispositivo_ua?esc(resumenDispositivoUA(x.dispositivo_ua)):''}</div>` : '';
+      const puedeTocar = puedoTocarInspeccionReciente(x.creado_en);
       return `<tr>
-        <td>${fmtDate((x.creado_en||'').slice(0,10))}${hora?`<div class="muted-sm">${hora}</div>`:''}</td>
+        <td>${fmtDate((x.creado_en||'').slice(0,10))}${hora?`<div class="muted-sm">${hora}</div>`:''}${auditLinea}</td>
         <td>${esc(x.inspector_nombre||'—')}</td>
-        <td><button class="icon-btn" title="Ver / descargar PDF" onclick="verInspeccion('${x.id}')">${I.eye}</button></td>
+        <td><div style="display:flex;gap:4px">
+          <button class="icon-btn" title="Ver detalle" onclick="verInspeccion('${x.id}')">${I.eye}</button>
+          <button class="icon-btn" title="Descargar PDF" onclick="generarInspeccionPDF('${x.id}')">${I.doc}</button>
+          ${puedeTocar?`<button class="icon-btn" title="Editar" onclick="abrirEditarInspeccionPorId('${x.id}')">${I.pen}</button>
+          <button class="icon-btn danger" title="Eliminar" onclick="eliminarInspeccion('${x.id}')">${I.trash}</button>`:''}
+        </div></td>
       </tr>`;
     }).join('')}</tbody>
   </table></div>`;
 }
 
 /* ---------- Nuevo enlace: formato + predeterminado del responsable + etiqueta ---------- */
-/* formatoIdFijo: si se llama desde "Formatos" para un formato específico, no se
-   deja elegir formato (ya se sabe cuál es) — solo responsable + etiqueta. */
+/* formatoIdFijo: siempre viene de la tarjeta de un formato específico (botón "Asociar
+   firma del responsable"), así que nunca se deja elegir formato — solo responsable + etiqueta. */
 function abrirNuevoEnlaceInsp(formatoIdFijo){
   if(contratoInspActualId==='todos'){ toast("Elige un contrato específico primero","err"); return; }
   const formatos = INSPECCIONES.formatos.filter(f=>f.activo);
@@ -9192,7 +9237,7 @@ function mostrarEnlaceCreadoInsp(enlaceId){
       <button class="btn btn-ghost" id="btnQrEnlaceCreado">${I.qr} QR</button>
       <button class="btn btn-primary" id="btnCopiarEnlaceCreado">${I.link} Copiar enlace</button>
     </div></div>`);
-  document.getElementById('btnCerrarEnlaceCreado').onclick = ()=>{ closeModal(); renderEnlacesInspGrid(); };
+  document.getElementById('btnCerrarEnlaceCreado').onclick = ()=>{ closeModal(); renderFormatosInspGrid(); };
   document.getElementById('btnCopiarEnlaceCreado').onclick = ()=> copyText(url, "Enlace copiado");
   document.getElementById('btnQrEnlaceCreado').onclick = ()=> mostrarQR(url, "Enlace de inspección");
 }
@@ -9678,7 +9723,7 @@ function eliminarInspeccion(id){
     await loadInspeccionesState();
     toast("Inspección eliminada","ok");
     closeModal();
-    renderEnlacesInspGrid();
+    renderFormatosInspGrid();
   };
 }
 
@@ -9688,6 +9733,17 @@ function eliminarInspeccion(id){
    en la página pública). Solo se puede tocar el CONTENIDO (respuestas y fotos) —
    las firmas y los nombres de inspector/responsable representan lo que efectivamente
    se firmó ese día y no se re-editan aquí. */
+/* Igual que abrirEditarInspeccion, pero recibe solo el id (para abrir directo desde
+   una fila de lista que no tiene el registro completo cargado, ej. el detalle de un
+   enlace) — carga la inspección completa y ahí sí abre el editor. */
+async function abrirEditarInspeccionPorId(id){
+  bloquear("Cargando inspección…");
+  const { data, error } = await sb.from("insp_inspecciones").select("*").eq("id",id).maybeSingle();
+  desbloquear();
+  if(error || !data){ toast("No se pudo cargar la inspección","err"); return; }
+  abrirEditarInspeccion(data);
+}
+
 function abrirEditarInspeccion(data){
   inspeccionDraft = {
     estructura: Array.isArray(data.estructura) ? data.estructura : [],
