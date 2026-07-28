@@ -8676,10 +8676,12 @@ function renderFormatosInspLista(){
   host.innerHTML = INSPECCIONES.formatos.map(x=>`
     <div class="cat-row">
       <span style="flex:1;font-weight:600;font-size:13.5px;${x.activo?'':'opacity:.45'}">${esc(x.nombre)}${x.activo?'':' (inactivo)'}</span>
+      ${x.activo && contratoInspActualId!=='todos'?`<button class="icon-btn" title="Generar enlace para el contrato actual" data-fi-enlace="${x.id}">${I.link}</button>`:''}
       <button class="icon-btn" title="Editar" data-fi-edit="${x.id}">${I.pen}</button>
       <button class="icon-btn ${x.activo?'danger':''}" title="${x.activo?'Desactivar':'Activar'}" data-fi-toggle="${x.id}">${x.activo?I.lock:I.check}</button>
     </div>`).join('') || '<p class="muted-sm">Sin formatos todavía.</p>';
   host.querySelectorAll('[data-fi-edit]').forEach(b=>{ b.onclick = ()=>{ closeModal(); location.hash = "#/inspecciones/formato/"+b.dataset.fiEdit; }; });
+  host.querySelectorAll('[data-fi-enlace]').forEach(b=>{ b.onclick = ()=>{ closeModal(); abrirNuevoEnlaceInsp(b.dataset.fiEnlace); }; });
   host.querySelectorAll('[data-fi-toggle]').forEach(b=>{
     b.onclick = async ()=>{
       const x = INSPECCIONES.formatos.find(f=>f.id===b.dataset.fiToggle);
@@ -8907,6 +8909,7 @@ async function guardarFormatoInsp(){
     if(s.tipo==='checklist' && (!s.estados||!s.estados.length)){ toast(`La sección "${s.titulo||'sin título'}" necesita al menos un estado (ej. Cumple, No cumple)`,"err"); return; }
     if(s.tipo==='tabla_dinamica' && (!s.columnas||!s.columnas.length)){ toast(`La tabla "${s.titulo||'sin título'}" necesita al menos una columna`,"err"); return; }
   }
+  const esNuevo = !formatoEditorId;
   const btn = document.getElementById('btnGuardarFormatoInsp');
   if(btn){ btn.disabled=true; btn.innerHTML="Guardando…"; }
   bloquear("Guardando formato…");
@@ -8914,9 +8917,25 @@ async function guardarFormatoInsp(){
   const res = formatoEditorId
     ? await sb.from("insp_formatos").update(payload).eq("id", formatoEditorId)
     : await sb.from("insp_formatos").insert(payload).select().single();
+  if(res.error){ desbloquear(); if(btn){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar formato`; } toast("No se pudo guardar: "+res.error.message,"err"); return; }
+
+  // Si es un formato NUEVO y hay un contrato específico activo, se le arma de una
+  // vez su enlace (con la firma de responsable más reciente de ese contrato) para
+  // que la tarjeta ya aparezca lista en "Enlaces de inspección" — así el usuario no
+  // tiene que pasar por un paso aparte de "nuevo enlace" cada vez.
+  let mensaje = "Formato guardado";
+  if(esNuevo && contratoInspActualId && contratoInspActualId!=='todos'){
+    const { data: predets } = await sb.from("insp_predeterminados").select("id").eq("contrato_id", contratoInspActualId).order("creado_en",{ascending:true});
+    if(predets && predets.length){
+      const predeterminado_id = predets[predets.length-1].id;
+      const { error: e2 } = await sb.from("insp_enlaces").insert({ contrato_id: contratoInspActualId, formato_id: res.data.id, predeterminado_id });
+      mensaje = e2 ? "Formato guardado, pero no se pudo generar el enlace automáticamente: "+e2.message : "Formato guardado y enlace listo en \"Enlaces de inspección\"";
+    } else {
+      mensaje = "Formato guardado. Para activar su enlace, crea primero una firma del responsable en \"Firmas\" y genera el enlace desde \"Formatos\"";
+    }
+  }
   desbloquear();
-  if(res.error){ if(btn){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar formato`; } toast("No se pudo guardar: "+res.error.message,"err"); return; }
-  toast("Formato guardado","ok");
+  toast(mensaje, mensaje.includes("no se pudo")?"err":"ok");
   location.hash = "#/inspecciones";
 }
 
@@ -8981,7 +9000,6 @@ async function renderInspeccionesAdmin(silent){
       <div class="panel-section dot-pc-only">
         <div class="section-label">Acciones</div>
         <div class="action-grid">
-          ${puedeEscribir()?`<button class="action-card" id="btnNuevoEnlaceInsp" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.link}</div><span class="ac-title">Nuevo enlace</span><span class="ac-chevron">›</span></button>`:''}
           <button class="action-card" id="btnHistorialInsp" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.cal}</div><span class="ac-title">Historial de inspecciones</span><span class="ac-chevron">›</span></button>
           ${puedeEscribir()?`<button class="action-card" id="btnFormatosInsp"><div class="ac-ic">${I.doc}</div><span class="ac-title">Formatos</span><span class="ac-chevron">›</span></button>`:''}
           ${puedeEscribir()?`<button class="action-card" id="btnFirmasInsp" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.firma}</div><span class="ac-title">Firmas</span><span class="ac-chevron">›</span></button>`:''}
@@ -9001,7 +9019,6 @@ async function renderInspeccionesAdmin(silent){
     renderInspeccionesAdmin();
   };
   const bgc = document.getElementById("btnGestionContratosInsp"); if(bgc) bgc.onclick = abrirGestionContratosInsp;
-  const bne = document.getElementById("btnNuevoEnlaceInsp"); if(bne) bne.onclick = abrirNuevoEnlaceInsp;
   const bhi = document.getElementById("btnHistorialInsp"); if(bhi) bhi.onclick = abrirHistorialInspecciones;
   const bfi = document.getElementById("btnFormatosInsp"); if(bfi) bfi.onclick = abrirGestionFormatosInsp;
   const bfirmas = document.getElementById("btnFirmasInsp"); if(bfirmas) bfirmas.onclick = abrirPredeterminadosInsp;
@@ -9120,18 +9137,21 @@ async function abrirDetalleEnlaceInsp(enlaceId){
 }
 
 /* ---------- Nuevo enlace: formato + predeterminado del responsable + etiqueta ---------- */
-function abrirNuevoEnlaceInsp(){
+/* formatoIdFijo: si se llama desde "Formatos" para un formato específico, no se
+   deja elegir formato (ya se sabe cuál es) — solo responsable + etiqueta. */
+function abrirNuevoEnlaceInsp(formatoIdFijo){
   if(contratoInspActualId==='todos'){ toast("Elige un contrato específico primero","err"); return; }
   const formatos = INSPECCIONES.formatos.filter(f=>f.activo);
   const predets = INSPECCIONES.predeterminados;
   if(!formatos.length){ toast('No hay formatos activos — créalo primero desde "Formatos"',"err"); return; }
+  const formatoFijo = formatoIdFijo ? formatos.find(f=>f.id===formatoIdFijo) : null;
   openModal(`<div class="modal" style="max-width:480px">
     <div class="modal-head"><div><h2>Nuevo enlace de inspección</h2><p>Los inspectores usarán este enlace para registrar sus inspecciones.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
-      <div class="field"><label>Formato *</label>
-        <select id="neFormato">${formatos.map(f=>`<option value="${f.id}">${esc(f.nombre)}</option>`).join('')}</select>
-      </div>
+      ${formatoFijo
+        ? `<div class="field"><label>Formato</label><input value="${esc(formatoFijo.nombre)}" readonly></div>`
+        : `<div class="field"><label>Formato *</label><select id="neFormato">${formatos.map(f=>`<option value="${f.id}">${esc(f.nombre)}</option>`).join('')}</select></div>`}
       <div class="field">
         <label>Firma del responsable del área *</label>
         ${predets.length
@@ -9148,7 +9168,7 @@ function abrirNuevoEnlaceInsp(){
   if(irFirmas) irFirmas.onclick = (e)=>{ e.preventDefault(); abrirPredeterminadosInsp(); };
   const btn = document.getElementById('btnGuardarEnlaceInsp');
   if(btn) btn.onclick = async ()=>{
-    const formato_id = document.getElementById('neFormato').value;
+    const formato_id = formatoFijo ? formatoFijo.id : document.getElementById('neFormato').value;
     const predeterminado_id = document.getElementById('neResponsable').value;
     const nombre = document.getElementById('neNombre').value.trim() || null;
     btn.disabled = true; btn.innerHTML = "Creando…";
@@ -9543,36 +9563,163 @@ async function abrirHistorialInspecciones(){
 }
 
 /* ---------- Ver una inspección ya guardada (solo lectura) + descargar su PDF ---------- */
+/* Admin siempre puede tocar (editar/eliminar) una inspección. Como el registro es
+   100% público (nadie tiene sesión al llenarlo, "creado_por" siempre queda null),
+   no hay forma de saber "quién la hizo" para aplicar la regla habitual de
+   puedoTocarReciente (que exige que coincida el creador) — en su lugar, cualquier
+   editor con acceso al contrato puede tocarla, pero SOLO dentro de las 24h
+   siguientes a creado_en; pasado ese tiempo, solo admin. */
+function puedoTocarInspeccionReciente(creadoEn){
+  if(MIPERFIL.esAdmin) return true;
+  if(!puedeEscribir() || !creadoEn) return false;
+  return (Date.now() - new Date(creadoEn).getTime()) < 24*60*60*1000;
+}
+
+function renderSeccionInfoLectura(s, respuestas){
+  return `<div class="panel-section" style="margin-bottom:14px">
+    <div class="section-label">${esc(s.titulo||'')}</div>
+    <div class="info-grid">
+    ${(s.campos||[]).map(c=>{
+      const val = respuestas[c.id];
+      const texto = c.tipo==='seleccion_multiple' ? (Array.isArray(val)&&val.length ? val.join(', ') : '—') : ((val!=null && val!=='') ? String(val) : '—');
+      return `<div class="info-item full"><div class="k">${esc(c.etiqueta)}</div><div class="v">${esc(texto)}</div></div>`;
+    }).join('')}
+    </div>
+  </div>`;
+}
+function renderSeccionChecklistLectura(s, respuestas){
+  return `<div class="panel-section" style="margin-bottom:14px">
+    <div class="section-label">${esc(s.titulo||'')}</div>
+    <div class="table-wrap"><table class="dt">
+      <thead><tr><th>Ítem</th><th>Estado</th>${s.conObservaciones?'<th>Observaciones</th>':''}</tr></thead>
+      <tbody>${(s.items||[]).map(it=>{
+        const r = respuestas[it.id]||{};
+        return `<tr><td>${esc(it.texto)}</td><td>${r.estado?`<span class="chip-estado active ${claseEstadoInsp(r.estado)}" style="cursor:default;padding:4px 10px;font-size:12px">${esc(r.estado)}</span>`:'—'}</td>${s.conObservaciones?`<td>${esc(r.observaciones||'—')}</td>`:''}</tr>`;
+      }).join('')}</tbody>
+    </table></div>
+  </div>`;
+}
+function renderSeccionTablaLectura(s, respuestas){
+  const filas = Array.isArray(respuestas[s.id]) ? respuestas[s.id] : [];
+  return `<div class="panel-section" style="margin-bottom:14px">
+    <div class="section-label">${esc(s.titulo||'')}</div>
+    ${filas.length ? `<div class="table-wrap"><table class="dt">
+      <thead><tr>${(s.columnas||[]).map(c=>`<th>${esc(c.etiqueta)}</th>`).join('')}</tr></thead>
+      <tbody>${filas.map(fila=>`<tr>${(s.columnas||[]).map(c=>`<td>${esc(fila[c.id]||'—')}</td>`).join('')}</tr>`).join('')}</tbody>
+    </table></div>` : '<p class="muted-sm">Sin registros.</p>'}
+  </div>`;
+}
+function renderInspContenidoLectura(estructura, respuestas){
+  return (estructura||[]).map(s=>{
+    if(s.tipo==='info') return renderSeccionInfoLectura(s, respuestas||{});
+    if(s.tipo==='checklist') return renderSeccionChecklistLectura(s, respuestas||{});
+    if(s.tipo==='tabla_dinamica') return renderSeccionTablaLectura(s, respuestas||{});
+    return '';
+  }).join('');
+}
+
 async function verInspeccion(id){
   bloquear("Cargando inspección…");
   const { data, error } = await sb.from("insp_inspecciones").select("*").eq("id",id).maybeSingle();
   desbloquear();
   if(error || !data){ toast("No se pudo cargar la inspección","err"); return; }
   const nombreContrato = INSPECCIONES.contratos.find(c=>c.id===data.contrato_id)?.nombre || '';
+  const nombreEnlace = INSPECCIONES.enlaces.find(e=>e.id===data.enlace_id)?.nombre || '';
   const hora = data.creado_en ? new Date(data.creado_en).toLocaleTimeString("es-CO",{hour:'2-digit',minute:'2-digit'}) : '';
+  const puedeTocar = puedoTocarInspeccionReciente(data.creado_en);
   openModal(`<div class="modal lg">
-    <div class="modal-head"><div><h2>${esc(data.formato_nombre)}</h2><p>${fmtDate((data.creado_en||'').slice(0,10))}${hora?' · '+hora:''} · ${esc(nombreContrato)}</p></div>
+    <div class="modal-head"><div><h2>${esc(data.formato_nombre)}</h2><p>${fmtDate((data.creado_en||'').slice(0,10))}${hora?' · '+hora:''} · ${esc(nombreContrato)}${nombreEnlace?' · '+esc(nombreEnlace):''}</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
       <div class="info-grid">
         <div class="info-item"><div class="k">Inspector</div><div class="v">${esc(data.inspector_nombre||'—')}</div></div>
         <div class="info-item"><div class="k">Responsable del área</div><div class="v">${esc(data.responsable_nombre||'—')}${data.responsable_cargo?' · '+esc(data.responsable_cargo):''}</div></div>
-        ${(data.ip_address||data.dispositivo_ua)?`<div class="info-item full"><div class="k">Dispositivo</div><div class="v">${data.ip_address?'IP '+esc(data.ip_address):''}${data.ip_address&&data.dispositivo_ua?' · ':''}${data.dispositivo_ua?esc(resumenDispositivoUA(data.dispositivo_ua)):''}</div></div>`:''}
+        <div class="info-item"><div class="k">Fecha y hora</div><div class="v">${fmtDate((data.creado_en||'').slice(0,10))}${hora?' · '+hora:''}</div></div>
+        <div class="info-item"><div class="k">Dirección IP</div><div class="v">${esc(data.ip_address||'—')}</div></div>
+        <div class="info-item full"><div class="k">Dispositivo</div><div class="v" title="${esc(data.dispositivo_ua||'')}">${data.dispositivo_ua?esc(resumenDispositivoUA(data.dispositivo_ua)):'—'}</div></div>
       </div>
-      ${(data.fotos||[]).length?`<div style="margin-top:14px"><div class="section-label">Fotos (${data.fotos.length})</div>
+
+      ${renderInspContenidoLectura(data.estructura, data.respuestas)}
+
+      ${(data.fotos||[]).length?`<div class="panel-section" style="margin-bottom:14px"><div class="section-label">Registro fotográfico (${data.fotos.length})</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">${data.fotos.map(f=>`<img src="${f}" style="width:90px;height:90px;object-fit:cover;border-radius:8px;border:1px solid var(--line)">`).join('')}</div>
       </div>`:''}
-      <div style="margin-top:14px;display:flex;gap:16px;flex-wrap:wrap">
-        <div><div class="section-label">Firma del inspector</div><img src="${data.firma_inspector}" style="height:70px;border:1px solid var(--line);border-radius:8px;background:#fff;padding:4px"></div>
-        <div><div class="section-label">Firma del responsable</div><img src="${data.firma_responsable}" style="height:70px;border:1px solid var(--line);border-radius:8px;background:#fff;padding:4px"></div>
+      <div class="panel-section">
+        <div class="section-label">Firmas</div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap">
+          <div><div class="muted-sm" style="font-weight:700;margin-bottom:4px">Inspector</div><img src="${data.firma_inspector}" style="height:70px;border:1px solid var(--line);border-radius:8px;background:#fff;padding:4px"></div>
+          <div><div class="muted-sm" style="font-weight:700;margin-bottom:4px">Responsable del área</div><img src="${data.firma_responsable}" style="height:70px;border:1px solid var(--line);border-radius:8px;background:#fff;padding:4px"></div>
+        </div>
       </div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
+      ${puedeTocar?`<button class="btn btn-ghost" id="btnEditarInspVer">${I.pen} Editar</button>
+      <button class="btn btn-danger" id="btnEliminarInspVer">${I.trash} Eliminar</button>`:''}
       <button class="btn btn-primary" id="btnDescargarInspVer">${I.doc} Descargar PDF</button>
     </div>
   </div>`);
   document.getElementById('btnDescargarInspVer').onclick = ()=> generarInspeccionPDF(id);
+  const be = document.getElementById('btnEditarInspVer'); if(be) be.onclick = ()=> abrirEditarInspeccion(data);
+  const bd = document.getElementById('btnEliminarInspVer'); if(bd) bd.onclick = ()=> eliminarInspeccion(data.id);
+}
+
+function eliminarInspeccion(id){
+  openModal(`<div class="modal" style="max-width:420px">
+    <div class="modal-head"><div><h2>Eliminar inspección</h2><p>Esta acción no se puede deshacer.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminará esta inspección junto con sus fotos y firmas guardadas.</p></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-danger" id="confDelInsp">${I.trash} Sí, eliminar</button></div></div>`);
+  document.getElementById('confDelInsp').onclick = async ()=>{
+    const btn = document.getElementById('confDelInsp'); btn.disabled=true; btn.innerHTML="Eliminando…";
+    const { error } = await sb.from("insp_inspecciones").delete().eq("id", id);
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`; toast("No se pudo eliminar: "+error.message,"err"); return; }
+    await loadInspeccionesState();
+    toast("Inspección eliminada","ok");
+    closeModal();
+    renderEnlacesInspGrid();
+  };
+}
+
+/* Edición admin/editor de una inspección ya guardada — reutiliza el mismo motor de
+   formulario dinámico del enlace público (renderInspFormBody y compañía, que ya
+   trabajan sobre "inspeccionDraft" sin importar si viven en un modal administrado o
+   en la página pública). Solo se puede tocar el CONTENIDO (respuestas y fotos) —
+   las firmas y los nombres de inspector/responsable representan lo que efectivamente
+   se firmó ese día y no se re-editan aquí. */
+function abrirEditarInspeccion(data){
+  inspeccionDraft = {
+    estructura: Array.isArray(data.estructura) ? data.estructura : [],
+    tieneFotos: true,
+    respuestas: JSON.parse(JSON.stringify(data.respuestas || {})),
+    fotos: Array.isArray(data.fotos) ? [...data.fotos] : []
+  };
+  openModal(`<div class="modal lg">
+    <div class="modal-head"><div><h2>Editar inspección</h2><p>${esc(data.formato_nombre)}</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body" id="inspFormBody"></div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardarEditarInsp">${I.check} Guardar cambios</button>
+    </div>
+  </div>`);
+  renderInspFormBody();
+  document.getElementById('btnGuardarEditarInsp').onclick = ()=> guardarEditarInspeccion(data.id);
+}
+
+async function guardarEditarInspeccion(id){
+  if(!validarCamposRequeridosInsp()) return;
+  const btn = document.getElementById('btnGuardarEditarInsp'); btn.disabled=true; btn.innerHTML="Guardando…";
+  bloquear("Guardando cambios…");
+  try{
+    const { error } = await sb.from("insp_inspecciones").update({ respuestas: inspeccionDraft.respuestas, fotos: inspeccionDraft.fotos }).eq("id", id);
+    if(error){ toast("No se pudo guardar: "+error.message,"err"); return; }
+    toast("Inspección actualizada","ok");
+    inspeccionDraft = null;
+    await loadInspeccionesState();
+    verInspeccion(id);
+  } finally { desbloquear(); }
 }
 
 /* ---------- PDF de la inspección: dibujado a mano con jsPDF base (mismo estilo que
@@ -9702,26 +9849,30 @@ async function dibujarFotosPDF(doc, y, fotos, ctx){
   const gap = 4;
   const colW = (RIGHT-M-gap)/2;
   const maxH = 55;
-  let col = 0, rowMaxH = 0, rowStartY = y;
+  let col = 0, rowStartY = y;
   for(const f of fotos){
-    let h = maxH;
+    // Ajustar la foto DENTRO de una caja colW×maxH conservando su proporción real
+    // ("contain", no "stretch") — antes solo se topaba la altura en maxH pero se
+    // dejaba el ancho fijo en colW, así que una foto vertical (ej. un pantallazo de
+    // celular) quedaba estirada horizontalmente. Ahora, si al toparse la altura la
+    // imagen queda más angosta que la celda, se centra en vez de deformarse.
+    let w = colW, h = maxH;
     try{
       const dims = await getImageSize(f);
-      if(dims && dims.w>0) h = Math.min(maxH, colW*(dims.h/dims.w));
+      if(dims && dims.w>0 && dims.h>0){
+        h = colW * (dims.h/dims.w);
+        if(h > maxH){ h = maxH; w = maxH * (dims.w/dims.h); }
+      }
     }catch(e){}
-    if(col===0){
-      rowStartY = asegurarEspacio(y, h+4);
-      y = rowStartY;
-      rowMaxH = h;
-    } else {
-      rowMaxH = Math.max(rowMaxH, h);
-    }
-    const x = M + col*(colW+gap);
-    try{ doc.addImage(f, "JPEG", x, y, colW, h); }catch(e){}
+    if(col===0){ rowStartY = asegurarEspacio(y, maxH+4); y = rowStartY; }
+    const cellX = M + col*(colW+gap);
+    const x = cellX + (colW-w)/2;
+    const yImg = y + (maxH-h)/2;
+    try{ doc.addImage(f, "JPEG", x, yImg, w, h); }catch(e){}
     col++;
-    if(col===2){ y = rowStartY + rowMaxH + gap; col=0; }
+    if(col===2){ y = rowStartY + maxH + gap; col=0; }
   }
-  if(col===1){ y = rowStartY + rowMaxH + gap; }
+  if(col===1){ y = rowStartY + maxH + gap; }
   return y+2;
 }
 
