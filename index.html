@@ -99,45 +99,45 @@ input,textarea,select{font-family:inherit;font-size:14px;color:var(--ink)}
   input,textarea,select{font-size:16px!important}
 }
 
-/* ---------- Menú lateral (PC/tablet, ≥761px) ---------- */
+/* ---------- Menú lateral (PC/tablet, ≥761px) — estilo "liquid glass" oscuro ---------- */
 .sidebar{
   position:fixed;top:0;left:0;bottom:0;width:232px;z-index:60;
-  background:var(--card);border-right:1px solid var(--line);
+  background:#002d80;
+  border-right:1px solid rgba(255,255,255,.06);
+  box-shadow:6px 0 28px rgba(6,10,26,.28);
   display:flex;flex-direction:column;
 }
-/* Altura fija en sb-brand y topheader (misma cifra en ambos) para que sus líneas
-   inferiores queden a la misma altura — son dos cajas independientes (sidebar fijo
-   + cabecera del contenido), no un mismo contenedor flex, así que si no se igualan
-   explícito el título queda más arriba que el logo (padding/contenido distintos). */
-.sb-brand{display:flex;align-items:center;justify-content:center;padding:22px 18px;border-bottom:1px solid var(--line-2);height:86px}
-.sb-brand img{height:42px;width:auto;display:block;border-radius:6px;flex:none}
-.sb-nav{display:flex;flex-direction:column;gap:2px;padding:14px 12px;flex:1;overflow-y:auto}
-.sb-nav a{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;font-size:14px;font-weight:700;color:var(--ink-2);text-decoration:none;transition:.15s}
-.sb-nav a:hover{background:var(--brand-soft);color:var(--brand-deep)}
-.sb-nav a.active{background:var(--brand);color:#fff;box-shadow:0 2px 8px rgba(29,51,199,.25)}
-.sb-logout{
-  flex:none;width:34px;height:34px;border-radius:10px;display:grid;place-items:center;
-  background:var(--card);color:var(--ink-2);border:1px solid var(--line);transition:.15s;
+.sb-brand{display:flex;align-items:center;gap:10px;padding:18px;border-bottom:1px solid rgba(255,255,255,.08);height:86px}
+.sb-brand img{height:40px;width:40px;object-fit:contain;display:block;border-radius:8px;flex:none;background:#fff;padding:4px}
+.sb-brand-text{min-width:0}
+.sb-brand-name{font-size:12.5px;font-weight:800;color:#fff;letter-spacing:.01em;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-brand-nit{font-size:10.5px;font-weight:600;color:rgba(255,255,255,.55);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-nav{display:flex;flex-direction:column;gap:3px;padding:16px 12px;flex:1;overflow-y:auto}
+.sb-nav a{display:flex;align-items:center;padding:11px 14px;border-radius:11px;font-size:13.5px;font-weight:600;color:rgba(255,255,255,.68);text-decoration:none;transition:.15s}
+.sb-nav a:hover{background:#2e5397;color:#fff}
+.sb-nav a.active{background:#2e5397;color:#fff;font-weight:700}
+.sb-profile{display:flex;align-items:center;gap:10px;padding:14px 16px;border-top:1px solid rgba(255,255,255,.08)}
+.sb-avatar{
+  flex:none;width:36px;height:36px;border-radius:50%;
+  background:linear-gradient(135deg,#5865e0,#8b5cf6);
+  display:grid;place-items:center;color:#fff;font-weight:700;font-size:12.5px;letter-spacing:.02em;
 }
-.sb-logout:hover{border-color:var(--danger);color:var(--danger);background:var(--danger-soft)}
-.sb-logout svg{width:16px;height:16px;display:block}
-.topheader{
-  position:sticky;top:0;z-index:50;margin-left:232px;
-  background:rgba(255,255,255,.82);backdrop-filter:saturate(160%) blur(14px);
-  border-bottom:1px solid var(--line);padding:14px 26px;
-  display:flex;align-items:center;justify-content:space-between;gap:16px;
-  height:86px;
+.sb-profile-info{flex:1;min-width:0}
+.sb-profile-name{font-size:13px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-profile-role{font-size:11px;color:rgba(255,255,255,.48);font-weight:600;margin-top:1px}
+.sb-profile-actions{display:flex;gap:2px;flex:none}
+.sb-icon-btn{
+  width:30px;height:30px;border-radius:9px;display:grid;place-items:center;flex:none;
+  color:rgba(255,255,255,.55);background:transparent;border:none;cursor:pointer;transition:.15s;text-decoration:none;
 }
-.th-title{font-family:var(--display);font-weight:700;font-size:17px;letter-spacing:-.01em;color:var(--ink)}
-.th-account{display:flex;align-items:center;gap:14px;flex:none}
-.th-config{font-size:13.5px;font-weight:700;color:var(--ink-2);text-decoration:none;white-space:nowrap;padding:6px 4px;border-radius:8px;transition:.15s}
-.th-config:hover,.th-config.active{color:var(--brand-deep)}
+.sb-icon-btn svg{width:16px;height:16px;display:block}
+.sb-icon-btn:hover,.sb-icon-btn.active{background:rgba(255,255,255,.1);color:#fff}
+.sb-icon-btn.danger:hover{background:rgba(214,59,80,.22);color:#ff8a99}
 @media(min-width:761px){
   .mobile-topbar{display:none}
 }
 @media(max-width:760px){
   .sidebar{display:none}
-  .topheader{display:none}
 }
 
 /* ---------- Layout ---------- */
@@ -632,7 +632,9 @@ const I = {
   firma:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M14 2v6h6"/><path d="M7 16c.8-1.6 1.3-2.4 1.8-2.4s.5 1.6 1 1.6 .7-1.2 1.4-1.2 1 1.6 1.8 1.6"/></svg>',
   corregir:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14.5 3.5 3 3L8 16l-4 1 1-4Z"/><circle cx="18" cy="18" r="4"/><path d="m16.3 18 1.2 1.2 2.2-2.4"/></svg>',
   catalogo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3C5.1 3 4 4.1 4 5.5v13C4 19.9 5.1 21 6.5 21H20V3H6.5Z"/><path d="M4 5.5C4 4.1 5.1 3 6.5 3M4 18.5c0 1.4 1.1 2.5 2.5 2.5"/><rect x="8" y="7" width="8" height="6" rx="0.5"/><path d="M9.5 8l1.3-1h2.4l1.3 1 1.3 1.1-1 1.2-.8-.6V12h-4.2V9.7l-.8.6-1-1.2Z"/><path d="M8.3 16.5h7.4"/></svg>',
-  warn:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>'
+  warn:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>',
+  gear:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>',
+  logout:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>'
 };
 
 /* ============================================================
@@ -1035,31 +1037,47 @@ function renderLogin(){
    junto a la cuenta); incluirConfig=true en la barra móvil, que no cambió. */
 function navLinksHTML(active, claseActiva, incluirConfig){
   return `
-    ${tieneModulo('asistencia')?`<a href="#/" class="${active==='asistencia'?claseActiva:''}">📋 Asistencia</a>`:''}
-    ${tieneModulo('documentos')?`<a href="#/docs" class="${active==='docs'?claseActiva:''}">📄 Documentos y Firmas</a>`:''}
-    ${tieneModulo('dotacion')?`<a href="#/dotacion" class="${active==='dotacion'?claseActiva:''}">🦺 EPP</a>`:''}
-    ${tieneModulo('dotacionlegal')?`<a href="#/dotacionlegal" class="${active==='dotacionlegal'?claseActiva:''}">📦 Dotación</a>`:''}
-    ${tieneModulo('inspecciones')?`<a href="#/inspecciones" class="${active==='inspecciones'?claseActiva:''}">🔍 Inspecciones</a>`:''}
-    ${MIPERFIL.esAdmin?`<a href="#/auditoria" class="${active==='auditoria'?claseActiva:''}">📜 Auditoría</a>`:''}
-    ${incluirConfig && MIPERFIL.esAdmin?`<a href="#/configuracion" class="${active==='configuracion'?claseActiva:''}">⚙️ Configuración</a>`:''}
+    ${tieneModulo('asistencia')?`<a href="#/" class="${active==='asistencia'?claseActiva:''}">Listas de asistencia</a>`:''}
+    ${tieneModulo('documentos')?`<a href="#/docs" class="${active==='docs'?claseActiva:''}">Firmas de documentos</a>`:''}
+    ${tieneModulo('dotacion')?`<a href="#/dotacion" class="${active==='dotacion'?claseActiva:''}">Entregas de EPP</a>`:''}
+    ${tieneModulo('dotacionlegal')?`<a href="#/dotacionlegal" class="${active==='dotacionlegal'?claseActiva:''}">Entregas de dotación</a>`:''}
+    ${tieneModulo('inspecciones')?`<a href="#/inspecciones" class="${active==='inspecciones'?claseActiva:''}">Formularios de inspección</a>`:''}
+    ${MIPERFIL.esAdmin?`<a href="#/auditoria" class="${active==='auditoria'?claseActiva:''}">Auditoría</a>`:''}
+    ${incluirConfig && MIPERFIL.esAdmin?`<a href="#/configuracion" class="${active==='configuracion'?claseActiva:''}">Configuración</a>`:''}
   `;
 }
-/* Menú lateral fijo para PC/tablet (≥761px) + cabecera del contenido (título a la
-   izquierda, Configuración + cuenta + Salir a la derecha). En celular (≤760px)
-   ".sidebar"/".topheader" se ocultan por CSS y en su lugar se ve ".mobile-topbar"
-   (la barra horizontal de siempre, sin cambios, con Configuración en el menú). */
+/* Menú lateral fijo para PC/tablet (≥761px), estilo oscuro "liquid glass" — logo,
+   navegación sin iconos, y al fondo el perfil (nombre + rol, engranaje de
+   Configuración solo-admin, Salir). En celular (≤760px) ".sidebar" se oculta por
+   CSS y en su lugar se ve ".mobile-topbar" (la barra horizontal de siempre, sin
+   cambios, con Configuración en el menú y el chip de correo + Salir a la derecha). */
+function iniciales(nombre){
+  const partes = (nombre||'').trim().split(/\s+/).filter(Boolean);
+  if(!partes.length) return '?';
+  return (partes[0][0] + (partes[1]?partes[1][0]:'')).toUpperCase();
+}
 function topbar(active){
+  const rolLabel = MIPERFIL.esAdmin ? 'Admin' : (MIPERFIL.rol==='visualizador' ? 'Visualizador' : 'Editor');
   return `
     <div class="sidebar">
-      <div class="sb-brand"><img src="${LOGO}" alt="Don Aseo Ltda."></div>
+      <div class="sb-brand">
+        <img src="${LOGO}" alt="Don Aseo Ltda.">
+        <div class="sb-brand-text">
+          <div class="sb-brand-name">DON ASEO LTDA.</div>
+          <div class="sb-brand-nit">NIT: 812.000.152-7</div>
+        </div>
+      </div>
       <nav class="sb-nav">${navLinksHTML(active,'active',false)}</nav>
-    </div>
-    <div class="topheader">
-      <div class="th-title">Sistema de Evidencias Digitales</div>
-      <div class="th-account">
-        ${MIPERFIL.esAdmin?`<a href="#/configuracion" class="th-config ${active==='configuracion'?'active':''}">⚙️ Configuración</a>`:''}
-        ${STATE.userEmail?`<span class="user-chip" title="${esc(STATE.userEmail)}">${I.user} ${esc(STATE.userEmail)}</span>`:""}
-        <button class="sb-logout" data-role="logout" title="Salir">${I.lock}</button>
+      <div class="sb-profile">
+        <div class="sb-avatar">${iniciales(MIPERFIL.nombre)}</div>
+        <div class="sb-profile-info">
+          <div class="sb-profile-name" title="${esc(MIPERFIL.nombre)}">${esc(MIPERFIL.nombre||'Usuario')}</div>
+          <div class="sb-profile-role">${rolLabel}</div>
+        </div>
+        <div class="sb-profile-actions">
+          ${MIPERFIL.esAdmin?`<a href="#/configuracion" class="sb-icon-btn ${active==='configuracion'?'active':''}" title="Configuración">${I.gear}</a>`:''}
+          <button class="sb-icon-btn danger" data-role="logout" title="Salir">${I.logout}</button>
+        </div>
       </div>
     </div>
     <div class="topbar mobile-topbar"><div class="topbar-inner">
@@ -5961,15 +5979,16 @@ function eliminarEntrega(entregaId, trabajadorId){
   };
 }
 
-/* ---------- Editar una entrega ya registrada (fecha/ítems/responsable/observaciones/firmas).
-   La foto NO se puede modificar aquí — es evidencia de lo que se firmó. Las firmas SÍ se
-   pueden corregir (ej. el trabajador firmó por error donde iba la firma del responsable). ---------- */
+/* ---------- Editar una entrega ya registrada (fecha/ítems/responsable/observaciones/
+   firmas/foto). Disponible para quien ya puede abrir este formulario — admin siempre,
+   editor solo dentro de las 24h y si él mismo la creó (mismo candado que ya trae el botón
+   de lápiz en la ficha, puedoTocarReciente — no hay una segunda restricción aquí). ---------- */
 let editarEntregaDraft = null;
 async function abrirEditarEntrega(entregaId, trabajadorId){
   bloquear("Cargando…");
   let entrega, items;
   try{
-    const { data:e } = await sb.from("dot_entregas").select("id,fecha,responsable_nombre,responsable_cargo,observaciones,firma_trabajador,firma_responsable").eq("id",entregaId).maybeSingle();
+    const { data:e } = await sb.from("dot_entregas").select("id,fecha,responsable_nombre,responsable_cargo,observaciones,firma_trabajador,firma_responsable,foto_trabajador").eq("id",entregaId).maybeSingle();
     const { data:it } = await sb.from("dot_entrega_items").select("id,nombre_item,cantidad,talla").eq("entrega_id",entregaId);
     entrega = e; items = it||[];
   } finally { desbloquear(); }
@@ -5982,6 +6001,7 @@ async function abrirEditarEntrega(entregaId, trabajadorId){
     observaciones: entrega.observaciones || '',
     firmaTrabajador: entrega.firma_trabajador || '',
     firmaResponsable: entrega.firma_responsable || '',
+    fotoTrabajador: entrega.foto_trabajador || null,
     items: items.length ? items.map(it=>({ nombreItem: it.nombre_item, cantidad: it.cantidad, talla: it.talla||'' })) : [{ nombreItem:'', cantidad:1, talla:'' }]
   };
   renderFormEditarEntrega();
@@ -5989,7 +6009,7 @@ async function abrirEditarEntrega(entregaId, trabajadorId){
 
 function renderFormEditarEntrega(){
   openModal(`<div class="modal lg">
-    <div class="modal-head"><div><h2>Editar entrega de EPP</h2><p>Corrige los datos registrados y las firmas si hace falta. La foto no se puede modificar aquí.</p></div>
+    <div class="modal-head"><div><h2>Editar entrega de EPP</h2><p>Corrige los datos registrados, las firmas y la foto si hace falta.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
       <div class="field"><label>Fecha de entrega</label><input type="date" id="eeFecha" value="${editarEntregaDraft.fecha}"></div>
@@ -6016,6 +6036,9 @@ function renderFormEditarEntrega(){
           <div style="margin-top:6px"><button class="btn btn-ghost btn-sm" id="btnCorregirFirmaResp">${I.pen} Corregir firma</button></div>
         </div>
       </div>
+      <label style="font-weight:700;font-size:14px;display:block;margin:16px 0 10px">Foto</label>
+      <div id="eeFotoPreview">${eeFotoPreviewHTML()}</div>
+      <input type="file" id="eeFileFoto" accept="image/*" style="display:none">
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
@@ -6027,6 +6050,29 @@ function renderFormEditarEntrega(){
   document.getElementById('btnEeGuardar').onclick = guardarEdicionEntrega;
   document.getElementById('btnCorregirFirmaTrab').onclick = ()=> abrirCorregirFirmaEntrega('dot_entregas','firma_trabajador','Firma del trabajador','epp');
   document.getElementById('btnCorregirFirmaResp').onclick = ()=> abrirCorregirFirmaEntrega('dot_entregas','firma_responsable','Firma del responsable','epp');
+  wireEeFotoPreview();
+}
+
+/* Foto de una entrega ya registrada, editable desde "Editar entrega" (EPP y Dotación,
+   comparten estas 3 funciones vía el parámetro "draft" que reciben) — antes no se podía
+   tocar aquí; el usuario pidió poder corregirla si quedó borrosa/equivocada. */
+function eeFotoPreviewHTML(draft){
+  draft = draft || editarEntregaDraft;
+  return draft.fotoTrabajador
+    ? `<div class="cap-prev"><img src="${draft.fotoTrabajador}"><button class="btn btn-ghost btn-sm" id="btnEeCambiarFoto">${I.pen} Cambiar foto</button></div>`
+    : `<button class="btn btn-ghost btn-sm" id="btnEeCambiarFoto">${I.user} Agregar foto</button>`;
+}
+function wireEeFotoPreview(draft){
+  draft = draft || editarEntregaDraft;
+  const inp = document.getElementById('eeFileFoto');
+  inp.onchange = async ()=>{
+    const f = inp.files[0]; if(!f) return;
+    draft.fotoTrabajador = await comprimirImagen(f, 500);
+    inp.value = '';
+    document.getElementById('eeFotoPreview').innerHTML = eeFotoPreviewHTML(draft);
+    wireEeFotoPreview(draft);
+  };
+  const bc = document.getElementById('btnEeCambiarFoto'); if(bc) bc.onclick = ()=> inp.click();
 }
 
 function renderEeItemsList(){
@@ -6062,7 +6108,8 @@ async function guardarEdicionEntrega(){
   bloquear("Guardando cambios…");
   try{
     const { error:e1 } = await sb.from("dot_entregas").update({
-      fecha, responsable_nombre: responsableNombre||null, responsable_cargo: responsableCargo||null, observaciones: observaciones||null
+      fecha, responsable_nombre: responsableNombre||null, responsable_cargo: responsableCargo||null, observaciones: observaciones||null,
+      foto_trabajador: editarEntregaDraft.fotoTrabajador||null
     }).eq("id", editarEntregaDraft.id);
     if(e1){ toast("No se pudo guardar: "+e1.message,"err"); return; }
     await sb.from("dot_entrega_items").delete().eq("entrega_id", editarEntregaDraft.id);
@@ -8488,15 +8535,16 @@ function eliminarEntregaDtl(entregaId, trabajadorId){
   };
 }
 
-/* ---------- Editar una entrega de Dotación ya registrada. La foto no se puede
-   modificar aquí — es evidencia de lo que se firmó. Las firmas SÍ se pueden corregir. ---------- */
+/* ---------- Editar una entrega de Dotación ya registrada (fecha/ítems/responsable/
+   firmas/foto). Mismo candado que el botón de lápiz de la ficha (admin siempre, editor
+   solo dentro de 24h y si él mismo la creó) — no hay una segunda restricción aquí. ---------- */
 let editarEntregaDtlDraft = null;
 async function abrirEditarEntregaDtl(entregaId, trabajadorId){
   bloquear("Cargando…");
   let entrega, items = [], catalogoUnico = false;
   try{
     const { data:e } = await sb.from("dtl_entregas")
-      .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,responsable_cargo,via,firma_trabajador,firma_responsable")
+      .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,responsable_cargo,via,firma_trabajador,firma_responsable,foto_trabajador")
       .eq("id",entregaId).maybeSingle();
     entrega = e;
     const t = DTL.trabajadores.find(x=>x.id===trabajadorId);
@@ -8519,7 +8567,8 @@ async function abrirEditarEntregaDtl(entregaId, trabajadorId){
     responsableNombre: entrega.responsable_nombre || '', responsableCargo: entrega.responsable_cargo || '',
     via: entrega.via,
     firmaTrabajador: entrega.firma_trabajador || '',
-    firmaResponsable: entrega.firma_responsable || ''
+    firmaResponsable: entrega.firma_responsable || '',
+    fotoTrabajador: entrega.foto_trabajador || null
   };
   renderFormEditarEntregaDtl();
 }
@@ -8527,7 +8576,7 @@ async function abrirEditarEntregaDtl(entregaId, trabajadorId){
 function renderFormEditarEntregaDtl(){
   const d = editarEntregaDtlDraft;
   openModal(`<div class="modal lg">
-    <div class="modal-head"><div><h2>Editar entrega de dotación</h2><p>Corrige los datos registrados y las firmas si hace falta. La foto no se puede modificar aquí.</p></div>
+    <div class="modal-head"><div><h2>Editar entrega de dotación</h2><p>Corrige los datos registrados, las firmas y la foto si hace falta.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
       <div class="field"><label>Fecha de entrega</label><input type="date" id="eeDtlFecha" value="${d.fecha}"></div>
@@ -8572,6 +8621,9 @@ function renderFormEditarEntregaDtl(){
           <div style="margin-top:6px"><button class="btn btn-ghost btn-sm" id="btnCorregirFirmaRespDtl">${I.pen} Corregir firma</button></div>
         </div>`:''}
       </div>
+      <label style="font-weight:700;font-size:14px;display:block;margin:16px 0 10px">Foto</label>
+      <div id="eeFotoPreview">${eeFotoPreviewHTML(d)}</div>
+      <input type="file" id="eeFileFoto" accept="image/*" style="display:none">
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
@@ -8585,6 +8637,7 @@ function renderFormEditarEntregaDtl(){
   document.getElementById('btnEeDtlGuardar').onclick = guardarEdicionEntregaDtl;
   document.getElementById('btnCorregirFirmaTrabDtl').onclick = ()=> abrirCorregirFirmaEntrega('dtl_entregas','firma_trabajador','Firma del trabajador','dotacion');
   const bcr = document.getElementById('btnCorregirFirmaRespDtl'); if(bcr) bcr.onclick = ()=> abrirCorregirFirmaEntrega('dtl_entregas','firma_responsable','Firma del responsable','dotacion');
+  wireEeFotoPreview(d);
 }
 
 /* Editor de ítems de una entrega ya registrada, para entidades con "catálogo único"
@@ -8640,6 +8693,7 @@ async function guardarEdicionEntregaDtl(){
       adicional: adicional||null
     };
   }
+  payload.foto_trabajador = d.fotoTrabajador||null;
   if(d.via==='presencial'){
     payload.responsable_nombre = document.getElementById('eeDtlRespNombre').value.trim()||null;
     payload.responsable_cargo = document.getElementById('eeDtlRespCargo').value.trim()||null;
