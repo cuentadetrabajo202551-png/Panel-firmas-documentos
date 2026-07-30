@@ -113,9 +113,13 @@ input,textarea,select{font-family:inherit;font-size:14px;color:var(--ink)}
 .sb-brand-name{font-size:12.5px;font-weight:800;color:#fff;letter-spacing:.01em;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sb-brand-nit{font-size:10.5px;font-weight:600;color:rgba(255,255,255,.55);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sb-nav{display:flex;flex-direction:column;gap:3px;padding:16px 12px;flex:1;overflow-y:auto}
-.sb-nav a{display:flex;align-items:center;padding:11px 14px;border-radius:11px;font-size:13.5px;font-weight:600;color:rgba(255,255,255,.68);text-decoration:none;transition:.15s}
+.sb-nav a{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:11px;font-size:13.5px;font-weight:600;color:rgba(255,255,255,.68);text-decoration:none;transition:.15s}
 .sb-nav a:hover{background:#2e5397;color:#fff}
 .sb-nav a.active{background:#2e5397;color:#fff;font-weight:700}
+.sb-nav-ic{display:flex;flex:none}
+.sb-nav-ic svg{width:19px;height:19px;transition:transform .35s cubic-bezier(.34,1.56,.64,1)}
+.sb-nav a:hover .sb-nav-ic svg{transform:scale(1.16) rotate(-8deg)}
+.sb-nav a.active .sb-nav-ic svg{transform:scale(1.08)}
 .sb-profile{display:flex;align-items:center;gap:10px;padding:14px 16px;border-top:1px solid rgba(255,255,255,.08)}
 .sb-avatar{
   flex:none;width:36px;height:36px;border-radius:50%;
@@ -634,7 +638,12 @@ const I = {
   catalogo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3C5.1 3 4 4.1 4 5.5v13C4 19.9 5.1 21 6.5 21H20V3H6.5Z"/><path d="M4 5.5C4 4.1 5.1 3 6.5 3M4 18.5c0 1.4 1.1 2.5 2.5 2.5"/><rect x="8" y="7" width="8" height="6" rx="0.5"/><path d="M9.5 8l1.3-1h2.4l1.3 1 1.3 1.1-1 1.2-.8-.6V12h-4.2V9.7l-.8.6-1-1.2Z"/><path d="M8.3 16.5h7.4"/></svg>',
   warn:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>',
   gear:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>',
-  logout:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>'
+  logout:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>',
+  navAsistencia:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="12" height="16" rx="2"/><rect x="8.7" y="3.3" width="4.6" height="2.2" rx="0.8" fill="#0b1330" stroke-width="1.2"/><path d="m8.5 12 2 2 4-4"/><circle cx="18" cy="17" r="2.3"/><path d="M14.7 22v-.8a2.8 2.8 0 0 1 2.8-2.8h1a2.8 2.8 0 0 1 2.8 2.8V22"/></svg>',
+  navEpp:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="8.5" width="8" height="7" rx="2.4"/><rect x="14" y="8.5" width="8" height="7" rx="2.4"/><path d="M10 12h4"/><path d="M2 12H0.3M22 12h1.7"/></svg>',
+  navDotacion:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.38 3.46 16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 .55.45 1 1 1h10a1 1 0 0 0 1-1V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"/></svg>',
+  navInspeccion:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="12" height="16" rx="2"/><rect x="8.7" y="3.3" width="4.6" height="2.2" rx="0.8" fill="#0b1330" stroke-width="1.2"/><rect x="7.3" y="9" width="2.2" height="2.2" rx="0.4"/><path d="m7.6 10.1.4.4.9-.9"/><path d="M10.9 10.1h3.2"/><rect x="7.3" y="13" width="2.2" height="2.2" rx="0.4"/><path d="m7.6 14.1.4.4.9-.9"/><path d="M10.9 14.1h3.2"/><circle cx="17.3" cy="17.3" r="2.8"/><path d="m20.5 20.5-1.6-1.6"/></svg>',
+  navAuditoria:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12.5c0 5-3.5 7.3-7.66 8.7a1 1 0 0 1-.68 0C7.5 19.8 4 17.5 4 12.5V6.2a1 1 0 0 1 1-1c1.9 0 4.3-1.1 5.95-2.6a1.1 1.1 0 0 1 1.45 0C14.05 4.1 16.5 5.2 18.4 5.2a1 1 0 0 1 1 1z"/><path d="M8 12c1.2-1.6 2.6-2.4 4-2.4s2.8.8 4 2.4c-1.2 1.6-2.6 2.4-4 2.4S9.2 13.6 8 12Z"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>'
 };
 
 /* ============================================================
@@ -707,18 +716,16 @@ function tieneEntidadDtl(id){ return MIPERFIL.esAdmin || MIPERFIL.entidadesDtl.i
 function tieneContratoInsp(id){ return MIPERFIL.esAdmin || MIPERFIL.contratosInsp.includes(id); }
 /* ¿Puede crear/editar/eliminar en general? admin o editor; visualizador nunca escribe (refuerzo visual — la RLS es la protección real) */
 function puedeEscribir(){ return MIPERFIL.esAdmin || MIPERFIL.rol==='editor'; }
-/* ¿Puede tocar (editar/eliminar) algo creado por uidCreador? admin siempre; editor solo lo suyo; visualizador nunca */
+/* ¿Puede tocar (editar/eliminar) algo creado por uidCreador? admin siempre; editor solo lo suyo; visualizador nunca.
+   También gatea editar/eliminar entregas de EPP y Dotación (dot_entregas/dtl_entregas, sus
+   ítems, y las escaneadas) — hasta CAMBIOS_SQL_54 eso además exigía estar dentro de las 24h
+   siguientes a creado_en (puedoTocarReciente, ya eliminada); CAMBIOS_SQL_55 quitó SOLO el
+   límite de tiempo, a pedido explícito del usuario — un editor sigue sin poder tocar lo que
+   registró un compañero, eso no cambió. La auditoría se hizo más detallada (acc_diff_texto)
+   para poder dar esta libertad de tiempo con confianza. */
 function puedoTocar(uidCreador){ return MIPERFIL.esAdmin || (MIPERFIL.rol==='editor' && uidCreador===MIPERFIL.uid); }
 /* Igual, pero además exige que no esté cerrado/finalizado (admin sí puede aunque esté cerrado) */
 function puedoTocarCerrable(uidCreador, cerrado){ return MIPERFIL.esAdmin || (MIPERFIL.rol==='editor' && uidCreador===MIPERFIL.uid && !cerrado); }
-/* Solo para EPP y Dotación: un editor puede tocar (editar/eliminar) una entrega
-   solo si ÉL MISMO la creó, y solo mientras no hayan pasado 24h desde que se creó.
-   Entregas remotas (por QR/enlace, sin login) no tienen creador y solo admin puede tocarlas. */
-function puedoTocarReciente(creadoEn, creadoPor){
-  if(MIPERFIL.esAdmin) return true;
-  if(MIPERFIL.rol!=='editor' || !creadoEn || !creadoPor) return false;
-  return creadoPor===MIPERFIL.uid && (Date.now() - new Date(creadoEn).getTime()) < 24*60*60*1000;
-}
 function nombreDe(uid){ return uid ? (PERFILES_NOMBRE[uid] || "—") : "—"; }
 function correoDe(uid){ return uid ? (PERFILES_CORREO[uid] || "") : ""; }
 
@@ -1035,14 +1042,15 @@ function renderLogin(){
    ============================================================ */
 /* incluirConfig=false en el menú lateral (Configuración se movió arriba a la derecha,
    junto a la cuenta); incluirConfig=true en la barra móvil, que no cambió. */
-function navLinksHTML(active, claseActiva, incluirConfig){
+function navLinksHTML(active, claseActiva, incluirConfig, conIconos){
+  const ic = (svg)=> conIconos ? `<span class="sb-nav-ic">${svg}</span>` : '';
   return `
-    ${tieneModulo('asistencia')?`<a href="#/" class="${active==='asistencia'?claseActiva:''}">Listas de asistencia</a>`:''}
-    ${tieneModulo('documentos')?`<a href="#/docs" class="${active==='docs'?claseActiva:''}">Firmas de documentos</a>`:''}
-    ${tieneModulo('dotacion')?`<a href="#/dotacion" class="${active==='dotacion'?claseActiva:''}">Entregas de EPP</a>`:''}
-    ${tieneModulo('dotacionlegal')?`<a href="#/dotacionlegal" class="${active==='dotacionlegal'?claseActiva:''}">Entregas de dotación</a>`:''}
-    ${tieneModulo('inspecciones')?`<a href="#/inspecciones" class="${active==='inspecciones'?claseActiva:''}">Formularios de inspección</a>`:''}
-    ${MIPERFIL.esAdmin?`<a href="#/auditoria" class="${active==='auditoria'?claseActiva:''}">Auditoría</a>`:''}
+    ${tieneModulo('asistencia')?`<a href="#/" class="${active==='asistencia'?claseActiva:''}">${ic(I.navAsistencia)}Listas de asistencia</a>`:''}
+    ${tieneModulo('documentos')?`<a href="#/docs" class="${active==='docs'?claseActiva:''}">${ic(I.firma)}Firmas de documentos</a>`:''}
+    ${tieneModulo('dotacion')?`<a href="#/dotacion" class="${active==='dotacion'?claseActiva:''}">${ic(I.navEpp)}Entregas de EPP</a>`:''}
+    ${tieneModulo('dotacionlegal')?`<a href="#/dotacionlegal" class="${active==='dotacionlegal'?claseActiva:''}">${ic(I.navDotacion)}Entregas de dotación</a>`:''}
+    ${tieneModulo('inspecciones')?`<a href="#/inspecciones" class="${active==='inspecciones'?claseActiva:''}">${ic(I.navInspeccion)}Formularios de inspección</a>`:''}
+    ${MIPERFIL.esAdmin?`<a href="#/auditoria" class="${active==='auditoria'?claseActiva:''}">${ic(I.navAuditoria)}Auditoría</a>`:''}
     ${incluirConfig && MIPERFIL.esAdmin?`<a href="#/configuracion" class="${active==='configuracion'?claseActiva:''}">Configuración</a>`:''}
   `;
 }
@@ -1067,7 +1075,7 @@ function topbar(active){
           <div class="sb-brand-nit">NIT: 812.000.152-7</div>
         </div>
       </div>
-      <nav class="sb-nav">${navLinksHTML(active,'active',false)}</nav>
+      <nav class="sb-nav">${navLinksHTML(active,'active',false,true)}</nav>
       <div class="sb-profile">
         <div class="sb-avatar">${iniciales(MIPERFIL.nombre)}</div>
         <div class="sb-profile-info">
@@ -2608,14 +2616,14 @@ function quitarFondoFirma(file){
   });
 }
 
-function comprimirImagen(file, maxW){
+function comprimirImagen(file, maxW, calidad){
   return new Promise(res=>{
     const rd=new FileReader();
     rd.onload=()=>{ const img=new Image(); img.onload=()=>{
       const sc=Math.min(1, maxW/img.width), w=Math.round(img.width*sc), h=Math.round(img.height*sc);
       const cv=document.createElement("canvas"); cv.width=w; cv.height=h;
       cv.getContext("2d").drawImage(img,0,0,w,h);
-      res(cv.toDataURL("image/jpeg",0.85));
+      res(cv.toDataURL("image/jpeg", calidad||0.85));
     }; img.onerror=()=>res(rd.result); img.src=rd.result; };
     rd.readAsDataURL(file);
   });
@@ -3316,8 +3324,8 @@ async function verAdjuntoEntrega(entregaId, tabla){
 }
 
 /* Editar una entrega escaneada: corregir el título y/o reemplazar el archivo. Compartida
-   entre EPP y Dotación (recibe la tabla). Igual que editar una entrega digital, solo se
-   ofrece dentro de las 24h (el botón que la llama ya está gated por puedoTocarReciente). */
+   entre EPP y Dotación (recibe la tabla). Admin siempre; editor solo lo que él mismo
+   registró, sin límite de tiempo desde CAMBIOS_SQL_55 — ver nota en puedoTocar(). */
 async function abrirEditarEntregaEscaneada(entregaId, trabajadorId, tabla){
   bloquear("Cargando…");
   const { data, error } = await sb.from(tabla).select("adjunto_titulo,adjunto_tipo").eq("id",entregaId).maybeSingle();
@@ -5781,7 +5789,7 @@ function wireFotoTrabPreview(){
   const inp = document.getElementById('fileFotoTrab');
   inp.onchange = async ()=>{
     const f = inp.files[0]; if(!f) return;
-    entregaDraft.fotoTrabajador = await comprimirImagen(f, 500);
+    entregaDraft.fotoTrabajador = await comprimirImagen(f, 500, 0.7);
     inp.value = '';
     document.getElementById('fotoTrabPreview').innerHTML = fotoTrabPreviewHTML();
     wireFotoTrabPreview();
@@ -5919,9 +5927,9 @@ async function renderFichaTrabajador(id){
         : esc(e.responsable_nombre||'—');
       const accionesCol = esEscaneada
         ? `<div style="display:flex;gap:6px"><button class="icon-btn" title="Ver archivo" onclick="verAdjuntoEntrega('${e.id}','dot_entregas')">${I.eye}</button>
-           ${puedoTocarReciente(e.creado_en, e.creado_por)?`<button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntregaEscaneada('${e.id}','${t.id}','dot_entregas')">${I.pen}</button>
+           ${puedoTocar(e.creado_por)?`<button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntregaEscaneada('${e.id}','${t.id}','dot_entregas')">${I.pen}</button>
            <button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntrega('${e.id}','${t.id}')">${I.trash}</button>`:''}</div>`
-        : (puedoTocarReciente(e.creado_en, e.creado_por)?`<div style="display:flex;gap:6px"><button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntrega('${e.id}','${t.id}')">${I.pen}</button>
+        : (puedoTocar(e.creado_por)?`<div style="display:flex;gap:6px"><button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntrega('${e.id}','${t.id}')">${I.pen}</button>
         <button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntrega('${e.id}','${t.id}')">${I.trash}</button></div>`:'');
       return `<tr>
         <td>${fmtDate(e.fecha)}${horaEnt?`<div class="muted-sm">${horaEnt}</div>`:''}${auditLinea}</td>
@@ -5980,9 +5988,10 @@ function eliminarEntrega(entregaId, trabajadorId){
 }
 
 /* ---------- Editar una entrega ya registrada (fecha/ítems/responsable/observaciones/
-   firmas/foto). Disponible para quien ya puede abrir este formulario — admin siempre,
-   editor solo dentro de las 24h y si él mismo la creó (mismo candado que ya trae el botón
-   de lápiz en la ficha, puedoTocarReciente — no hay una segunda restricción aquí). ---------- */
+   firmas/foto). Admin siempre; editor solo la que él mismo registró (puedoTocar), ahora
+   SIN límite de 24h desde CAMBIOS_SQL_55 — sigue sin poder tocar la de un compañero, eso
+   no cambió. Cada cambio queda registrado con el detalle campo por campo en Auditoría
+   (acc_diff_texto), justamente para poder dar esta libertad de tiempo con confianza. ---------- */
 let editarEntregaDraft = null;
 async function abrirEditarEntrega(entregaId, trabajadorId){
   bloquear("Cargando…");
@@ -6067,7 +6076,7 @@ function wireEeFotoPreview(draft){
   const inp = document.getElementById('eeFileFoto');
   inp.onchange = async ()=>{
     const f = inp.files[0]; if(!f) return;
-    draft.fotoTrabajador = await comprimirImagen(f, 500);
+    draft.fotoTrabajador = await comprimirImagen(f, 500, 0.7);
     inp.value = '';
     document.getElementById('eeFotoPreview').innerHTML = eeFotoPreviewHTML(draft);
     wireEeFotoPreview(draft);
@@ -6391,7 +6400,7 @@ function wireEpFotoPreview(){
   const inp = document.getElementById('epFileFoto');
   inp.onchange = async ()=>{
     const f = inp.files[0]; if(!f) return;
-    dotPublicoState.foto = await comprimirImagen(f, 500);
+    dotPublicoState.foto = await comprimirImagen(f, 500, 0.7);
     inp.value = '';
     document.getElementById('epFotoPreview').innerHTML = epFotoPreviewHTML();
     wireEpFotoPreview();
@@ -8310,7 +8319,7 @@ function wireFotoTrabDtlPreview(){
   const inp = document.getElementById('fileFotoTrabDtl');
   inp.onchange = async ()=>{
     const f = inp.files[0]; if(!f) return;
-    dtlEntregaDraft.fotoTrabajador = await comprimirImagen(f, 500);
+    dtlEntregaDraft.fotoTrabajador = await comprimirImagen(f, 500, 0.7);
     inp.value = '';
     document.getElementById('fotoTrabDtlPreview').innerHTML = fotoTrabDtlPreviewHTML();
     wireFotoTrabDtlPreview();
@@ -8475,9 +8484,9 @@ async function renderFichaTrabajadorDtl(id){
         : esc(e.responsable_nombre||(e.via==='remoto'?'(entrega remota)':'—'));
       const accionesCol = esEscaneada
         ? `<div style="display:flex;gap:6px"><button class="icon-btn" title="Ver archivo" onclick="verAdjuntoEntrega('${e.id}','dtl_entregas')">${I.eye}</button>
-           ${puedoTocarReciente(e.creado_en, e.creado_por)?`<button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntregaEscaneada('${e.id}','${t.id}','dtl_entregas')">${I.pen}</button>
+           ${puedoTocar(e.creado_por)?`<button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntregaEscaneada('${e.id}','${t.id}','dtl_entregas')">${I.pen}</button>
            <button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntregaDtl('${e.id}','${t.id}')">${I.trash}</button>`:''}</div>`
-        : (puedoTocarReciente(e.creado_en, e.creado_por)?`<div style="display:flex;gap:6px"><button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntregaDtl('${e.id}','${t.id}')">${I.pen}</button>
+        : (puedoTocar(e.creado_por)?`<div style="display:flex;gap:6px"><button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntregaDtl('${e.id}','${t.id}')">${I.pen}</button>
         <button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntregaDtl('${e.id}','${t.id}')">${I.trash}</button></div>`:'');
       return `<tr>
         <td>${fmtDate(e.fecha)}${horaEnt?`<div class="muted-sm">${horaEnt}</div>`:''}${auditLinea}</td>
@@ -8536,8 +8545,8 @@ function eliminarEntregaDtl(entregaId, trabajadorId){
 }
 
 /* ---------- Editar una entrega de Dotación ya registrada (fecha/ítems/responsable/
-   firmas/foto). Mismo candado que el botón de lápiz de la ficha (admin siempre, editor
-   solo dentro de 24h y si él mismo la creó) — no hay una segunda restricción aquí. ---------- */
+   firmas/foto). Mismo candado que el botón de lápiz de la ficha — admin siempre, editor
+   solo la que él mismo registró (puedoTocar), sin límite de 24h desde CAMBIOS_SQL_55. ---------- */
 let editarEntregaDtlDraft = null;
 async function abrirEditarEntregaDtl(entregaId, trabajadorId){
   bloquear("Cargando…");
@@ -9197,7 +9206,7 @@ function wireDpFotoPreview(){
   const inp = document.getElementById('dpFileFoto');
   inp.onchange = async ()=>{
     const f = inp.files[0]; if(!f) return;
-    dtlPublicoState.foto = await comprimirImagen(f, 500);
+    dtlPublicoState.foto = await comprimirImagen(f, 500, 0.7);
     inp.value = '';
     document.getElementById('dpFotoPreview').innerHTML = dpFotoPreviewHTML();
     wireDpFotoPreview();
@@ -11052,7 +11061,7 @@ async function renderConfiguracion(silent){
       <div style="margin-bottom:20px;padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
         <p style="margin-bottom:8px"><b>Administrador</b> — acceso total a todo, sin restricciones, en los 4 módulos.</p>
         <p style="margin-bottom:8px"><b>Editor en Asistencia y Documentos y Firmas</b> — crea, y solo edita/elimina lo que él mismo creó; nunca puede tocar una lista cerrada o un documento finalizado, así sea suyo.</p>
-        <p style="margin-bottom:8px"><b>Editor en EPP y Dotación</b> — ve todo el directorio y todas las entregas; puede registrar entregas nuevas libremente; solo puede editar o eliminar <b>las entregas que él mismo registró</b>, y solo <b>durante las primeras 24 horas</b> desde que las creó — pasado ese plazo, ni él puede tocarlas, solo un administrador. <b>No puede agregar, editar ni eliminar trabajadores</b> del directorio (tampoco por carga masiva de Excel) — el directorio de trabajadores es solo de administrador. <b>Tampoco ve ni toca el catálogo de ítems de EPP</b> (agregar/editar/eliminar ítems del catálogo) — eso también es solo de administrador; el botón "Catálogo de ítems" no le aparece.</p>
+        <p style="margin-bottom:8px"><b>Editor en EPP y Dotación</b> — ve todo el directorio y todas las entregas; puede registrar entregas nuevas libremente; puede editar o eliminar <b>las entregas que él mismo registró, sin límite de tiempo</b> — pero nunca las que registró un compañero, eso solo lo puede tocar un administrador. Cada edición o eliminación queda registrada con el detalle exacto de qué cambió en Auditoría. <b>No puede agregar, editar ni eliminar trabajadores</b> del directorio (tampoco por carga masiva de Excel) — el directorio de trabajadores es solo de administrador. <b>Tampoco ve ni toca el catálogo de ítems de EPP</b> (agregar/editar/eliminar ítems del catálogo) — eso también es solo de administrador; el botón "Catálogo de ítems" no le aparece.</p>
         <p style="margin-bottom:8px"><b>Visualizador</b> — en cualquier módulo, solo puede ver lo que sus módulos/contratos le permitan; nunca crea, edita ni elimina nada.</p>
         <p style="margin-bottom:8px"><b>"Entregas de hoy" (junto al buscador, en EPP y Dotación)</b> — Administrador y Editor. <b>"Todos"</b> (selección masiva) — solo Administrador. Visualizador solo ve "Mostrar inactivos".</p>
         <p style="margin:0"><b>Auditoría</b> — visible solo para Administrador. No es un módulo que se pueda conceder a un Editor o Visualizador; nadie más la ve, sin importar qué permisos tenga.</p>
@@ -11133,7 +11142,7 @@ async function abrirPermisosUsuario(perfilId){
       ${esUnoMismo?`<p class="muted-sm" style="margin:-4px 0 10px">No puedes quitarte tu propio acceso de administrador.</p>`:''}
       <div id="permisosDetalle" style="${perfil.es_admin?'display:none':''}">
         <div class="sec-bar" style="margin-top:14px"><h2 style="font-size:14px">Rol</h2></div>
-        <label class="chk"><input type="radio" name="pfRol" value="editor" ${perfil.rol!=='visualizador'?'checked':''}> <b>Editor</b> — en Asistencia/Documentos: crea y edita solo lo suyo, nunca lo cerrado/finalizado. En EPP/Dotación: ve y registra todo, edita/elimina cualquier entrega de las últimas 24h, pero no toca el directorio de trabajadores (agregar/editar/eliminar es solo admin)</label>
+        <label class="chk"><input type="radio" name="pfRol" value="editor" ${perfil.rol!=='visualizador'?'checked':''}> <b>Editor</b> — en Asistencia/Documentos: crea y edita solo lo suyo, nunca lo cerrado/finalizado. En EPP/Dotación: ve y registra todo, edita/elimina cualquier entrega que ÉL MISMO haya registrado (sin límite de tiempo, pero nunca lo de un compañero), y no toca el directorio de trabajadores (agregar/editar/eliminar es solo admin)</label>
         <label class="chk"><input type="radio" name="pfRol" value="visualizador" ${perfil.rol==='visualizador'?'checked':''}> <b>Visualizador</b> — solo puede ver lo que sus módulos/contratos le permitan; no crea, edita ni elimina nada</label>
         <div class="sec-bar" style="margin-top:14px"><h2 style="font-size:14px">Módulos</h2></div>
         <label class="chk"><input type="checkbox" data-pf-mod="asistencia" ${modulos.includes('asistencia')?'checked':''}> Asistencia</label>
