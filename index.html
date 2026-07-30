@@ -6781,7 +6781,7 @@ async function descargarExcelDotSeleccion(contratoIds){
    presencial (supervisor logueado) y remota (enlace único para
    toda la empresa, por cédula, sin login).
    ============================================================ */
-let DTL = { entidades: [], trabajadores: [], entregas: [], predeterminados: [] };
+let DTL = { entidades: [], trabajadores: [], entregas: [], predeterminados: [], catalogo: [] };
 let dtlQuery = "";
 let dtlEntregaDraft = null;
 let dtlEscaneadaState = null;
@@ -6795,7 +6795,7 @@ const DTL_DECLARACION = "Declaro haber recibido a satisfacción los elementos de
 
 async function loadDtlState(){
   const [en, t, e] = await Promise.all([
-    sb.from("dtl_entidades").select("id,nombre,activo,creado_en,modo_registro,link_nuevos_activo").order("creado_en",{ascending:true}),
+    sb.from("dtl_entidades").select("id,nombre,activo,creado_en,modo_registro,link_nuevos_activo,catalogo_unico").order("creado_en",{ascending:true}),
     cargarTodasFilas(()=> sb.from("dtl_trabajadores").select("id,nombre,identificacion,cargo,area,entidad_id,fecha_ingreso,fecha_salida,aviso_cedula_rh,correo,activo,inactivo_por_archivo,creado_en").order("nombre",{ascending:true}).order("id",{ascending:true})),
     cargarTodasFilas(()=> sb.from("dtl_entregas").select("id,trabajador_id,fecha").order("fecha",{ascending:false}).order("id",{ascending:true}))
   ]);
@@ -6809,7 +6809,17 @@ async function loadDtlState(){
     dtlFiltroEntidad = 'todas';
     localStorage.setItem('dtl_filtro_entidad', 'todas');
   }
+  // El catálogo único es POR ENTIDAD — se carga después de tener dtlFiltroEntidad resuelto.
+  // En modo "todas" (o sin entidad) queda vacío.
+  if(dtlFiltroEntidad && dtlFiltroEntidad!=='todas'){
+    const { data:c, error:ec } = await sb.from("dtl_catalogo").select("*").eq("entidad_id", dtlFiltroEntidad).order("nombre",{ascending:true});
+    if(ec) console.warn(ec);
+    DTL.catalogo = c || [];
+  } else {
+    DTL.catalogo = [];
+  }
 }
+function entidadActualDtl(){ return DTL.entidades.find(x=>x.id===dtlFiltroEntidad) || null; }
 
 function nombreEntidadDtl(id){ const x = DTL.entidades.find(e=>e.id===id); return x ? x.nombre : '—'; }
 /* Trabajadores visibles en la grilla según el filtro ("todas" = todos los accesibles) */
@@ -6825,6 +6835,16 @@ function entregasDeEntidad(){
 async function cargarPredeterminadosDtl(entidadId){
   if(!entidadId) return [];
   const { data, error } = await sb.from("dtl_predeterminados").select("id,nombre,responsable_nombre,responsable_cargo,firma").eq("entidad_id", entidadId).order("creado_en",{ascending:true});
+  if(error){ console.warn(error); return []; }
+  return data || [];
+}
+/* Catálogo de ítems de UNA entidad específica, cargado bajo demanda — igual que
+   cargarPredeterminadosDtl, porque DTL.catalogo (cargado en loadDtlState) está
+   scoped a dtlFiltroEntidad y puede no corresponder a la entidad del trabajador
+   si el panel está en modo "Todos los contratos". */
+async function cargarCatalogoDtl(entidadId){
+  if(!entidadId) return [];
+  const { data, error } = await sb.from("dtl_catalogo").select("id,nombre,unidad,activo").eq("entidad_id", entidadId).order("nombre",{ascending:true});
   if(error){ console.warn(error); return []; }
   return data || [];
 }
@@ -6924,6 +6944,7 @@ async function renderDtlAdmin(silent){
           ${totalTrab?`<button class="action-card" id="btnExcelDtl"><div class="ac-ic">${I.doc}</div><span class="ac-title">Descargar Excel</span><span class="ac-chevron">›</span></button>`:''}
           ${puedeEscribir()?`<button class="action-card" id="btnHistorialDtl" ${dtlFiltroEntidad==='todas'?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.cal}</div><span class="ac-title">Historial de entregas</span><span class="ac-chevron">›</span></button>`:''}
           ${MIPERFIL.esAdmin?`<button class="action-card" id="btnLinkNuevosDtl" ${dtlFiltroEntidad==='todas'?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.link}</div><span class="ac-title">Link trabajadores nuevos</span><span class="ac-chevron">›</span></button>`:''}
+          ${MIPERFIL.esAdmin?`<button class="action-card" id="btnCatalogoUnicoDtl" ${dtlFiltroEntidad==='todas'?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.catalogo}</div><span class="ac-title">Catálogo único</span><span class="ac-chevron">›</span></button>`:''}
         </div>
       </div>
 
@@ -6966,6 +6987,7 @@ async function renderDtlAdmin(silent){
   const bce=document.getElementById("btnCopiarEnlacePublico"); if(bce) bce.onclick = ()=> copyText(location.href.split("#")[0]+"#/dotacionlegal/entrega", "Enlace de entrega remota copiado");
   const bqr=document.getElementById("btnQrEnlacePublico"); if(bqr) bqr.onclick = ()=> mostrarQR(location.href.split("#")[0]+"#/dotacionlegal/entrega", "Entrega remota de dotación");
   const blnDtl=document.getElementById("btnLinkNuevosDtl"); if(blnDtl) blnDtl.onclick = ()=> mostrarLinkTrabajadoresNuevos('dotacion');
+  const bcud=document.getElementById("btnCatalogoUnicoDtl"); if(bcud) bcud.onclick = abrirCatalogoUnicoDtl;
   const behdtl=document.getElementById("btnEntregasHoyDtl"); if(behdtl) behdtl.onclick = abrirEntregasHoyDtl;
   document.getElementById("dtlSearch").oninput = (e)=>{ dtlQuery = e.target.value; renderDtlGrid(); };
   document.getElementById("chkMostrarInactivosDtl").onchange = (e)=>{ dtlMostrarInactivos = e.target.checked; renderDtlGrid(); };
@@ -7629,6 +7651,105 @@ async function cargarTrabajadoresExcelDtl(file){
   finally{ desbloquear(); }
 }
 
+/* ---------- Catálogo único (opcional, solo admin, por entidad) ----------
+   Por defecto TODA entidad de Dotación entrega pantalón/camisa/botas (columnas
+   fijas de dtl_entregas) — eso no cambia para nadie. Un admin puede marcar una
+   entidad puntual con "catálogo único": esa entidad deja de usar los 3 ítems
+   fijos y usa en su lugar su propia lista de ítems (dtl_catalogo +
+   dtl_entrega_items), igual que ya funciona el catálogo de EPP. Calco de
+   abrirCatalogoModal/renderCatalogoLista/guardarItemCatalogo/toggleItemCatalogo/
+   eliminarItemCatalogo (líneas ~5171-5347), adaptado a dtl_catalogo+entidad_id. */
+function abrirCatalogoUnicoDtl(){
+  if(dtlFiltroEntidad==='todas'){ toast("Elige un contrato específico primero","err"); return; }
+  const en = entidadActualDtl();
+  const activo = !!en?.catalogo_unico;
+  openModal(`<div class="modal" style="max-width:560px">
+    <div class="modal-head"><div><h2>Catálogo único</h2><p>${esc(en?.nombre||'')}</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <label class="chk" style="margin-bottom:14px"><input type="checkbox" id="chkCatalogoUnicoDtl" ${activo?'checked':''}> Este contrato entrega ítems propios (no pantalón/camisa/botas)</label>
+      <p class="muted-sm" style="margin-bottom:14px">Al activarlo, este contrato deja de usar los ítems fijos de siempre y en su lugar entrega lo que armes aquí abajo — se aplica al registrar desde el panel, por el enlace remoto de dotación y por el link de trabajadores nuevos de este contrato.</p>
+      <div id="catalogoUnicoDtlBody" style="display:${activo?'block':'none'}">
+        <div class="field row2" style="margin-bottom:14px">
+          <div><input id="catDtlNombre" placeholder="Nombre del ítem (ej. Zapatos de mujer)"></div>
+          <div style="display:flex;gap:8px">
+            <input id="catDtlUnidad" placeholder="Unidad (par, unidad…)" style="flex:1">
+            <button class="btn btn-primary btn-sm" id="btnAddCatDtl">${I.plus} Agregar</button>
+          </div>
+        </div>
+        <div id="catDtlLista"></div>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
+  </div>`);
+  document.getElementById('chkCatalogoUnicoDtl').onchange = async (e)=>{
+    const nuevoValor = e.target.checked;
+    const { error } = await sb.from("dtl_entidades").update({ catalogo_unico: nuevoValor }).eq("id", en.id);
+    if(error){ e.target.checked = !nuevoValor; toast("No se pudo actualizar: "+error.message,"err"); return; }
+    if(en) en.catalogo_unico = nuevoValor;
+    document.getElementById('catalogoUnicoDtlBody').style.display = nuevoValor?'block':'none';
+    toast(nuevoValor?"Catálogo único activado":"Catálogo único desactivado","ok");
+  };
+  document.getElementById('btnAddCatDtl').onclick = guardarItemCatalogoDtl;
+  renderCatalogoUnicoLista();
+}
+
+function renderCatalogoUnicoLista(){
+  const host = document.getElementById('catDtlLista'); if(!host) return;
+  const items = DTL.catalogo;
+  host.innerHTML = items.length ? items.map(c=>`
+    <div class="cat-row">
+      <span style="flex:1;font-weight:600;font-size:13.5px;${c.activo?'':'opacity:.45;text-decoration:line-through'}">${esc(c.nombre)}</span>
+      <span class="muted-sm" style="width:70px">${esc(c.unidad||'—')}</span>
+      <label class="chk" style="padding:0"><input type="checkbox" data-catdtl-activo="${c.id}" ${c.activo?'checked':''}> activo</label>
+      <button class="icon-btn danger" title="Eliminar" data-catdtl-del="${c.id}">${I.trash}</button>
+    </div>`).join('') : '<div class="muted-sm" style="padding:14px 0">Sin ítems todavía.</div>';
+  host.querySelectorAll('[data-catdtl-activo]').forEach(chk=>{
+    chk.onchange = ()=> toggleItemCatalogoDtl(chk.dataset.catdtlActivo, chk.checked);
+  });
+  host.querySelectorAll('[data-catdtl-del]').forEach(b=>{
+    b.onclick = ()=> eliminarItemCatalogoDtl(b.dataset.catdtlDel);
+  });
+}
+
+async function guardarItemCatalogoDtl(){
+  const nombre = document.getElementById('catDtlNombre').value.trim();
+  const unidad = document.getElementById('catDtlUnidad').value.trim() || null;
+  if(!nombre){ toast("Escribe el nombre del ítem","err"); return; }
+  const btn = document.getElementById('btnAddCatDtl'); btn.disabled=true;
+  const { error } = await sb.from("dtl_catalogo").insert({ nombre, unidad, entidad_id: dtlFiltroEntidad });
+  btn.disabled=false;
+  if(error){ toast("No se pudo agregar: "+error.message,"err"); return; }
+  document.getElementById('catDtlNombre').value=''; document.getElementById('catDtlUnidad').value='';
+  await loadDtlState();
+  renderCatalogoUnicoLista();
+  toast("Ítem agregado","ok");
+}
+
+async function toggleItemCatalogoDtl(id, activo){
+  const { error } = await sb.from("dtl_catalogo").update({ activo }).eq("id", id);
+  if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
+  await loadDtlState();
+}
+
+function eliminarItemCatalogoDtl(id){
+  const c = DTL.catalogo.find(x=>x.id===id);
+  openSubModal(`<div class="modal" style="max-width:420px">
+    <div class="modal-head"><div><h2>Eliminar ítem</h2><p>No afecta las entregas ya registradas.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">¿Eliminar <b>${esc(c?.nombre||'este ítem')}</b> del catálogo? Ya no aparecerá para elegir en nuevas entregas; las entregas ya registradas conservan su nombre.</p></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-danger" id="confDelCatDtl">${I.trash} Sí, eliminar</button></div></div>`, ()=>abrirCatalogoUnicoDtl());
+  document.getElementById("confDelCatDtl").onclick = async ()=>{
+    const btn=document.getElementById("confDelCatDtl"); btn.disabled=true; btn.innerHTML="Eliminando…";
+    const { error } = await sb.from("dtl_catalogo").delete().eq("id", id);
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`; toast("No se pudo eliminar: "+error.message,"err"); return; }
+    await loadDtlState();
+    toast("Ítem eliminado","ok");
+    closeModal();
+  };
+}
+
 /* ---------- Predeterminados (firma del responsable, por entidad) ---------- */
 const PREDET_DTL_MAX = 5;
 let predetDtlEntidadId = null;
@@ -7771,10 +7892,15 @@ async function abrirNuevaEntregaDtl(trabajadorId){
     return;
   }
   bloquear("Cargando…");
-  try{ DTL.predeterminados = await cargarPredeterminadosDtl(t.entidad_id); } finally{ desbloquear(); }
+  try{
+    DTL.predeterminados = await cargarPredeterminadosDtl(t.entidad_id);
+    if(entidad?.catalogo_unico) DTL.catalogo = await cargarCatalogoDtl(t.entidad_id);
+  } finally{ desbloquear(); }
   dtlEntregaDraft = {
     trabajadorId: trabajadorId,
     fecha: hoyLocal(),
+    catalogoUnico: !!entidad?.catalogo_unico,
+    items: [{ catalogoId:'', cantidad:1, talla:'' }],
     pantalonCantidad: 2, pantalonTalla: '',
     camisaCantidad: 2, camisaTalla: '',
     botasCantidad: 1, botasTalla: '',
@@ -7887,6 +8013,14 @@ function renderPasoDtl1(){
             </div>`}
       <div class="field"><label>Fecha de entrega</label><input type="date" id="dtlFecha" value="${dtlEntregaDraft.fecha}"></div>
 
+      ${dtlEntregaDraft.catalogoUnico ? `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:16px 0 10px">
+        <label style="font-weight:700;font-size:14px">Ítems entregados *</label>
+        <button class="btn btn-ghost btn-sm" id="btnAddItemDtl">${I.plus} Agregar ítem</button>
+      </div>
+      <div id="itemsListDtl"></div>
+      <div class="field" style="margin-top:14px"><label>Adicional <span class="opt">(opcional — algo más que se entregue)</span></label><textarea id="dtlAdicional" placeholder="Ej. 1 chaqueta impermeable">${esc(dtlEntregaDraft.adicional)}</textarea></div>
+      ` : `
       <label style="font-weight:700;font-size:14px;display:block;margin:16px 0 10px">Elementos entregados</label>
       <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="dtlPantalonInc" checked> Pantalones</label>
       <div class="field row2" id="dtlPantalonFields">
@@ -7904,6 +8038,7 @@ function renderPasoDtl1(){
         <div><label>Talla *</label><input id="dtlBotasTalla" value="${esc(dtlEntregaDraft.botasTalla)}" placeholder="Ej. 40"></div>
       </div>
       <div class="field"><label>Adicional <span class="opt">(opcional — algo más que se entregue)</span></label><textarea id="dtlAdicional" placeholder="Ej. 1 chaqueta impermeable">${esc(dtlEntregaDraft.adicional)}</textarea></div>
+      `}
 
       <div class="field" style="margin-top:14px">
         <label>Responsable que entrega *</label>
@@ -7924,10 +8059,41 @@ function renderPasoDtl1(){
   </div>`);
   actualizarQuienFirmaDtl();
   wireDtlPredetChips();
-  wireIncluirItemDtl('dtlPantalonInc','dtlPantalonFields','dtlPantalonCant',2);
-  wireIncluirItemDtl('dtlCamisaInc','dtlCamisaFields','dtlCamisaCant',2);
-  wireIncluirItemDtl('dtlBotasInc','dtlBotasFields','dtlBotasCant',1);
+  if(dtlEntregaDraft.catalogoUnico){
+    renderItemsListDtl();
+    document.getElementById('btnAddItemDtl').onclick = ()=>{ dtlEntregaDraft.items.push({catalogoId:'',cantidad:1,talla:''}); renderItemsListDtl(); };
+  } else {
+    wireIncluirItemDtl('dtlPantalonInc','dtlPantalonFields','dtlPantalonCant',2);
+    wireIncluirItemDtl('dtlCamisaInc','dtlCamisaFields','dtlCamisaCant',2);
+    wireIncluirItemDtl('dtlBotasInc','dtlBotasFields','dtlBotasCant',1);
+  }
   document.getElementById('btnDtlContinuar').onclick = validarYContinuarPasoDtl1;
+}
+
+/* Lista dinámica de ítems para entidades con "catálogo único" — calco de
+   renderItemsList (EPP, líneas ~5665-5689) adaptada a dtlEntregaDraft.items + DTL.catalogo. */
+function renderItemsListDtl(){
+  const host = document.getElementById('itemsListDtl'); if(!host) return;
+  const activos = DTL.catalogo.filter(c=>c.activo);
+  host.innerHTML = dtlEntregaDraft.items.map((it,i)=>`
+    <div class="item-row" data-i="${i}">
+      <span class="firmante-num">${i+1}</span>
+      <select data-f="catalogoId">
+        <option value="">Elige el ítem…</option>
+        ${activos.map(c=>`<option value="${c.id}" ${c.id===it.catalogoId?'selected':''}>${esc(c.nombre)}</option>`).join('')}
+      </select>
+      <input data-f="cantidad" type="number" min="1" step="1" value="${it.cantidad}" placeholder="Cant.">
+      <input data-f="talla" value="${esc(it.talla||'')}" placeholder="Talla (opc.)">
+      <button class="icon-btn danger" data-del="${i}" title="Quitar" ${dtlEntregaDraft.items.length<=1?'disabled':''}>${I.trash}</button>
+    </div>`).join('');
+  host.querySelectorAll('.item-row').forEach(row=>{
+    const i = +row.dataset.i;
+    row.querySelector('[data-f="catalogoId"]').onchange = (e)=>{ dtlEntregaDraft.items[i].catalogoId = e.target.value; };
+    row.querySelector('[data-f="cantidad"]').oninput = (e)=>{ dtlEntregaDraft.items[i].cantidad = +e.target.value || 1; };
+    row.querySelector('[data-f="talla"]').oninput = (e)=>{ dtlEntregaDraft.items[i].talla = e.target.value; };
+    const del = row.querySelector('[data-del]');
+    if(del) del.onclick = ()=>{ if(dtlEntregaDraft.items.length<=1) return; dtlEntregaDraft.items.splice(i,1); renderItemsListDtl(); };
+  });
 }
 
 /* Casilla "se entrega este ítem" — marcada por defecto (siempre se suele entregar todo);
@@ -7974,16 +8140,21 @@ function validarYContinuarPasoDtl1(){
   if(selTrab){ dtlEntregaDraft.trabajadorId = selTrab.value || null; }
   if(!dtlEntregaDraft.trabajadorId){ toast("Selecciona el trabajador","err"); return; }
   dtlEntregaDraft.fecha = document.getElementById('dtlFecha').value || hoyLocal();
+  dtlEntregaDraft.adicional = document.getElementById('dtlAdicional').value.trim();
+  dtlEntregaDraft.responsableNombre = document.getElementById('dtlRespNombre').value.trim();
+  dtlEntregaDraft.responsableCargo = document.getElementById('dtlRespCargo').value.trim();
+  if(!dtlEntregaDraft.responsableNombre){ toast("Falta el nombre del responsable que entrega","err"); return; }
+  if(dtlEntregaDraft.catalogoUnico){
+    if(!dtlEntregaDraft.items.some(it=>it.catalogoId)){ toast("Elige al menos un ítem","err"); return; }
+    renderPasoDtl2();
+    return;
+  }
   dtlEntregaDraft.pantalonCantidad = +document.getElementById('dtlPantalonCant').value || 0;
   dtlEntregaDraft.pantalonTalla = document.getElementById('dtlPantalonTalla').value.trim();
   dtlEntregaDraft.camisaCantidad = +document.getElementById('dtlCamisaCant').value || 0;
   dtlEntregaDraft.camisaTalla = document.getElementById('dtlCamisaTalla').value.trim();
   dtlEntregaDraft.botasCantidad = +document.getElementById('dtlBotasCant').value || 0;
   dtlEntregaDraft.botasTalla = document.getElementById('dtlBotasTalla').value.trim();
-  dtlEntregaDraft.adicional = document.getElementById('dtlAdicional').value.trim();
-  dtlEntregaDraft.responsableNombre = document.getElementById('dtlRespNombre').value.trim();
-  dtlEntregaDraft.responsableCargo = document.getElementById('dtlRespCargo').value.trim();
-  if(!dtlEntregaDraft.responsableNombre){ toast("Falta el nombre del responsable que entrega","err"); return; }
   if(dtlEntregaDraft.pantalonCantidad<=0 && dtlEntregaDraft.camisaCantidad<=0 && dtlEntregaDraft.botasCantidad<=0 && !dtlEntregaDraft.adicional){
     toast("Agrega al menos un elemento a entregar","err"); return;
   }
@@ -7996,9 +8167,16 @@ function validarYContinuarPasoDtl1(){
 function renderPasoDtl2(){
   const t = DTL.trabajadores.find(x=>x.id===dtlEntregaDraft.trabajadorId);
   const resumen = [];
-  if(dtlEntregaDraft.pantalonCantidad>0) resumen.push(`<span class="entrega-item-tag">Pantalón × ${dtlEntregaDraft.pantalonCantidad}${dtlEntregaDraft.pantalonTalla?' · '+esc(dtlEntregaDraft.pantalonTalla):''}</span>`);
-  if(dtlEntregaDraft.camisaCantidad>0) resumen.push(`<span class="entrega-item-tag">Camisa × ${dtlEntregaDraft.camisaCantidad}${dtlEntregaDraft.camisaTalla?' · '+esc(dtlEntregaDraft.camisaTalla):''}</span>`);
-  if(dtlEntregaDraft.botasCantidad>0) resumen.push(`<span class="entrega-item-tag">Botas × ${dtlEntregaDraft.botasCantidad}${dtlEntregaDraft.botasTalla?' · '+esc(dtlEntregaDraft.botasTalla):''}</span>`);
+  if(dtlEntregaDraft.catalogoUnico){
+    dtlEntregaDraft.items.filter(it=>it.catalogoId).forEach(it=>{
+      const c = DTL.catalogo.find(x=>x.id===it.catalogoId);
+      resumen.push(`<span class="entrega-item-tag">${esc(c?c.nombre:'Ítem')} × ${it.cantidad}${it.talla?' · '+esc(it.talla):''}</span>`);
+    });
+  } else {
+    if(dtlEntregaDraft.pantalonCantidad>0) resumen.push(`<span class="entrega-item-tag">Pantalón × ${dtlEntregaDraft.pantalonCantidad}${dtlEntregaDraft.pantalonTalla?' · '+esc(dtlEntregaDraft.pantalonTalla):''}</span>`);
+    if(dtlEntregaDraft.camisaCantidad>0) resumen.push(`<span class="entrega-item-tag">Camisa × ${dtlEntregaDraft.camisaCantidad}${dtlEntregaDraft.camisaTalla?' · '+esc(dtlEntregaDraft.camisaTalla):''}</span>`);
+    if(dtlEntregaDraft.botasCantidad>0) resumen.push(`<span class="entrega-item-tag">Botas × ${dtlEntregaDraft.botasCantidad}${dtlEntregaDraft.botasTalla?' · '+esc(dtlEntregaDraft.botasTalla):''}</span>`);
+  }
   if(dtlEntregaDraft.adicional) resumen.push(`<span class="entrega-item-tag">${esc(dtlEntregaDraft.adicional)}</span>`);
   const guardada = dtlEntregaDraft.firmaTrabajador;
   openModal(`<div class="modal" style="max-width:560px">
@@ -8134,19 +8312,38 @@ function renderPasoDtl3(){
 async function guardarEntregaDtlFinal(firmaResponsable){
   bloquear("Guardando entrega…");
   try{
-    const { error } = await sb.rpc('dtl_entrega_presencial_registrar', {
-      p_trabajador_id: dtlEntregaDraft.trabajadorId,
-      p_fecha: dtlEntregaDraft.fecha,
-      p_pantalon_cantidad: dtlEntregaDraft.pantalonCantidad, p_pantalon_talla: dtlEntregaDraft.pantalonTalla || null,
-      p_camisa_cantidad: dtlEntregaDraft.camisaCantidad, p_camisa_talla: dtlEntregaDraft.camisaTalla || null,
-      p_botas_cantidad: dtlEntregaDraft.botasCantidad, p_botas_talla: dtlEntregaDraft.botasTalla || null,
-      p_adicional: dtlEntregaDraft.adicional || null,
-      p_responsable_nombre: dtlEntregaDraft.responsableNombre || null,
-      p_responsable_cargo: dtlEntregaDraft.responsableCargo || null,
-      p_firma_trabajador: dtlEntregaDraft.firmaTrabajador,
-      p_firma_responsable: firmaResponsable,
-      p_foto_trabajador: dtlEntregaDraft.fotoTrabajador
-    });
+    let error;
+    if(dtlEntregaDraft.catalogoUnico){
+      const items = dtlEntregaDraft.items.filter(it=>it.catalogoId).map(it=>{
+        const c = DTL.catalogo.find(x=>x.id===it.catalogoId);
+        return { nombre: c?c.nombre:'Ítem', cantidad: it.cantidad, talla: it.talla||null };
+      });
+      ({ error } = await sb.rpc('dtl_entrega_items_presencial_registrar', {
+        p_trabajador_id: dtlEntregaDraft.trabajadorId,
+        p_fecha: dtlEntregaDraft.fecha,
+        p_adicional: dtlEntregaDraft.adicional || null,
+        p_responsable_nombre: dtlEntregaDraft.responsableNombre || null,
+        p_responsable_cargo: dtlEntregaDraft.responsableCargo || null,
+        p_firma_trabajador: dtlEntregaDraft.firmaTrabajador,
+        p_firma_responsable: firmaResponsable,
+        p_foto_trabajador: dtlEntregaDraft.fotoTrabajador,
+        p_items: items
+      }));
+    } else {
+      ({ error } = await sb.rpc('dtl_entrega_presencial_registrar', {
+        p_trabajador_id: dtlEntregaDraft.trabajadorId,
+        p_fecha: dtlEntregaDraft.fecha,
+        p_pantalon_cantidad: dtlEntregaDraft.pantalonCantidad, p_pantalon_talla: dtlEntregaDraft.pantalonTalla || null,
+        p_camisa_cantidad: dtlEntregaDraft.camisaCantidad, p_camisa_talla: dtlEntregaDraft.camisaTalla || null,
+        p_botas_cantidad: dtlEntregaDraft.botasCantidad, p_botas_talla: dtlEntregaDraft.botasTalla || null,
+        p_adicional: dtlEntregaDraft.adicional || null,
+        p_responsable_nombre: dtlEntregaDraft.responsableNombre || null,
+        p_responsable_cargo: dtlEntregaDraft.responsableCargo || null,
+        p_firma_trabajador: dtlEntregaDraft.firmaTrabajador,
+        p_firma_responsable: firmaResponsable,
+        p_foto_trabajador: dtlEntregaDraft.fotoTrabajador
+      }));
+    }
     if(error){ toast("No se pudo guardar la entrega: "+error.message,"err"); return; }
     const trabId = dtlEntregaDraft.trabajadorId;
     const yaEstabaEnFicha = location.hash === "#/dotacionlegal/trabajador/"+trabId;
@@ -8172,6 +8369,14 @@ async function renderFichaTrabajadorDtl(id){
       .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,via,creado_en,creado_por,tipo_registro,adjunto_titulo,adjunto_tipo,ip_address,dispositivo_ua")
       .eq("trabajador_id", id).order("fecha",{ascending:false}).order("creado_en",{ascending:false});
     const listaEntregas = entregas || [];
+    // Ítems de "catálogo único" (dtl_entrega_items) — solo existen para entregas de entidades
+    // con esa bandera activada; el resto de entregas no tiene ninguna fila aquí.
+    const idsEntDtl = listaEntregas.filter(e=>e.tipo_registro!=='escaneado').map(e=>e.id);
+    const { data: itemsDtl } = idsEntDtl.length
+      ? await sb.from("dtl_entrega_items").select("entrega_id,nombre_item,cantidad,talla").in("entrega_id", idsEntDtl)
+      : { data: [] };
+    const itemsPorEntregaDtl = {};
+    (itemsDtl||[]).forEach(it=>{ (itemsPorEntregaDtl[it.entrega_id] = itemsPorEntregaDtl[it.entrega_id]||[]).push(it); });
 
     const filas = listaEntregas.map(e=>{
       const esEscaneada = e.tipo_registro === 'escaneado';
@@ -8179,6 +8384,9 @@ async function renderFichaTrabajadorDtl(id){
       if(e.pantalon_cantidad>0) partes.push(`Pantalón × ${e.pantalon_cantidad}${e.pantalon_talla?' ('+esc(e.pantalon_talla)+')':''}`);
       if(e.camisa_cantidad>0) partes.push(`Camisa × ${e.camisa_cantidad}${e.camisa_talla?' ('+esc(e.camisa_talla)+')':''}`);
       if(e.botas_cantidad>0) partes.push(`Botas × ${e.botas_cantidad}${e.botas_talla?' ('+esc(e.botas_talla)+')':''}`);
+      if(!partes.length && itemsPorEntregaDtl[e.id]){
+        itemsPorEntregaDtl[e.id].forEach(it=> partes.push(`${esc(it.nombre_item)} × ${it.cantidad}${it.talla?' ('+esc(it.talla)+')':''}`));
+      }
       if(e.adicional) partes.push(esc(e.adicional));
       const horaEnt = e.creado_en ? new Date(e.creado_en).toLocaleTimeString("es-CO",{hour:'2-digit',minute:'2-digit'}) : '';
       const auditLinea = (e.ip_address||e.dispositivo_ua)
@@ -8256,17 +8464,25 @@ function eliminarEntregaDtl(entregaId, trabajadorId){
 let editarEntregaDtlDraft = null;
 async function abrirEditarEntregaDtl(entregaId, trabajadorId){
   bloquear("Cargando…");
-  let entrega;
+  let entrega, items = [], catalogoUnico = false;
   try{
     const { data:e } = await sb.from("dtl_entregas")
       .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,responsable_cargo,via,firma_trabajador,firma_responsable")
       .eq("id",entregaId).maybeSingle();
     entrega = e;
+    const t = DTL.trabajadores.find(x=>x.id===trabajadorId);
+    catalogoUnico = !!DTL.entidades.find(x=>x.id===t?.entidad_id)?.catalogo_unico;
+    if(catalogoUnico){
+      const { data:it } = await sb.from("dtl_entrega_items").select("id,nombre_item,cantidad,talla").eq("entrega_id",entregaId);
+      items = it||[];
+    }
   } finally { desbloquear(); }
   if(!entrega){ toast("Entrega no encontrada","err"); return; }
   editarEntregaDtlDraft = {
     id: entrega.id, trabajadorId,
     fecha: entrega.fecha,
+    catalogoUnico: catalogoUnico,
+    items: items.length ? items.map(it=>({ nombreItem: it.nombre_item, cantidad: it.cantidad, talla: it.talla||'' })) : [{ nombreItem:'', cantidad:1, talla:'' }],
     pantalonCantidad: entrega.pantalon_cantidad, pantalonTalla: entrega.pantalon_talla || '',
     camisaCantidad: entrega.camisa_cantidad, camisaTalla: entrega.camisa_talla || '',
     botasCantidad: entrega.botas_cantidad, botasTalla: entrega.botas_talla || '',
@@ -8286,6 +8502,14 @@ function renderFormEditarEntregaDtl(){
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
       <div class="field"><label>Fecha de entrega</label><input type="date" id="eeDtlFecha" value="${d.fecha}"></div>
+      ${d.catalogoUnico ? `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:16px 0 10px">
+        <label style="font-weight:700;font-size:14px">Ítems entregados *</label>
+        <button class="btn btn-ghost btn-sm" id="btnEeDtlAddItem">${I.plus} Agregar ítem</button>
+      </div>
+      <div id="eeDtlItemsList"></div>
+      <div class="field" style="margin-top:14px"><label>Adicional <span class="opt">(opcional)</span></label><textarea id="eeDtlAdicional">${esc(d.adicional)}</textarea></div>
+      ` : `
       <label style="font-weight:700;font-size:14px;display:block;margin:16px 0 10px">Elementos entregados</label>
       <div class="field row2">
         <div><label>Pantalones — cantidad</label><input type="number" min="0" id="eeDtlPantalonCant" value="${d.pantalonCantidad}"></div>
@@ -8300,6 +8524,7 @@ function renderFormEditarEntregaDtl(){
         <div><label>Talla *</label><input id="eeDtlBotasTalla" value="${esc(d.botasTalla)}" placeholder="Ej. 40"></div>
       </div>
       <div class="field"><label>Adicional <span class="opt">(opcional)</span></label><textarea id="eeDtlAdicional">${esc(d.adicional)}</textarea></div>
+      `}
       ${d.via==='presencial'?`
       <div class="field row2" style="margin-top:14px">
         <div><label>Responsable</label><input id="eeDtlRespNombre" value="${esc(d.responsableNombre)}" placeholder="Nombre del responsable"></div>
@@ -8324,30 +8549,68 @@ function renderFormEditarEntregaDtl(){
       <button class="btn btn-primary" id="btnEeDtlGuardar">${I.check} Guardar cambios</button>
     </div>
   </div>`);
+  if(d.catalogoUnico){
+    renderEeDtlItemsList();
+    document.getElementById('btnEeDtlAddItem').onclick = ()=>{ d.items.push({nombreItem:'',cantidad:1,talla:''}); renderEeDtlItemsList(); };
+  }
   document.getElementById('btnEeDtlGuardar').onclick = guardarEdicionEntregaDtl;
   document.getElementById('btnCorregirFirmaTrabDtl').onclick = ()=> abrirCorregirFirmaEntrega('dtl_entregas','firma_trabajador','Firma del trabajador','dotacion');
   const bcr = document.getElementById('btnCorregirFirmaRespDtl'); if(bcr) bcr.onclick = ()=> abrirCorregirFirmaEntrega('dtl_entregas','firma_responsable','Firma del responsable','dotacion');
 }
 
+/* Editor de ítems de una entrega ya registrada, para entidades con "catálogo único"
+   — calco de renderEeItemsList (EPP, líneas ~6032-6052): inputs de texto libre, no un
+   select del catálogo (igual que EPP, que tampoco usa el catálogo para editar, solo
+   para registrar una entrega nueva). */
+function renderEeDtlItemsList(){
+  const host = document.getElementById('eeDtlItemsList'); if(!host) return;
+  const d = editarEntregaDtlDraft;
+  host.innerHTML = d.items.map((it,i)=>`
+    <div class="item-row" data-i="${i}">
+      <span class="firmante-num">${i+1}</span>
+      <input data-f="nombreItem" value="${esc(it.nombreItem||'')}" placeholder="Nombre del ítem">
+      <input data-f="cantidad" type="number" min="1" step="1" value="${it.cantidad}" placeholder="Cant.">
+      <input data-f="talla" value="${esc(it.talla||'')}" placeholder="Talla (opc.)">
+      <button class="icon-btn danger" data-del="${i}" title="Quitar" ${d.items.length<=1?'disabled':''}>${I.trash}</button>
+    </div>`).join('');
+  host.querySelectorAll('input[data-f]').forEach(el=>{
+    el.oninput = ()=>{
+      const i = +el.closest('.item-row').dataset.i;
+      const val = el.dataset.f==='cantidad' ? (+el.value||0) : el.value;
+      d.items[i][el.dataset.f] = val;
+    };
+  });
+  host.querySelectorAll('[data-del]').forEach(b=>{
+    b.onclick = ()=>{ if(d.items.length<=1) return; d.items.splice(+b.dataset.del,1); renderEeDtlItemsList(); };
+  });
+}
+
 async function guardarEdicionEntregaDtl(){
   const d = editarEntregaDtlDraft;
   const fecha = document.getElementById('eeDtlFecha').value;
-  const pantalonCantidad = +document.getElementById('eeDtlPantalonCant').value || 0;
-  const pantalonTalla = document.getElementById('eeDtlPantalonTalla').value.trim();
-  const camisaCantidad = +document.getElementById('eeDtlCamisaCant').value || 0;
-  const camisaTalla = document.getElementById('eeDtlCamisaTalla').value.trim();
-  const botasCantidad = +document.getElementById('eeDtlBotasCant').value || 0;
-  const botasTalla = document.getElementById('eeDtlBotasTalla').value.trim();
   const adicional = document.getElementById('eeDtlAdicional').value.trim();
-  if(pantalonCantidad>0 && !pantalonTalla){ toast("Escribe la talla del pantalón","err"); return; }
-  if(camisaCantidad>0 && !camisaTalla){ toast("Escribe la talla de la camisa","err"); return; }
-  if(botasCantidad>0 && !botasTalla){ toast("Escribe la talla de las botas","err"); return; }
-  const payload = {
-    fecha, pantalon_cantidad: pantalonCantidad, pantalon_talla: pantalonTalla||null,
-    camisa_cantidad: camisaCantidad, camisa_talla: camisaTalla||null,
-    botas_cantidad: botasCantidad, botas_talla: botasTalla||null,
-    adicional: adicional||null
-  };
+  let payload, validosItems;
+  if(d.catalogoUnico){
+    validosItems = d.items.filter(it=>it.nombreItem && it.cantidad>0);
+    if(!validosItems.length){ toast("Agrega al menos un ítem con nombre y cantidad","err"); return; }
+    payload = { fecha, pantalon_cantidad:0, pantalon_talla:null, camisa_cantidad:0, camisa_talla:null, botas_cantidad:0, botas_talla:null, adicional: adicional||null };
+  } else {
+    const pantalonCantidad = +document.getElementById('eeDtlPantalonCant').value || 0;
+    const pantalonTalla = document.getElementById('eeDtlPantalonTalla').value.trim();
+    const camisaCantidad = +document.getElementById('eeDtlCamisaCant').value || 0;
+    const camisaTalla = document.getElementById('eeDtlCamisaTalla').value.trim();
+    const botasCantidad = +document.getElementById('eeDtlBotasCant').value || 0;
+    const botasTalla = document.getElementById('eeDtlBotasTalla').value.trim();
+    if(pantalonCantidad>0 && !pantalonTalla){ toast("Escribe la talla del pantalón","err"); return; }
+    if(camisaCantidad>0 && !camisaTalla){ toast("Escribe la talla de la camisa","err"); return; }
+    if(botasCantidad>0 && !botasTalla){ toast("Escribe la talla de las botas","err"); return; }
+    payload = {
+      fecha, pantalon_cantidad: pantalonCantidad, pantalon_talla: pantalonTalla||null,
+      camisa_cantidad: camisaCantidad, camisa_talla: camisaTalla||null,
+      botas_cantidad: botasCantidad, botas_talla: botasTalla||null,
+      adicional: adicional||null
+    };
+  }
   if(d.via==='presencial'){
     payload.responsable_nombre = document.getElementById('eeDtlRespNombre').value.trim()||null;
     payload.responsable_cargo = document.getElementById('eeDtlRespCargo').value.trim()||null;
@@ -8357,6 +8620,11 @@ async function guardarEdicionEntregaDtl(){
   try{
     const { error } = await sb.from("dtl_entregas").update(payload).eq("id", d.id);
     if(error){ toast("No se pudo guardar: "+error.message,"err"); return; }
+    if(d.catalogoUnico){
+      await sb.from("dtl_entrega_items").delete().eq("entrega_id", d.id);
+      const { error:e2 } = await sb.from("dtl_entrega_items").insert(validosItems.map(it=>({ entrega_id: d.id, nombre_item: it.nombreItem, cantidad: it.cantidad, talla: it.talla||null })));
+      if(e2){ toast("Se guardó la entrega, pero hubo un error con los ítems: "+e2.message,"err"); closeModal(); renderFichaTrabajadorDtl(d.trabajadorId); return; }
+    }
     toast("Entrega actualizada","ok");
     closeModal();
     renderFichaTrabajadorDtl(d.trabajadorId);
@@ -8388,6 +8656,12 @@ async function construirKardexDtlPDF(trabajadorId, filtroFechas){
   const listaEntregas = entregas || [];
   if(!listaEntregas.length) return null;
   const nombreEntidad = (DTL.entidades.find(x=>x.id===t.entidad_id)||{}).nombre || "";
+  const idsEntDtlPdf = listaEntregas.filter(e=>e.tipo_registro!=='escaneado').map(e=>e.id);
+  const { data: itemsDtlPdf } = idsEntDtlPdf.length
+    ? await sb.from("dtl_entrega_items").select("entrega_id,nombre_item,cantidad,talla").in("entrega_id", idsEntDtlPdf)
+    : { data: [] };
+  const itemsPorEntregaDtlPdf = {};
+  (itemsDtlPdf||[]).forEach(it=>{ (itemsPorEntregaDtlPdf[it.entrega_id] = itemsPorEntregaDtlPdf[it.entrega_id]||[]).push(it); });
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({unit:"mm", format:"a4"});
@@ -8463,6 +8737,9 @@ async function construirKardexDtlPDF(trabajadorId, filtroFechas){
     if(e.pantalon_cantidad>0) partes.push("• Pantalón × "+e.pantalon_cantidad+(e.pantalon_talla?" ("+e.pantalon_talla+")":""));
     if(e.camisa_cantidad>0) partes.push("• Camisa × "+e.camisa_cantidad+(e.camisa_talla?" ("+e.camisa_talla+")":""));
     if(e.botas_cantidad>0) partes.push("• Botas × "+e.botas_cantidad+(e.botas_talla?" ("+e.botas_talla+")":""));
+    if(!partes.length && itemsPorEntregaDtlPdf[e.id]){
+      itemsPorEntregaDtlPdf[e.id].forEach(it=> partes.push("• "+it.nombre_item+" × "+it.cantidad+(it.talla?" ("+it.talla+")":"")));
+    }
     if(e.adicional) partes.push("• "+e.adicional);
     const lineas = esEscaneada ? [pdfTexto(e.adjunto_titulo||'Entrega escaneada')] : (partes.length ? partes : ["—"]);
     doc.setFont("helvetica","normal"); doc.setFontSize(7.4);
@@ -8646,6 +8923,12 @@ async function descargarExcelDtlSeleccion(entidadIds){
     if(error){ toast("No se pudo cargar: "+error.message,"err"); return; }
     const entregasPorTrab = {};
     (entregas||[]).forEach(e=>{ (entregasPorTrab[e.trabajador_id]=entregasPorTrab[e.trabajador_id]||[]).push(e); });
+    const idsEntXls = (entregas||[]).map(e=>e.id);
+    const { data: itemsXls } = idsEntXls.length
+      ? await sb.from("dtl_entrega_items").select("entrega_id,nombre_item,cantidad,talla").in("entrega_id", idsEntXls)
+      : { data: [] };
+    const itemsPorEntregaXls = {};
+    (itemsXls||[]).forEach(it=>{ (itemsPorEntregaXls[it.entrega_id] = itemsPorEntregaXls[it.entrega_id]||[]).push(it); });
 
     const filas = [];
     trabajadores.forEach(t=>{
@@ -8659,6 +8942,9 @@ async function descargarExcelDtlSeleccion(entidadIds){
           if(e.pantalon_cantidad>0) partes.push('Pantalón × '+e.pantalon_cantidad+(e.pantalon_talla?' ('+e.pantalon_talla+')':''));
           if(e.camisa_cantidad>0) partes.push('Camisa × '+e.camisa_cantidad+(e.camisa_talla?' ('+e.camisa_talla+')':''));
           if(e.botas_cantidad>0) partes.push('Botas × '+e.botas_cantidad+(e.botas_talla?' ('+e.botas_talla+')':''));
+          if(!partes.length && itemsPorEntregaXls[e.id]){
+            itemsPorEntregaXls[e.id].forEach(it=> partes.push(it.nombre_item+' × '+it.cantidad+(it.talla?' ('+it.talla+')':'')));
+          }
           if(e.adicional) partes.push(e.adicional);
           filas.push({
             Contrato: nombreContrato, 'Nombre completo': t.nombre, 'Identificación': t.identificacion,
@@ -8716,12 +9002,49 @@ function renderDtlPublicoCedula(){
       return;
     }
     dtlPublicoState.trabajador = data.trabajador;
-    renderDtlPublicoFormulario();
+    await renderDtlPublicoFormulario();
   };
 }
 
-function renderDtlPublicoFormulario(){
+/* Lista completa del catálogo único, una casilla por ítem — mismo patrón que
+   renderEpListaCatalogo (EPP, líneas ~6267-6295): se prefirió sobre un
+   "agregar ítem" dinámico porque quien llena esto solo desde el celular se
+   enredaba con ese patrón (ver [[7.74]] en MEMORY.md). */
+function renderDpListaCatalogoDtl(){
+  const host = document.getElementById('dpListaCatalogoDtl');
+  if(!host) return;
+  host.innerHTML = dtlPublicoState.catalogo.map(c=>{
+    const s = dtlPublicoState.seleccion[c.id];
+    return `<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:8px">
+      <label class="chk" style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px">
+        <input type="checkbox" data-dp-inc="${c.id}" ${s.incluido?'checked':''}> ${esc(c.nombre)}${c.unidad?` <span class="muted-sm">(${esc(c.unidad)})</span>`:''}
+      </label>
+      ${s.incluido?`
+      <div class="field row2" style="margin-top:10px">
+        <div><label>Cantidad</label><input type="number" min="1" step="1" value="${s.cantidad||1}" data-dp-cant="${c.id}"></div>
+        <div><label>Talla <span class="opt">(opcional)</span></label><input placeholder="Si aplica" value="${esc(s.talla||'')}" data-dp-talla="${c.id}"></div>
+      </div>`:''}
+    </div>`;
+  }).join('');
+  host.querySelectorAll('[data-dp-inc]').forEach(chk=>{
+    chk.onchange = ()=>{ dtlPublicoState.seleccion[chk.dataset.dpInc].incluido = chk.checked; renderDpListaCatalogoDtl(); };
+  });
+  host.querySelectorAll('[data-dp-cant]').forEach(inp=>{
+    inp.oninput = ()=>{ dtlPublicoState.seleccion[inp.dataset.dpCant].cantidad = +inp.value || 1; };
+  });
+  host.querySelectorAll('[data-dp-talla]').forEach(inp=>{
+    inp.oninput = ()=>{ dtlPublicoState.seleccion[inp.dataset.dpTalla].talla = inp.value; };
+  });
+}
+
+async function renderDtlPublicoFormulario(){
   const t = dtlPublicoState.trabajador;
+  if(t.catalogo_unico){
+    const { data } = await sb.rpc('dtl_publico_catalogo', { p_entidad_id: t.entidad_id });
+    dtlPublicoState.catalogo = data || [];
+    dtlPublicoState.seleccion = {};
+    dtlPublicoState.catalogo.forEach(c=> dtlPublicoState.seleccion[c.id] = { incluido:false, cantidad:1, talla:'' });
+  }
   document.getElementById("app").innerHTML = `
     <div class="pub-wrap"><div class="pub-card"><div class="pub-body">
       <img src="${LOGO}" alt="Don Aseo Ltda." style="height:40px;display:block;margin:0 auto 14px">
@@ -8731,6 +9054,10 @@ function renderDtlPublicoFormulario(){
         ${t.entidad_nombre?`<div class="muted-sm" style="margin-top:2px">${esc(t.entidad_nombre)}</div>`:''}
       </div>
       <label style="font-weight:700;font-size:14px;display:block;margin-bottom:10px">Elementos que estás recibiendo</label>
+      ${t.catalogo_unico ? `
+      <div id="dpListaCatalogoDtl"></div>
+      ${!dtlPublicoState.catalogo.length?`<p class="muted-sm">No hay ítems configurados en el catálogo de este contrato — contacta a Recursos Humanos.</p>`:''}
+      ` : `
       <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="dpPantalonInc" checked> Pantalones</label>
       <div class="field row2" id="dpPantalonFields">
         <div><label>Cantidad</label><input type="number" min="0" id="dpPantalonCant" value="2"></div>
@@ -8746,6 +9073,7 @@ function renderDtlPublicoFormulario(){
         <div><label>Cantidad de pares</label><input type="number" min="0" id="dpBotasCant" value="1"></div>
         <div><label>Talla *</label><input id="dpBotasTalla" placeholder="Ej. 40"></div>
       </div>
+      `}
       <div class="field"><label>Adicional <span class="opt">(opcional)</span></label><textarea id="dpAdicional" placeholder="Algo más que estés recibiendo…"></textarea></div>
 
       <div style="margin-bottom:14px">
@@ -8767,9 +9095,13 @@ function renderDtlPublicoFormulario(){
   initSignature();
   document.getElementById('sigClear').onclick = ()=> sigPad.clear();
   wireDpFotoPreview();
-  wireIncluirItemDtl('dpPantalonInc','dpPantalonFields','dpPantalonCant',2);
-  wireIncluirItemDtl('dpCamisaInc','dpCamisaFields','dpCamisaCant',2);
-  wireIncluirItemDtl('dpBotasInc','dpBotasFields','dpBotasCant',1);
+  if(t.catalogo_unico){
+    renderDpListaCatalogoDtl();
+  } else {
+    wireIncluirItemDtl('dpPantalonInc','dpPantalonFields','dpPantalonCant',2);
+    wireIncluirItemDtl('dpCamisaInc','dpCamisaFields','dpCamisaCant',2);
+    wireIncluirItemDtl('dpBotasInc','dpBotasFields','dpBotasCant',1);
+  }
   document.getElementById('dpConfirmarBtn').onclick = confirmarEntregaDtlPublica;
 }
 
@@ -8793,31 +9125,44 @@ function wireDpFotoPreview(){
 
 async function confirmarEntregaDtlPublica(){
   const err = document.getElementById('dpError'); err.textContent = '';
-  const pCant = +document.getElementById('dpPantalonCant').value || 0;
-  const pTalla = document.getElementById('dpPantalonTalla').value.trim();
-  const cCant = +document.getElementById('dpCamisaCant').value || 0;
-  const cTalla = document.getElementById('dpCamisaTalla').value.trim();
-  const bCant = +document.getElementById('dpBotasCant').value || 0;
-  const bTalla = document.getElementById('dpBotasTalla').value.trim();
-  if(pCant>0 && !pTalla){ err.textContent = 'Escribe la talla del pantalón.'; return; }
-  if(cCant>0 && !cTalla){ err.textContent = 'Escribe la talla de la camisa.'; return; }
-  if(bCant>0 && !bTalla){ err.textContent = 'Escribe la talla de las botas.'; return; }
+  const t = dtlPublicoState.trabajador;
+  const adicional = document.getElementById('dpAdicional').value.trim() || null;
+  let rpc, params;
+  if(t.catalogo_unico){
+    const items = [];
+    dtlPublicoState.catalogo.forEach(c=>{
+      const s = dtlPublicoState.seleccion[c.id];
+      if(!s || !s.incluido) return;
+      const cant = +s.cantidad || 0;
+      if(cant>0) items.push({ nombre: c.nombre, cantidad: cant, talla: (s.talla||'').trim()||null });
+    });
+    if(!items.length){ err.textContent = 'Selecciona al menos un ítem que estás recibiendo.'; return; }
+    rpc = 'dtl_publico_registrar_items';
+    params = { p_trabajador_id: t.id, p_items: items, p_adicional: adicional, p_firma_trabajador: null, p_foto_trabajador: dtlPublicoState.foto };
+  } else {
+    const pCant = +document.getElementById('dpPantalonCant').value || 0;
+    const pTalla = document.getElementById('dpPantalonTalla').value.trim();
+    const cCant = +document.getElementById('dpCamisaCant').value || 0;
+    const cTalla = document.getElementById('dpCamisaTalla').value.trim();
+    const bCant = +document.getElementById('dpBotasCant').value || 0;
+    const bTalla = document.getElementById('dpBotasTalla').value.trim();
+    if(pCant>0 && !pTalla){ err.textContent = 'Escribe la talla del pantalón.'; return; }
+    if(cCant>0 && !cTalla){ err.textContent = 'Escribe la talla de la camisa.'; return; }
+    if(bCant>0 && !bTalla){ err.textContent = 'Escribe la talla de las botas.'; return; }
+    rpc = 'dtl_publico_registrar';
+    params = {
+      p_trabajador_id: t.id,
+      p_pantalon_cantidad: pCant, p_pantalon_talla: pTalla || null,
+      p_camisa_cantidad: cCant, p_camisa_talla: cTalla || null,
+      p_botas_cantidad: bCant, p_botas_talla: bTalla || null,
+      p_adicional: adicional, p_firma_trabajador: null, p_foto_trabajador: dtlPublicoState.foto
+    };
+  }
   if(APP_CONFIG.dotacionFotoObligatoria && !dtlPublicoState.foto){ err.textContent = 'Tu foto es obligatoria para continuar.'; return; }
   if(!sigPad || sigPad.isEmpty()){ err.textContent = 'Falta tu firma.'; return; }
   const btn = document.getElementById('dpConfirmarBtn'); btn.disabled=true; btn.innerHTML='Guardando…';
-  const firma = sigPad.dataURL();
-  const { data, error } = await sb.rpc('dtl_publico_registrar', {
-    p_trabajador_id: dtlPublicoState.trabajador.id,
-    p_pantalon_cantidad: pCant,
-    p_pantalon_talla: pTalla || null,
-    p_camisa_cantidad: cCant,
-    p_camisa_talla: cTalla || null,
-    p_botas_cantidad: bCant,
-    p_botas_talla: bTalla || null,
-    p_adicional: document.getElementById('dpAdicional').value.trim() || null,
-    p_firma_trabajador: firma,
-    p_foto_trabajador: dtlPublicoState.foto
-  });
+  params.p_firma_trabajador = sigPad.dataURL();
+  const { data, error } = await sb.rpc(rpc, params);
   if(error || !data || !data.ok){
     btn.disabled=false; btn.innerHTML=`${I.check} Confirmar entrega`;
     err.textContent = (error && error.message) ? error.message : 'No se pudo registrar la entrega. Intenta de nuevo.';
@@ -8844,10 +9189,10 @@ async function renderDtlPublicoNuevo(entidadId){
     document.getElementById("app").innerHTML = pantallaFirmaOk("Enlace no disponible", "Este enlace ya no está activo. Contacta a tu supervisor.");
     return;
   }
-  renderDtlPublicoNuevoFormulario(entidadId, data.nombre);
+  renderDtlPublicoNuevoFormulario(entidadId, data.nombre, !!data.catalogo_unico);
 }
 
-function renderDtlPublicoNuevoFormulario(entidadId, nombreEntidad){
+function renderDtlPublicoNuevoFormulario(entidadId, nombreEntidad, catalogoUnico){
   document.getElementById("app").innerHTML = `
     <div class="pub-wrap"><div class="pub-card"><div class="pub-body">
       <img src="${LOGO}" alt="Don Aseo Ltda." style="height:48px;display:block;margin:0 auto 18px">
@@ -8877,8 +9222,8 @@ function renderDtlPublicoNuevoFormulario(entidadId, nombreEntidad){
         : 'No se pudo crear tu ficha. Intenta de nuevo.';
       return;
     }
-    dtlPublicoState.trabajador = { id: data.trabajador_id, nombre, identificacion: cedula, cargo, entidad_nombre: nombreEntidad };
-    renderDtlPublicoFormulario();
+    dtlPublicoState.trabajador = { id: data.trabajador_id, nombre, identificacion: cedula, cargo, entidad_id: entidadId, entidad_nombre: nombreEntidad, catalogo_unico: catalogoUnico };
+    await renderDtlPublicoFormulario();
   };
 }
 
