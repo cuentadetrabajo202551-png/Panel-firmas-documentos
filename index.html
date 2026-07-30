@@ -7702,14 +7702,43 @@ function renderCatalogoUnicoLista(){
       <span style="flex:1;font-weight:600;font-size:13.5px;${c.activo?'':'opacity:.45;text-decoration:line-through'}">${esc(c.nombre)}</span>
       <span class="muted-sm" style="width:70px">${esc(c.unidad||'—')}</span>
       <label class="chk" style="padding:0"><input type="checkbox" data-catdtl-activo="${c.id}" ${c.activo?'checked':''}> activo</label>
+      <button class="icon-btn" title="Editar" data-catdtl-editar="${c.id}">${I.pen}</button>
       <button class="icon-btn danger" title="Eliminar" data-catdtl-del="${c.id}">${I.trash}</button>
     </div>`).join('') : '<div class="muted-sm" style="padding:14px 0">Sin ítems todavía.</div>';
   host.querySelectorAll('[data-catdtl-activo]').forEach(chk=>{
     chk.onchange = ()=> toggleItemCatalogoDtl(chk.dataset.catdtlActivo, chk.checked);
   });
+  host.querySelectorAll('[data-catdtl-editar]').forEach(b=>{
+    b.onclick = ()=> editarItemCatalogoDtl(b.dataset.catdtlEditar);
+  });
   host.querySelectorAll('[data-catdtl-del]').forEach(b=>{
     b.onclick = ()=> eliminarItemCatalogoDtl(b.dataset.catdtlDel);
   });
+}
+
+function editarItemCatalogoDtl(id){
+  const c = DTL.catalogo.find(x=>x.id===id);
+  if(!c) return;
+  openSubModal(`<div class="modal" style="max-width:420px">
+    <div class="modal-head"><div><h2>Editar ítem</h2><p>No afecta las entregas ya registradas — esas conservan el nombre con el que se guardaron.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Nombre del ítem</label><input id="editCatDtlNombre" value="${esc(c.nombre)}" placeholder="Nombre del ítem"></div>
+      <div class="field"><label>Unidad <span class="opt">(opcional)</span></label><input id="editCatDtlUnidad" value="${esc(c.unidad||'')}" placeholder="par, unidad…"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="confEditCatDtl">${I.check} Guardar</button></div></div>`, ()=>abrirCatalogoUnicoDtl());
+  document.getElementById("confEditCatDtl").onclick = async ()=>{
+    const nombre = document.getElementById('editCatDtlNombre').value.trim();
+    const unidad = document.getElementById('editCatDtlUnidad').value.trim() || null;
+    if(!nombre){ toast("Escribe el nombre del ítem","err"); return; }
+    const btn=document.getElementById("confEditCatDtl"); btn.disabled=true; btn.innerHTML="Guardando…";
+    const { error } = await sb.from("dtl_catalogo").update({ nombre, unidad }).eq("id", id);
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
+    await loadDtlState();
+    toast("Ítem actualizado","ok");
+    closeModal();
+  };
 }
 
 async function guardarItemCatalogoDtl(){
