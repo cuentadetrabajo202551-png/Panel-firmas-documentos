@@ -495,9 +495,14 @@ table.dt tr:hover td{background:#fafbfe}
 .cat-row input[type="text"]{flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13.5px}
 .cat-row input[type="text"].cat-unidad{flex:0 0 90px}
 .trab-summary{background:#f6f8fd;border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:16px}
+.aviso-cedula{background:#fff9e6;border:1px solid #f0d580;border-radius:12px;padding:12px 14px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;font-size:13.5px;color:#7a5c00;line-height:1.4}
+.aviso-cedula button{flex:none}
 .chip-predet{padding:6px 4px;border:1.5px solid var(--line);border-radius:8px;background:#fff;font-size:12px;font-weight:700;color:var(--ink-2);cursor:pointer;max-width:58px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chip-predet:hover{border-color:var(--brand-soft2)}
 .chip-predet.active{background:var(--brand);color:#fff;border-color:var(--brand)}
+.predet-pick{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1.5px solid var(--line);border-radius:10px;cursor:pointer;margin-bottom:8px;width:100%;background:#fff;text-align:left;font:inherit;color:inherit}
+.predet-pick:hover{border-color:var(--brand-soft2);background:var(--brand-soft)}
+.predet-pick span{font-size:13.5px;font-weight:700}
 .chip-estado{padding:10px 16px;border:1.5px solid var(--line);border-radius:10px;background:#fff;font-size:13.5px;font-weight:700;color:var(--ink-2);cursor:pointer;min-height:40px}
 .chip-estado:hover{border-color:var(--brand-soft2)}
 .chip-estado.active{border-color:transparent;color:#fff}
@@ -626,7 +631,8 @@ const I = {
   building:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><rect x="8" y="3" width="8" height="18"/><path d="M4 21V9h4M20 21V9h-4"/><path d="M11 21v-3h2v3"/><path d="M10.5 7h1M13.5 7h1M10.5 11h1M13.5 11h1M10.5 15h1M13.5 15h1"/></svg>',
   firma:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M14 2v6h6"/><path d="M7 16c.8-1.6 1.3-2.4 1.8-2.4s.5 1.6 1 1.6 .7-1.2 1.4-1.2 1 1.6 1.8 1.6"/></svg>',
   corregir:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14.5 3.5 3 3L8 16l-4 1 1-4Z"/><circle cx="18" cy="18" r="4"/><path d="m16.3 18 1.2 1.2 2.2-2.4"/></svg>',
-  catalogo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3C5.1 3 4 4.1 4 5.5v13C4 19.9 5.1 21 6.5 21H20V3H6.5Z"/><path d="M4 5.5C4 4.1 5.1 3 6.5 3M4 18.5c0 1.4 1.1 2.5 2.5 2.5"/><rect x="8" y="7" width="8" height="6" rx="0.5"/><path d="M9.5 8l1.3-1h2.4l1.3 1 1.3 1.1-1 1.2-.8-.6V12h-4.2V9.7l-.8.6-1-1.2Z"/><path d="M8.3 16.5h7.4"/></svg>'
+  catalogo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3C5.1 3 4 4.1 4 5.5v13C4 19.9 5.1 21 6.5 21H20V3H6.5Z"/><path d="M4 5.5C4 4.1 5.1 3 6.5 3M4 18.5c0 1.4 1.1 2.5 2.5 2.5"/><rect x="8" y="7" width="8" height="6" rx="0.5"/><path d="M9.5 8l1.3-1h2.4l1.3 1 1.3 1.1-1 1.2-.8-.6V12h-4.2V9.7l-.8.6-1-1.2Z"/><path d="M8.3 16.5h7.4"/></svg>',
+  warn:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>'
 };
 
 /* ============================================================
@@ -4285,8 +4291,8 @@ let seleccionadosDot = new Set();
 
 async function loadDotacionState(){
   const [co, t, e, ei] = await Promise.all([
-    sb.from("dot_contratos").select("id,nombre,activo,creado_en,modo_registro").order("creado_en",{ascending:true}),
-    cargarTodasFilas(()=> sb.from("dot_trabajadores").select("id,nombre,identificacion,cargo,area,contrato_id,activo,inactivo_por_archivo,creado_en").order("nombre",{ascending:true}).order("id",{ascending:true})),
+    sb.from("dot_contratos").select("id,nombre,activo,creado_en,modo_registro,link_nuevos_activo").order("creado_en",{ascending:true}),
+    cargarTodasFilas(()=> sb.from("dot_trabajadores").select("id,nombre,identificacion,cargo,area,contrato_id,fecha_ingreso,fecha_salida,aviso_cedula_rh,activo,inactivo_por_archivo,creado_en").order("nombre",{ascending:true}).order("id",{ascending:true})),
     cargarTodasFilas(()=> sb.from("dot_entregas").select("id,trabajador_id,fecha").order("fecha",{ascending:false}).order("id",{ascending:true})),
     cargarTodasFilas(()=> sb.from("dot_entrega_items").select("entrega_id,nombre_item,cantidad").order("id",{ascending:true}))
   ]);
@@ -4905,9 +4911,11 @@ function renderContratosLista(){
       <span class="muted-sm" style="width:90px">${n} trabajador${n===1?'':'es'}</span>
       <button class="icon-btn" title="Renombrar" data-ct-edit="${c.id}">${I.pen}</button>
       <button class="icon-btn" title="${c.activo?'Archivar':'Reactivar'}" data-ct-toggle="${c.id}">${c.activo?I.lock:I.check}</button>
+      <button class="icon-btn danger" title="${n?'No se puede eliminar: tiene trabajadores asociados':'Eliminar'}" data-ct-del="${c.id}" ${n?'disabled':''}>${I.trash}</button>
     </div>`;
   }).join('');
   host.querySelectorAll('[data-ct-edit]').forEach(b=>{ b.onclick = ()=> abrirFormContrato(b.dataset.ctEdit, ()=>abrirGestionContratos()); });
+  host.querySelectorAll('[data-ct-del]').forEach(b=>{ b.onclick = ()=> eliminarContratoDot(b.dataset.ctDel); });
   host.querySelectorAll('[data-ct-toggle]').forEach(b=>{
     b.onclick = async ()=>{
       const c = DOTACION.contratos.find(x=>x.id===b.dataset.ctToggle);
@@ -4944,6 +4952,33 @@ function renderContratosLista(){
         :`Contrato reactivado${nTocados?` — ${nTocados} trabajador(es) reactivados`:''}`,"ok");
     };
   });
+}
+
+/* Eliminar un contrato en duro — la base de datos ya lo bloquea (llave foránea, sin
+   cascade) si todavía tiene algún trabajador asociado, activo o inactivo. Solo
+   funciona para un contrato que quedó vacío (ej. se creó por error). */
+function eliminarContratoDot(id){
+  const c = DOTACION.contratos.find(x=>x.id===id); if(!c) return;
+  openSubModal(`<div class="modal" style="max-width:420px">
+    <div class="modal-head"><div><h2>Eliminar contrato</h2><p>Esta acción no se puede deshacer.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminará el contrato "<b>${esc(c.nombre)}</b>". Solo se puede eliminar si no tiene ningún trabajador asociado (ni activo ni inactivo).</p></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-danger" id="confDelContratoDot">${I.trash} Sí, eliminar</button></div></div>`, ()=> abrirGestionContratos());
+  document.getElementById('confDelContratoDot').onclick = async ()=>{
+    const btn = document.getElementById('confDelContratoDot'); btn.disabled=true; btn.innerHTML="Eliminando…";
+    const { error } = await sb.from("dot_contratos").delete().eq("id", id);
+    if(error){
+      btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`;
+      const fk = /foreign key|violat/i.test(error.message||"");
+      toast(fk?"No se puede eliminar: todavía tiene trabajadores asociados. Archívalo en vez de eliminarlo, o elimina primero a sus trabajadores.":"No se pudo eliminar: "+error.message,"err");
+      return;
+    }
+    if(id===contratoActualId){ contratoActualId='todos'; localStorage.setItem('dot_contrato_actual','todos'); }
+    await loadDotacionState();
+    toast("Contrato eliminado","ok");
+    closeModal();
+  };
 }
 
 /* ---------- Directorio: crear / editar / eliminar trabajador ---------- */
@@ -5884,6 +5919,7 @@ async function renderFichaTrabajador(id){
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
           <button class="btn btn-ghost btn-sm" id="btnVolverDot">${I.back} Volver</button>
         </div>
+        ${t.aviso_cedula_rh?`<div class="aviso-cedula"><span>${I.warn} ${esc(t.aviso_cedula_rh)}</span><button class="btn btn-ghost btn-sm" id="btnDescartarAvisoCedula">Descartar</button></div>`:''}
         <div class="page-head">
           <div><h1>${esc(t.nombre)}</h1><p>C.C. ${esc(t.identificacion)}${t.cargo?' · '+esc(t.cargo):''}${t.area?' · '+esc(t.area):''} · ${esc(DOTACION.contratos.find(c=>c.id===t.contrato_id)?.nombre||'—')}${t.fecha_ingreso?' · Ingresó '+fmtDate(t.fecha_ingreso):''}${t.fecha_salida?' · Salió '+fmtDate(t.fecha_salida):''}</p></div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
@@ -5901,6 +5937,7 @@ async function renderFichaTrabajador(id){
     wireLogout();
     document.getElementById('btnVolverDot').onclick = ()=> location.hash="#/dotacion";
     const bet = document.getElementById('btnEditarTrab'); if(bet) bet.onclick = ()=> abrirTrabajadorForm(t.id);
+    const bdac = document.getElementById('btnDescartarAvisoCedula'); if(bdac) bdac.onclick = ()=> descartarAvisoCedulaRh('dot_trabajadores', t.id, ()=>renderFichaTrabajador(t.id));
     const bk = document.getElementById('btnKardex'); if(bk) bk.onclick = ()=> generarKardexPDF(t.id);
     const bzip = document.getElementById('btnZipAdjuntos'); if(bzip) bzip.onclick = ()=> descargarZipAdjuntosTrabajador('dot_entregas', t.id, t.nombre);
     const bnef = document.getElementById('btnNuevaEntregaFicha'); if(bnef) bnef.onclick = ()=> abrirNuevaEntrega(t.id);
@@ -6042,12 +6079,26 @@ async function guardarEdicionEntrega(){
    Reemplaza SOLO esa firma puntual — no toca fecha/ítems/foto/lo demás.
    Compartida entre EPP (dot_entregas) y Dotación (dtl_entregas): "tabla" y
    "modulo" dicen a cuál de las dos vuelve y en qué draft en memoria escribir. ---------- */
-function abrirCorregirFirmaEntrega(tabla, campo, etiqueta, modulo){
+async function abrirCorregirFirmaEntrega(tabla, campo, etiqueta, modulo){
   const draft = modulo==='epp' ? editarEntregaDraft : editarEntregaDtlDraft;
+  let predet = [];
+  if(campo==='firma_responsable'){
+    if(modulo==='epp'){ predet = DOTACION.predeterminados; }
+    else {
+      const trab = DTL.trabajadores.find(t=>t.id===draft.trabajadorId);
+      predet = await cargarPredeterminadosDtl(trab?.entidad_id);
+    }
+  }
+  const volver = ()=> modulo==='epp' ? renderFormEditarEntrega() : renderFormEditarEntregaDtl();
   openSubModal(`<div class="modal" style="max-width:480px">
     <div class="modal-head"><div><h2>Corregir ${etiqueta.toLowerCase()}</h2><p>Reemplaza la firma guardada en esta entrega.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
+      ${predet.length?`<label style="font-weight:700;font-size:14px;display:block;margin-bottom:8px">Usar una firma guardada</label>
+      <div id="predetPickList">
+        ${predet.map(p=>`<button type="button" class="predet-pick" data-predet-firma="${p.id}"><img src="${p.firma}" class="sig-thumb"><span>${esc(p.responsable_nombre)} — ${esc(p.nombre)}</span></button>`).join('')}
+      </div>
+      <label style="font-weight:700;font-size:14px;display:block;margin:16px 0 8px">O firma nueva</label>`:''}
       <div class="sig-box" id="sigBox"><canvas id="sigCanvas"></canvas><div class="sig-placeholder" id="sigPh">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div></div>
       <div class="sig-actions"><button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar</button></div>
     </div>
@@ -6055,12 +6106,10 @@ function abrirCorregirFirmaEntrega(tabla, campo, etiqueta, modulo){
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" id="btnGuardarFirmaCorregida">${I.check} Guardar firma</button>
     </div>
-  </div>`, ()=> modulo==='epp' ? renderFormEditarEntrega() : renderFormEditarEntregaDtl());
+  </div>`, volver);
   initSignature();
   document.getElementById('sigClear').onclick = ()=> sigPad.clear();
-  document.getElementById('btnGuardarFirmaCorregida').onclick = async ()=>{
-    if(!sigPad || sigPad.isEmpty()){ toast("Firma primero","err"); return; }
-    const firma = sigPad.dataURL();
+  const guardar = async (firma)=>{
     const btn = document.getElementById('btnGuardarFirmaCorregida'); btn.disabled=true; btn.innerHTML="Guardando…";
     bloquear("Guardando firma…");
     const { error } = await sb.from(tabla).update({ [campo]: firma }).eq("id", draft.id);
@@ -6070,6 +6119,25 @@ function abrirCorregirFirmaEntrega(tabla, campo, etiqueta, modulo){
     toast("Firma corregida","ok");
     closeModal();
   };
+  document.querySelectorAll('#predetPickList [data-predet-firma]').forEach(btnP=>{
+    btnP.onclick = ()=>{
+      const p = predet.find(x=>x.id===btnP.dataset.predetFirma);
+      if(p) guardar(p.firma);
+    };
+  });
+  document.getElementById('btnGuardarFirmaCorregida').onclick = ()=>{
+    if(!sigPad || sigPad.isEmpty()){ toast("Firma primero","err"); return; }
+    guardar(sigPad.dataURL());
+  };
+}
+
+/* Quita el aviso de "RH cambió la cédula" de la ficha de un trabajador, una vez
+   que el admin ya lo revisó — no cambia ningún otro dato. */
+async function descartarAvisoCedulaRh(tabla, id, alTerminar){
+  const { error } = await sb.from(tabla).update({ aviso_cedula_rh: null }).eq("id", id);
+  if(error){ toast("No se pudo descartar: "+error.message,"err"); return; }
+  toast("Aviso descartado","ok");
+  if(alTerminar) alTerminar();
 }
 
 /* ---------- "Link trabajadores nuevos": herramienta admin-only, compartida entre
@@ -6082,14 +6150,18 @@ function mostrarLinkTrabajadoresNuevos(modulo){
   const enTodos = modulo==='epp' ? (contratoActualId==='todos') : (dtlFiltroEntidad==='todas');
   if(enTodos){ toast("Elige un contrato específico primero","err"); return; }
   const id = modulo==='epp' ? contratoActualId : dtlFiltroEntidad;
+  const tabla = modulo==='epp' ? 'dot_contratos' : 'dtl_entidades';
   const ruta = modulo==='epp' ? 'dotacion' : 'dotacionlegal';
-  const nombre = modulo==='epp' ? DOTACION.contratos.find(c=>c.id===id)?.nombre : DTL.entidades.find(e=>e.id===id)?.nombre;
+  const c = modulo==='epp' ? DOTACION.contratos.find(x=>x.id===id) : DTL.entidades.find(x=>x.id===id);
+  const nombre = c?.nombre;
   const url = location.href.split("#")[0] + "#/" + ruta + "/entrega-nuevo/" + id;
+  const activo = c?.link_nuevos_activo !== false;
   openModal(`<div class="modal" style="max-width:460px">
     <div class="modal-head"><div><h2>Link trabajadores nuevos</h2><p>${esc(nombre||'')}</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
       <p class="muted-sm" style="margin-bottom:10px">Para trabajadores que todavía no tienen ficha creada (RH no los ha cargado). Al entrar, primero llenan sus datos personales y quedan registrados en este contrato — de ahí en adelante usan el enlace normal para sus próximas entregas. Solo funciona una vez por cédula.</p>
+      <label class="chk" style="margin-bottom:10px"><input type="checkbox" id="chkLinkNuevosActivo" ${activo?'checked':''}> Enlace activo (desactívalo cuando no lo necesites, para evitar errores)</label>
       <div class="field"><input readonly value="${esc(url)}" onclick="this.select()"></div>
     </div>
     <div class="modal-foot">
@@ -6099,6 +6171,13 @@ function mostrarLinkTrabajadoresNuevos(modulo){
     </div></div>`);
   document.getElementById('btnCopiarLinkNuevos').onclick = ()=> copyText(url, "Enlace copiado");
   document.getElementById('btnQrLinkNuevos').onclick = ()=> mostrarQR(url, "Trabajadores nuevos — "+(nombre||''));
+  document.getElementById('chkLinkNuevosActivo').onchange = async (e)=>{
+    const nuevoValor = e.target.checked;
+    const { error } = await sb.from(tabla).update({ link_nuevos_activo: nuevoValor }).eq("id", id);
+    if(error){ e.target.checked = !nuevoValor; toast("No se pudo actualizar: "+error.message,"err"); return; }
+    if(c) c.link_nuevos_activo = nuevoValor;
+    toast(nuevoValor?"Enlace activado":"Enlace desactivado","ok");
+  };
 }
 
 /* ============================================================
@@ -6716,8 +6795,8 @@ const DTL_DECLARACION = "Declaro haber recibido a satisfacción los elementos de
 
 async function loadDtlState(){
   const [en, t, e] = await Promise.all([
-    sb.from("dtl_entidades").select("id,nombre,activo,creado_en,modo_registro").order("creado_en",{ascending:true}),
-    cargarTodasFilas(()=> sb.from("dtl_trabajadores").select("id,nombre,identificacion,cargo,area,entidad_id,fecha_ingreso,correo,activo,inactivo_por_archivo,creado_en").order("nombre",{ascending:true}).order("id",{ascending:true})),
+    sb.from("dtl_entidades").select("id,nombre,activo,creado_en,modo_registro,link_nuevos_activo").order("creado_en",{ascending:true}),
+    cargarTodasFilas(()=> sb.from("dtl_trabajadores").select("id,nombre,identificacion,cargo,area,entidad_id,fecha_ingreso,fecha_salida,aviso_cedula_rh,correo,activo,inactivo_por_archivo,creado_en").order("nombre",{ascending:true}).order("id",{ascending:true})),
     cargarTodasFilas(()=> sb.from("dtl_entregas").select("id,trabajador_id,fecha").order("fecha",{ascending:false}).order("id",{ascending:true}))
   ]);
   const err = en.error || t.error || e.error;
@@ -7254,13 +7333,19 @@ function abrirGestionEntidadesDtl(){
 }
 function renderEntidadesDtlLista(){
   const host = document.getElementById('entidadesLista'); if(!host) return;
-  host.innerHTML = DTL.entidades.map(x=>`
+  host.innerHTML = DTL.entidades.map(x=>{
+    const n = DTL.trabajadores.filter(t=>t.entidad_id===x.id).length;
+    return `
     <div class="cat-row">
       <span style="flex:1;font-weight:600;font-size:13.5px;${x.activo?'':'opacity:.45'}">${esc(x.nombre)}${x.activo?'':' (archivado)'}</span>
+      <span class="muted-sm" style="width:90px">${n} trabajador${n===1?'':'es'}</span>
       <button class="icon-btn" title="Renombrar" data-ent-edit="${x.id}">${I.pen}</button>
       <button class="icon-btn ${x.activo?'danger':''}" title="${x.activo?'Archivar':'Reactivar'}" data-ent-toggle="${x.id}">${x.activo?I.lock:I.check}</button>
-    </div>`).join('') || '<p class="muted-sm">Sin contratos todavía.</p>';
+      <button class="icon-btn danger" title="${n?'No se puede eliminar: tiene trabajadores asociados':'Eliminar'}" data-ent-del="${x.id}" ${n?'disabled':''}>${I.trash}</button>
+    </div>`;
+  }).join('') || '<p class="muted-sm">Sin contratos todavía.</p>';
   host.querySelectorAll('[data-ent-edit]').forEach(b=>{ b.onclick = ()=> abrirFormEntidadDtl(b.dataset.entEdit); });
+  host.querySelectorAll('[data-ent-del]').forEach(b=>{ b.onclick = ()=> eliminarEntidadDtl(b.dataset.entDel); });
   host.querySelectorAll('[data-ent-toggle]').forEach(b=>{
     b.onclick = async ()=>{
       const x = DTL.entidades.find(e=>e.id===b.dataset.entToggle);
@@ -7296,6 +7381,33 @@ function renderEntidadesDtlLista(){
         :`Contrato reactivado${nTocados?` — ${nTocados} trabajador(es) reactivados`:''}`,"ok");
     };
   });
+}
+
+/* Eliminar un contrato en duro — la base de datos ya lo bloquea (llave foránea, sin
+   cascade) si todavía tiene algún trabajador asociado, activo o inactivo. Solo
+   funciona para un contrato que quedó vacío (ej. se creó por error). */
+function eliminarEntidadDtl(id){
+  const x = DTL.entidades.find(e=>e.id===id); if(!x) return;
+  openSubModal(`<div class="modal" style="max-width:420px">
+    <div class="modal-head"><div><h2>Eliminar contrato</h2><p>Esta acción no se puede deshacer.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminará el contrato "<b>${esc(x.nombre)}</b>". Solo se puede eliminar si no tiene ningún trabajador asociado (ni activo ni inactivo).</p></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-danger" id="confDelEntidadDtl">${I.trash} Sí, eliminar</button></div></div>`, ()=> abrirGestionEntidadesDtl());
+  document.getElementById('confDelEntidadDtl').onclick = async ()=>{
+    const btn = document.getElementById('confDelEntidadDtl'); btn.disabled=true; btn.innerHTML="Eliminando…";
+    const { error } = await sb.from("dtl_entidades").delete().eq("id", id);
+    if(error){
+      btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`;
+      const fk = /foreign key|violat/i.test(error.message||"");
+      toast(fk?"No se puede eliminar: todavía tiene trabajadores asociados. Archívalo en vez de eliminarlo, o elimina primero a sus trabajadores.":"No se pudo eliminar: "+error.message,"err");
+      return;
+    }
+    if(id===dtlFiltroEntidad){ dtlFiltroEntidad='todas'; localStorage.setItem('dtl_filtro_entidad','todas'); }
+    await loadDtlState();
+    toast("Contrato eliminado","ok");
+    closeModal();
+  };
 }
 /* comoRaiz=true: igual que en abrirFormContrato — se abre sin modal "padre" al que
    volver (ej. desde "Crea tu primer contrato"), así la X/Cancelar cierra de una. */
@@ -8097,6 +8209,7 @@ async function renderFichaTrabajadorDtl(id){
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
           <button class="btn btn-ghost btn-sm" id="btnVolverDtl">${I.back} Volver</button>
         </div>
+        ${t.aviso_cedula_rh?`<div class="aviso-cedula"><span>${I.warn} ${esc(t.aviso_cedula_rh)}</span><button class="btn btn-ghost btn-sm" id="btnDescartarAvisoCedulaDtl">Descartar</button></div>`:''}
         <div class="page-head">
           <div><h1>${esc(t.nombre)}</h1><p>C.C. ${esc(t.identificacion)}${t.cargo?' · '+esc(t.cargo):''}${t.area?' · '+esc(t.area):''} · ${esc(nombreEntidadDtl(t.entidad_id))}${t.fecha_ingreso?' · Ingresó '+fmtDate(t.fecha_ingreso):''}${t.fecha_salida?' · Salió '+fmtDate(t.fecha_salida):''}${t.correo?' · '+esc(t.correo):''}</p></div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
@@ -8114,6 +8227,7 @@ async function renderFichaTrabajadorDtl(id){
     wireLogout();
     document.getElementById('btnVolverDtl').onclick = ()=> location.hash="#/dotacionlegal";
     const bet = document.getElementById('btnEditarTrabDtl'); if(bet) bet.onclick = ()=> abrirTrabajadorDtlForm(t.id);
+    const bdac = document.getElementById('btnDescartarAvisoCedulaDtl'); if(bdac) bdac.onclick = ()=> descartarAvisoCedulaRh('dtl_trabajadores', t.id, ()=>renderFichaTrabajadorDtl(t.id));
     const bk = document.getElementById('btnKardexDtl'); if(bk) bk.onclick = ()=> generarKardexDtlPDF(t.id);
     const bzipDtl = document.getElementById('btnZipAdjuntosDtl'); if(bzipDtl) bzipDtl.onclick = ()=> descargarZipAdjuntosTrabajador('dtl_entregas', t.id, t.nombre);
     const bnef = document.getElementById('btnNuevaEntregaFichaDtl'); if(bnef) bnef.onclick = ()=> abrirNuevaEntregaDtl(t.id);
