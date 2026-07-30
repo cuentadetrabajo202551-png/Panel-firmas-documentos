@@ -910,6 +910,10 @@ async function router(){
   if(mResp){ await renderFirmaResponsable(decodeURIComponent(mResp[1])); return; }
   const mFdoc = location.hash.match(/^#\/firmadoc\/(.+)$/);
   if(mFdoc){ await renderFirmaDoc(decodeURIComponent(mFdoc[1])); return; }
+  const mNuevoEpp = location.hash.match(/^#\/dotacion\/entrega-nuevo\/(.+)$/);
+  if(mNuevoEpp){ await renderDotPublicoNuevo(decodeURIComponent(mNuevoEpp[1])); return; }
+  const mNuevoDtl = location.hash.match(/^#\/dotacionlegal\/entrega-nuevo\/(.+)$/);
+  if(mNuevoDtl){ await renderDtlPublicoNuevo(decodeURIComponent(mNuevoDtl[1])); return; }
   if(location.hash.startsWith("#/dotacionlegal/entrega")){ await renderDtlPublico(); return; }
   if(location.hash === "#/dotacion/entrega"){ await renderDotPublicoUniversal(); return; }
   const mInsp = location.hash.match(/^#\/inspeccion\/(.+)$/);
@@ -4413,6 +4417,7 @@ async function renderDotacionAdmin(silent){
           ${MIPERFIL.esAdmin?`<button class="action-card" id="btnCorregirCargos"><div class="ac-ic">${I.corregir}</div><span class="ac-title">Corregir cargos</span><span class="ac-chevron">›</span></button>`:''}
           ${totalTrab?`<button class="action-card" id="btnExcelEpp"><div class="ac-ic">${I.doc}</div><span class="ac-title">Descargar Excel</span><span class="ac-chevron">›</span></button>`:''}
           ${puedeEscribir()?`<button class="action-card" id="btnHistorialDot" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.cal}</div><span class="ac-title">Historial de entregas</span><span class="ac-chevron">›</span></button>`:''}
+          ${MIPERFIL.esAdmin?`<button class="action-card" id="btnLinkNuevosEpp" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.link}</div><span class="ac-title">Link trabajadores nuevos</span><span class="ac-chevron">›</span></button>`:''}
         </div>
       </div>
 
@@ -4439,6 +4444,7 @@ async function renderDotacionAdmin(silent){
   const bhd=document.getElementById("btnHistorialDot"); if(bhd) bhd.onclick = abrirHistorialEntregasDot;
   const bceEpp=document.getElementById("btnCopiarEnlaceEpp"); if(bceEpp) bceEpp.onclick = ()=> copyText(location.href.split("#")[0]+"#/dotacion/entrega", "Enlace de entrega remota copiado");
   const bqrEpp=document.getElementById("btnQrEpp"); if(bqrEpp) bqrEpp.onclick = ()=> mostrarQR(location.href.split("#")[0]+"#/dotacion/entrega", "Entrega remota de EPP");
+  const blnEpp=document.getElementById("btnLinkNuevosEpp"); if(blnEpp) blnEpp.onclick = ()=> mostrarLinkTrabajadoresNuevos('epp');
   renderDotacionBody();
   if(silent) window.scrollTo(0, scrollY);
   if(!silent){ if(_dotTimer) clearInterval(_dotTimer); _dotTimer = setInterval(_tickDot, 20000); }
@@ -4953,10 +4959,12 @@ function abrirTrabajadorForm(id){
       </div>
       <div class="field"><label>Nombre completo *</label><input id="tNombre" value="${esc(t?.nombre||'')}" placeholder="Nombres y apellidos"></div>
       <div class="field"><label>Número de identificación (cédula) *</label><input id="tCedula" value="${esc(t?.identificacion||'')}" placeholder="C.C." inputmode="numeric"></div>
+      <div class="field"><label>Cargo</label><input id="tCargo" value="${esc(t?.cargo||'')}" placeholder="Cargo"></div>
       <div class="field row2">
-        <div><label>Cargo</label><input id="tCargo" value="${esc(t?.cargo||'')}" placeholder="Cargo"></div>
-        <div><label>Área</label><input id="tArea" value="${esc(t?.area||'')}" placeholder="Área o dependencia"></div>
+        <div><label>Fecha de ingreso</label><input type="date" id="tFechaIngreso" value="${t?.fecha_ingreso||''}"></div>
+        <div><label>Fecha de salida</label><input type="date" value="${t?.fecha_salida||''}" disabled title="Se llena sola cuando Recursos Humanos marca la salida de este trabajador"></div>
       </div>
+      <p class="muted-sm">La fecha de salida se llena automáticamente cuando Recursos Humanos marca la salida del trabajador — no se edita aquí.</p>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
@@ -4970,15 +4978,15 @@ async function guardarTrabajador(id){
   const nombre = document.getElementById('tNombre').value.trim();
   const identificacion = document.getElementById('tCedula').value.trim();
   const cargo = document.getElementById('tCargo').value.trim() || null;
-  const area = document.getElementById('tArea').value.trim() || null;
+  const fecha_ingreso = document.getElementById('tFechaIngreso').value || null;
   if(!contrato_id){ toast("Selecciona el contrato","err"); return; }
   if(!nombre){ toast("Falta el nombre","err"); return; }
   if(!identificacion){ toast("Falta la identificación","err"); return; }
   const btn = document.getElementById('btnGuardarTrab'); btn.disabled=true; btn.innerHTML="Guardando…";
   bloquear("Guardando…");
   let error;
-  if(id){ ({error} = await sb.from("dot_trabajadores").update({nombre,identificacion,cargo,area,contrato_id}).eq("id",id)); }
-  else { ({error} = await sb.from("dot_trabajadores").insert({nombre,identificacion,cargo,area,contrato_id})); }
+  if(id){ ({error} = await sb.from("dot_trabajadores").update({nombre,identificacion,cargo,contrato_id,fecha_ingreso}).eq("id",id)); }
+  else { ({error} = await sb.from("dot_trabajadores").insert({nombre,identificacion,cargo,contrato_id,fecha_ingreso})); }
   desbloquear();
   if(error){
     btn.disabled=false; btn.innerHTML=`${I.check} Guardar`;
@@ -5049,12 +5057,12 @@ function abrirCargaMasivaDot(){
 function descargarPlantillaTrabajadoresDot(){
   if(!window.XLSX){ toast("No se pudo cargar el generador de Excel (revisa tu conexión)","err"); return; }
   const datos = [
-    ["Nombre completo","Identificación","Cargo","Área"],
-    ["Juan Pérez Gómez","1094567890","Operario","Aseo"],
-    ["María López Ruiz","43567123","Auxiliar","Cocina"]
+    ["Nombre completo","Identificación","Cargo","Fecha de ingreso"],
+    ["Juan Pérez Gómez","1094567890","Operario","2024-01-15"],
+    ["María López Ruiz","43567123","Auxiliar","2024-03-01"]
   ];
   const ws = XLSX.utils.aoa_to_sheet(datos);
-  ws["!cols"] = [{wch:28},{wch:16},{wch:20},{wch:20}];
+  ws["!cols"] = [{wch:28},{wch:16},{wch:20},{wch:16}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Trabajadores");
   XLSX.writeFile(wb, "Plantilla_trabajadores.xlsx");
@@ -5075,19 +5083,20 @@ async function cargarTrabajadoresExcelDot(file){
     const head = (filas[0]||[]).map(norm);
     const findCol = (...alts)=> head.findIndex(h => alts.some(a => h.includes(a)));
     let cNom = findCol("nombre"), cId = findCol("identificacion","cedula","documento","cc"),
-        cCar = findCol("cargo"), cAr = findCol("area","dependencia");
+        cCar = findCol("cargo"),
+        cFec = findCol("fecha de ingreso","fecha ingreso","ingreso");
     let start = 1;
-    if(cNom === -1 && cId === -1){ cNom=0; cId=1; cCar=2; cAr=3; start=0; }
+    if(cNom === -1 && cId === -1){ cNom=0; cId=1; cCar=2; cFec=3; start=0; }
     const filasValidas = []; let ignoradas = 0;
     for(let i=start;i<filas.length;i++){
       const r = filas[i]; if(!r) continue;
       const nombre = String(cNom>=0?r[cNom]:"").trim();
       const identificacion = String(cId>=0?r[cId]:"").trim();
       const cargo = String(cCar>=0?r[cCar]:"").trim();
-      const area = String(cAr>=0?r[cAr]:"").trim();
+      const fecha_ingreso = cFec>=0 ? parseFechaExcelDtl(r[cFec]) : null;
       if(!nombre && !identificacion) continue;
       if(!nombre || !identificacion){ ignoradas++; continue; }
-      filasValidas.push({ nombre, identificacion, cargo:cargo||null, area:area||null });
+      filasValidas.push({ nombre, identificacion, cargo:cargo||null, fecha_ingreso });
     }
     if(!filasValidas.length){ toast("No se encontraron filas válidas (se requiere nombre e identificación)","err"); return; }
     const keyOf = s => s.replace(/[^0-9A-Za-z]/g,"").toLowerCase();
@@ -5876,7 +5885,7 @@ async function renderFichaTrabajador(id){
           <button class="btn btn-ghost btn-sm" id="btnVolverDot">${I.back} Volver</button>
         </div>
         <div class="page-head">
-          <div><h1>${esc(t.nombre)}</h1><p>C.C. ${esc(t.identificacion)}${t.cargo?' · '+esc(t.cargo):''}${t.area?' · '+esc(t.area):''} · ${esc(DOTACION.contratos.find(c=>c.id===t.contrato_id)?.nombre||'—')}</p></div>
+          <div><h1>${esc(t.nombre)}</h1><p>C.C. ${esc(t.identificacion)}${t.cargo?' · '+esc(t.cargo):''}${t.area?' · '+esc(t.area):''} · ${esc(DOTACION.contratos.find(c=>c.id===t.contrato_id)?.nombre||'—')}${t.fecha_ingreso?' · Ingresó '+fmtDate(t.fecha_ingreso):''}${t.fecha_salida?' · Salió '+fmtDate(t.fecha_salida):''}</p></div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
             ${MIPERFIL.esAdmin?`<button class="btn btn-ghost" id="btnEditarTrab">${I.pen} Editar datos</button>`:''}
             ${listaEntregas.length?(esContratoEscaneado
@@ -5915,14 +5924,15 @@ function eliminarEntrega(entregaId, trabajadorId){
   };
 }
 
-/* ---------- Editar una entrega ya registrada (fecha/ítems/responsable/observaciones).
-   La firma y la foto NO se pueden modificar aquí — son evidencia de lo que se firmó. ---------- */
+/* ---------- Editar una entrega ya registrada (fecha/ítems/responsable/observaciones/firmas).
+   La foto NO se puede modificar aquí — es evidencia de lo que se firmó. Las firmas SÍ se
+   pueden corregir (ej. el trabajador firmó por error donde iba la firma del responsable). ---------- */
 let editarEntregaDraft = null;
 async function abrirEditarEntrega(entregaId, trabajadorId){
   bloquear("Cargando…");
   let entrega, items;
   try{
-    const { data:e } = await sb.from("dot_entregas").select("id,fecha,responsable_nombre,responsable_cargo,observaciones").eq("id",entregaId).maybeSingle();
+    const { data:e } = await sb.from("dot_entregas").select("id,fecha,responsable_nombre,responsable_cargo,observaciones,firma_trabajador,firma_responsable").eq("id",entregaId).maybeSingle();
     const { data:it } = await sb.from("dot_entrega_items").select("id,nombre_item,cantidad,talla").eq("entrega_id",entregaId);
     entrega = e; items = it||[];
   } finally { desbloquear(); }
@@ -5933,6 +5943,8 @@ async function abrirEditarEntrega(entregaId, trabajadorId){
     responsableNombre: entrega.responsable_nombre || '',
     responsableCargo: entrega.responsable_cargo || '',
     observaciones: entrega.observaciones || '',
+    firmaTrabajador: entrega.firma_trabajador || '',
+    firmaResponsable: entrega.firma_responsable || '',
     items: items.length ? items.map(it=>({ nombreItem: it.nombre_item, cantidad: it.cantidad, talla: it.talla||'' })) : [{ nombreItem:'', cantidad:1, talla:'' }]
   };
   renderFormEditarEntrega();
@@ -5940,7 +5952,7 @@ async function abrirEditarEntrega(entregaId, trabajadorId){
 
 function renderFormEditarEntrega(){
   openModal(`<div class="modal lg">
-    <div class="modal-head"><div><h2>Editar entrega de EPP</h2><p>Corrige los datos registrados. La firma y la foto no se pueden modificar aquí.</p></div>
+    <div class="modal-head"><div><h2>Editar entrega de EPP</h2><p>Corrige los datos registrados y las firmas si hace falta. La foto no se puede modificar aquí.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
       <div class="field"><label>Fecha de entrega</label><input type="date" id="eeFecha" value="${editarEntregaDraft.fecha}"></div>
@@ -5954,6 +5966,19 @@ function renderFormEditarEntrega(){
         <div><label>Cargo</label><input id="eeRespCargo" value="${esc(editarEntregaDraft.responsableCargo)}" placeholder="Cargo"></div>
       </div>
       <div class="field"><label>Observaciones <span class="opt">(opcional)</span></label><input id="eeObs" value="${esc(editarEntregaDraft.observaciones)}"></div>
+      <label style="font-weight:700;font-size:14px;display:block;margin:16px 0 10px">Firmas</label>
+      <div style="display:flex;gap:20px;flex-wrap:wrap">
+        <div style="text-align:center">
+          <div class="muted-sm" style="margin-bottom:4px">Firma del trabajador</div>
+          ${editarEntregaDraft.firmaTrabajador?`<img src="${editarEntregaDraft.firmaTrabajador}" class="sig-thumb">`:`<p class="muted-sm">— sin firma —</p>`}
+          <div style="margin-top:6px"><button class="btn btn-ghost btn-sm" id="btnCorregirFirmaTrab">${I.pen} Corregir firma</button></div>
+        </div>
+        <div style="text-align:center">
+          <div class="muted-sm" style="margin-bottom:4px">Firma del responsable</div>
+          ${editarEntregaDraft.firmaResponsable?`<img src="${editarEntregaDraft.firmaResponsable}" class="sig-thumb">`:`<p class="muted-sm">— sin firma —</p>`}
+          <div style="margin-top:6px"><button class="btn btn-ghost btn-sm" id="btnCorregirFirmaResp">${I.pen} Corregir firma</button></div>
+        </div>
+      </div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
@@ -5963,6 +5988,8 @@ function renderFormEditarEntrega(){
   renderEeItemsList();
   document.getElementById('btnEeAddItem').onclick = ()=>{ editarEntregaDraft.items.push({nombreItem:'',cantidad:1,talla:''}); renderEeItemsList(); };
   document.getElementById('btnEeGuardar').onclick = guardarEdicionEntrega;
+  document.getElementById('btnCorregirFirmaTrab').onclick = ()=> abrirCorregirFirmaEntrega('dot_entregas','firma_trabajador','Firma del trabajador','epp');
+  document.getElementById('btnCorregirFirmaResp').onclick = ()=> abrirCorregirFirmaEntrega('dot_entregas','firma_responsable','Firma del responsable','epp');
 }
 
 function renderEeItemsList(){
@@ -6008,6 +6035,70 @@ async function guardarEdicionEntrega(){
     closeModal();
     renderFichaTrabajador(editarEntregaDraft.trabajadorId);
   } finally { desbloquear(); }
+}
+
+/* ---------- Corregir la firma de una entrega ya guardada (EPP o Dotación).
+   Ej. el trabajador firmó por error donde iba la firma del responsable.
+   Reemplaza SOLO esa firma puntual — no toca fecha/ítems/foto/lo demás.
+   Compartida entre EPP (dot_entregas) y Dotación (dtl_entregas): "tabla" y
+   "modulo" dicen a cuál de las dos vuelve y en qué draft en memoria escribir. ---------- */
+function abrirCorregirFirmaEntrega(tabla, campo, etiqueta, modulo){
+  const draft = modulo==='epp' ? editarEntregaDraft : editarEntregaDtlDraft;
+  openSubModal(`<div class="modal" style="max-width:480px">
+    <div class="modal-head"><div><h2>Corregir ${etiqueta.toLowerCase()}</h2><p>Reemplaza la firma guardada en esta entrega.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="sig-box" id="sigBox"><canvas id="sigCanvas"></canvas><div class="sig-placeholder" id="sigPh">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div></div>
+      <div class="sig-actions"><button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar</button></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardarFirmaCorregida">${I.check} Guardar firma</button>
+    </div>
+  </div>`, ()=> modulo==='epp' ? renderFormEditarEntrega() : renderFormEditarEntregaDtl());
+  initSignature();
+  document.getElementById('sigClear').onclick = ()=> sigPad.clear();
+  document.getElementById('btnGuardarFirmaCorregida').onclick = async ()=>{
+    if(!sigPad || sigPad.isEmpty()){ toast("Firma primero","err"); return; }
+    const firma = sigPad.dataURL();
+    const btn = document.getElementById('btnGuardarFirmaCorregida'); btn.disabled=true; btn.innerHTML="Guardando…";
+    bloquear("Guardando firma…");
+    const { error } = await sb.from(tabla).update({ [campo]: firma }).eq("id", draft.id);
+    desbloquear();
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar firma`; toast("No se pudo guardar: "+error.message,"err"); return; }
+    if(campo==='firma_trabajador') draft.firmaTrabajador = firma; else draft.firmaResponsable = firma;
+    toast("Firma corregida","ok");
+    closeModal();
+  };
+}
+
+/* ---------- "Link trabajadores nuevos": herramienta admin-only, compartida entre
+   EPP y Dotación. Un solo link fijo por contrato (usa el id del contrato/entidad
+   directamente en la URL — no hace falta guardar nada aparte, "existe" apenas el
+   contrato existe). Para trabajadores que RH todavía no cargó: crean su propia
+   ficha antes de registrar su primera entrega. Ver renderDotPublicoNuevo /
+   renderDtlPublicoNuevo más abajo. ---------- */
+function mostrarLinkTrabajadoresNuevos(modulo){
+  const enTodos = modulo==='epp' ? (contratoActualId==='todos') : (dtlFiltroEntidad==='todas');
+  if(enTodos){ toast("Elige un contrato específico primero","err"); return; }
+  const id = modulo==='epp' ? contratoActualId : dtlFiltroEntidad;
+  const ruta = modulo==='epp' ? 'dotacion' : 'dotacionlegal';
+  const nombre = modulo==='epp' ? DOTACION.contratos.find(c=>c.id===id)?.nombre : DTL.entidades.find(e=>e.id===id)?.nombre;
+  const url = location.href.split("#")[0] + "#/" + ruta + "/entrega-nuevo/" + id;
+  openModal(`<div class="modal" style="max-width:460px">
+    <div class="modal-head"><div><h2>Link trabajadores nuevos</h2><p>${esc(nombre||'')}</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <p class="muted-sm" style="margin-bottom:10px">Para trabajadores que todavía no tienen ficha creada (RH no los ha cargado). Al entrar, primero llenan sus datos personales y quedan registrados en este contrato — de ahí en adelante usan el enlace normal para sus próximas entregas. Solo funciona una vez por cédula.</p>
+      <div class="field"><input readonly value="${esc(url)}" onclick="this.select()"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
+      <button class="btn btn-ghost" id="btnQrLinkNuevos">${I.qr} QR</button>
+      <button class="btn btn-primary" id="btnCopiarLinkNuevos">${I.link} Copiar enlace</button>
+    </div></div>`);
+  document.getElementById('btnCopiarLinkNuevos').onclick = ()=> copyText(url, "Enlace copiado");
+  document.getElementById('btnQrLinkNuevos').onclick = ()=> mostrarQR(url, "Trabajadores nuevos — "+(nombre||''));
 }
 
 /* ============================================================
@@ -6216,6 +6307,62 @@ async function confirmarEntregaDotPublica(){
 
 function renderDotPublicoExito(){
   document.getElementById("app").innerHTML = pantallaFirmaOk("¡Listo!", "Tu entrega de EPP quedó registrada correctamente.");
+}
+
+/* ---------- Enlace "trabajadores nuevos" de EPP (#/dotacion/entrega-nuevo/<contratoId>).
+   Para alguien que RH todavía no cargó: primero crea su ficha (nombre/cédula/cargo),
+   y de ahí en adelante reutiliza EXACTAMENTE el mismo formulario y la misma RPC de
+   registro que el enlace normal (renderDotPublicoFormulario/confirmarEntregaDotPublica) —
+   así no hay dos versiones distintas del paso de "elegir EPP y firmar" que mantener. ---------- */
+async function renderDotPublicoNuevo(contratoId){
+  dotPublicoState = { contratoId:null, catalogo:[], trabajador:null, foto:null };
+  await cargarAppConfig();
+  bloquear("Cargando…");
+  const { data, error } = await sb.rpc('dot_publico_contrato_info', { p_contrato_id: contratoId });
+  desbloquear();
+  if(error || !data || !data.ok || !data.activo){
+    document.getElementById("app").innerHTML = pantallaFirmaOk("Enlace no disponible", "Este enlace ya no está activo. Contacta a tu supervisor.");
+    return;
+  }
+  renderDotPublicoNuevoFormulario(contratoId, data.nombre);
+}
+
+function renderDotPublicoNuevoFormulario(contratoId, nombreContrato){
+  document.getElementById("app").innerHTML = `
+    <div class="pub-wrap"><div class="pub-card"><div class="pub-body">
+      <img src="${LOGO}" alt="Don Aseo Ltda." style="height:48px;display:block;margin:0 auto 18px">
+      <h2 style="text-align:center;margin-bottom:6px">Registro de trabajador nuevo</h2>
+      <p class="muted-sm" style="text-align:center;margin-bottom:20px">${esc(nombreContrato)} — completa tus datos para crear tu ficha. Solo se hace una vez.</p>
+      <div class="field"><label>Nombre completo *</label><input id="npEppNombre" placeholder="Nombres y apellidos"></div>
+      <div class="field"><label>Número de identificación (cédula) *</label><input id="npEppCedula" inputmode="numeric" placeholder="C.C."></div>
+      <div class="field"><label>Cargo <span class="opt">(opcional)</span></label><input id="npEppCargo" placeholder="Cargo"></div>
+      <div id="npEppError" class="login-err"></div>
+      <button class="btn btn-primary" id="npEppContinuarBtn" style="width:100%;padding:13px;margin-top:6px">${I.check} Continuar</button>
+    </div></div></div>`;
+  document.getElementById('npEppContinuarBtn').onclick = async ()=>{
+    const nombre = document.getElementById('npEppNombre').value.trim();
+    const cedula = document.getElementById('npEppCedula').value.trim();
+    const cargo = document.getElementById('npEppCargo').value.trim();
+    const err = document.getElementById('npEppError'); err.textContent = '';
+    if(!nombre){ err.textContent = 'Escribe tu nombre completo.'; return; }
+    if(!cedula){ err.textContent = 'Escribe tu cédula.'; return; }
+    const btn = document.getElementById('npEppContinuarBtn'); btn.disabled=true; btn.innerHTML='Creando ficha…';
+    const { data, error } = await sb.rpc('dot_publico_crear_nuevo', { p_contrato_id: contratoId, p_nombre: nombre, p_cedula: cedula, p_cargo: cargo||null });
+    if(error || !data || !data.ok){
+      btn.disabled=false; btn.innerHTML=`${I.check} Continuar`;
+      const motivo = data && data.motivo;
+      err.textContent = motivo==='ya_registrado'
+        ? 'Ya tienes una ficha registrada en este sistema — usa el enlace normal de entregas para tu próximo registro.'
+        : motivo==='contrato_invalido' ? 'Este enlace ya no está disponible.'
+        : 'No se pudo crear tu ficha. Intenta de nuevo.';
+      return;
+    }
+    dotPublicoState.contratoId = contratoId;
+    dotPublicoState.trabajador = { id: data.trabajador_id, nombre, identificacion: cedula, cargo, contratoNombre: nombreContrato };
+    const { data: cat } = await sb.rpc('dot_publico_catalogo', { p_contrato_id: contratoId });
+    dotPublicoState.catalogo = cat || [];
+    renderDotPublicoFormulario();
+  };
 }
 
 /* Dimensiones naturales (px) de una imagen data-URL, para no distorsionar su proporción al estamparla en el PDF */
@@ -6697,6 +6844,7 @@ async function renderDtlAdmin(silent){
           ${MIPERFIL.esAdmin?`<button class="action-card" id="btnCorregirCargosDtl"><div class="ac-ic">${I.corregir}</div><span class="ac-title">Corregir cargos</span><span class="ac-chevron">›</span></button>`:''}
           ${totalTrab?`<button class="action-card" id="btnExcelDtl"><div class="ac-ic">${I.doc}</div><span class="ac-title">Descargar Excel</span><span class="ac-chevron">›</span></button>`:''}
           ${puedeEscribir()?`<button class="action-card" id="btnHistorialDtl" ${dtlFiltroEntidad==='todas'?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.cal}</div><span class="ac-title">Historial de entregas</span><span class="ac-chevron">›</span></button>`:''}
+          ${MIPERFIL.esAdmin?`<button class="action-card" id="btnLinkNuevosDtl" ${dtlFiltroEntidad==='todas'?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.link}</div><span class="ac-title">Link trabajadores nuevos</span><span class="ac-chevron">›</span></button>`:''}
         </div>
       </div>
 
@@ -6738,6 +6886,7 @@ async function renderDtlAdmin(silent){
   const bhdtl=document.getElementById("btnHistorialDtl"); if(bhdtl) bhdtl.onclick = abrirHistorialEntregasDtl;
   const bce=document.getElementById("btnCopiarEnlacePublico"); if(bce) bce.onclick = ()=> copyText(location.href.split("#")[0]+"#/dotacionlegal/entrega", "Enlace de entrega remota copiado");
   const bqr=document.getElementById("btnQrEnlacePublico"); if(bqr) bqr.onclick = ()=> mostrarQR(location.href.split("#")[0]+"#/dotacionlegal/entrega", "Entrega remota de dotación");
+  const blnDtl=document.getElementById("btnLinkNuevosDtl"); if(blnDtl) blnDtl.onclick = ()=> mostrarLinkTrabajadoresNuevos('dotacion');
   const behdtl=document.getElementById("btnEntregasHoyDtl"); if(behdtl) behdtl.onclick = abrirEntregasHoyDtl;
   document.getElementById("dtlSearch").oninput = (e)=>{ dtlQuery = e.target.value; renderDtlGrid(); };
   document.getElementById("chkMostrarInactivosDtl").onchange = (e)=>{ dtlMostrarInactivos = e.target.checked; renderDtlGrid(); };
@@ -7200,15 +7349,12 @@ function abrirTrabajadorDtlForm(id){
       </div>
       <div class="field"><label>Nombre completo *</label><input id="tdNombre" value="${esc(t?.nombre||'')}" placeholder="Nombres y apellidos"></div>
       <div class="field"><label>Número de identificación (cédula) *</label><input id="tdCedula" value="${esc(t?.identificacion||'')}" placeholder="C.C." inputmode="numeric"></div>
-      <div class="field row2">
-        <div><label>Cargo</label><input id="tdCargo" value="${esc(t?.cargo||'')}" placeholder="Cargo"></div>
-        <div><label>Área</label><input id="tdArea" value="${esc(t?.area||'')}" placeholder="Área o dependencia"></div>
-      </div>
+      <div class="field"><label>Cargo</label><input id="tdCargo" value="${esc(t?.cargo||'')}" placeholder="Cargo"></div>
       <div class="field row2">
         <div><label>Fecha de ingreso</label><input type="date" id="tdFechaIngreso" value="${t?.fecha_ingreso||''}"></div>
-        <div><label>Correo</label><input type="email" id="tdCorreo" value="${esc(t?.correo||'')}" placeholder="correo@ejemplo.com"></div>
+        <div><label>Fecha de salida</label><input type="date" value="${t?.fecha_salida||''}" disabled title="Se llena sola cuando Recursos Humanos marca la salida de este trabajador"></div>
       </div>
-      <p class="muted-sm">La cédula es única en toda la empresa (para que el enlace de entrega remota la encuentre sin importar el contrato).</p>
+      <p class="muted-sm">La fecha de salida se llena automáticamente cuando Recursos Humanos marca la salida del trabajador — no se edita aquí. La cédula es única en toda la empresa (para que el enlace de entrega remota la encuentre sin importar el contrato).</p>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
@@ -7221,17 +7367,15 @@ async function guardarTrabajadorDtl(id){
   const nombre = document.getElementById('tdNombre').value.trim();
   const identificacion = document.getElementById('tdCedula').value.trim();
   const cargo = document.getElementById('tdCargo').value.trim() || null;
-  const area = document.getElementById('tdArea').value.trim() || null;
   const fecha_ingreso = document.getElementById('tdFechaIngreso').value || null;
-  const correo = document.getElementById('tdCorreo').value.trim() || null;
   if(!entidad_id){ toast("Selecciona el contrato","err"); return; }
   if(!nombre){ toast("Falta el nombre","err"); return; }
   if(!identificacion){ toast("Falta la identificación","err"); return; }
   const btn = document.getElementById('btnGuardarTrabDtl'); btn.disabled=true; btn.innerHTML="Guardando…";
   bloquear("Guardando…");
   let error;
-  if(id){ ({error} = await sb.from("dtl_trabajadores").update({nombre,identificacion,cargo,area,entidad_id,fecha_ingreso,correo}).eq("id",id)); }
-  else { ({error} = await sb.from("dtl_trabajadores").insert({nombre,identificacion,cargo,area,entidad_id,fecha_ingreso,correo})); }
+  if(id){ ({error} = await sb.from("dtl_trabajadores").update({nombre,identificacion,cargo,entidad_id,fecha_ingreso}).eq("id",id)); }
+  else { ({error} = await sb.from("dtl_trabajadores").insert({nombre,identificacion,cargo,entidad_id,fecha_ingreso})); }
   desbloquear();
   if(error){
     btn.disabled=false; btn.innerHTML=`${I.check} Guardar`;
@@ -7269,11 +7413,11 @@ function eliminarTrabajadorDtl(id){
 function descargarPlantillaTrabajadoresDtl(){
   if(!window.XLSX){ toast("No se pudo cargar el generador de Excel (revisa tu conexión)","err"); return; }
   const datos = [
-    ["Contrato","Nombre completo","Cédula","Fecha de ingreso","Cargo","Correo"],
-    ["Hospital de Medellín","Juan Pérez","1234567890","2024-03-15","Operario","juan.perez@correo.com"]
+    ["Contrato","Nombre completo","Cédula","Fecha de ingreso","Cargo"],
+    ["Hospital de Medellín","Juan Pérez","1234567890","2024-03-15","Operario"]
   ];
   const ws = XLSX.utils.aoa_to_sheet(datos);
-  ws["!cols"] = [{wch:24},{wch:28},{wch:16},{wch:16},{wch:20},{wch:28}];
+  ws["!cols"] = [{wch:24},{wch:28},{wch:16},{wch:16},{wch:20}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Trabajadores");
   XLSX.writeFile(wb, "Plantilla_trabajadores_dotacion.xlsx");
@@ -7310,9 +7454,9 @@ async function cargarTrabajadoresExcelDtl(file){
     const head = (filas[0]||[]).map(norm);
     const findCol = (...alts)=> head.findIndex(h => alts.some(a => h.includes(a)));
     let cEnt = findCol("contrato","entidad"), cNom = findCol("nombre"), cCed = findCol("cedula","cédula","identificacion","documento"),
-        cFecha = findCol("fecha de ingreso","fecha ingreso","ingreso"), cCargo = findCol("cargo"), cCorreo = findCol("correo","email","e-mail");
+        cFecha = findCol("fecha de ingreso","fecha ingreso","ingreso"), cCargo = findCol("cargo");
     let start = 1;
-    if(cNom === -1){ cEnt=0; cNom=1; cCed=2; cFecha=3; cCargo=4; cCorreo=5; start=0; }
+    if(cNom === -1){ cEnt=0; cNom=1; cCed=2; cFecha=3; cCargo=4; start=0; }
     const validos = []; let ignoradas = 0;
     for(let i=start;i<filas.length;i++){
       const r = filas[i]; if(!r) continue;
@@ -7323,8 +7467,7 @@ async function cargarTrabajadoresExcelDtl(file){
       validos.push({
         entidadNombre, nombre, identificacion,
         fecha_ingreso: cFecha>=0 ? parseFechaExcelDtl(r[cFecha]) : null,
-        cargo: cCargo>=0?(String(r[cCargo]||"").trim()||null):null,
-        correo: cCorreo>=0?(String(r[cCorreo]||"").trim()||null):null
+        cargo: cCargo>=0?(String(r[cCargo]||"").trim()||null):null
       });
     }
     if(!validos.length){ toast("No se encontraron filas válidas (se requiere contrato, nombre y cédula)","err"); return; }
@@ -7354,7 +7497,7 @@ async function cargarTrabajadoresExcelDtl(file){
       if(vistos.has(k)){ dup++; return; }
       vistos.add(k);
       if(existentes.has(k)){ yaExistian++; return; }
-      nuevos.push({ nombre: it.nombre, identificacion: it.identificacion, cargo: it.cargo, correo: it.correo, fecha_ingreso: it.fecha_ingreso, entidad_id: it.entidad_id });
+      nuevos.push({ nombre: it.nombre, identificacion: it.identificacion, cargo: it.cargo, fecha_ingreso: it.fecha_ingreso, entidad_id: it.entidad_id });
     });
     if(nuevos.length){
       const { error } = await sb.from("dtl_trabajadores").insert(nuevos);
@@ -7955,7 +8098,7 @@ async function renderFichaTrabajadorDtl(id){
           <button class="btn btn-ghost btn-sm" id="btnVolverDtl">${I.back} Volver</button>
         </div>
         <div class="page-head">
-          <div><h1>${esc(t.nombre)}</h1><p>C.C. ${esc(t.identificacion)}${t.cargo?' · '+esc(t.cargo):''}${t.area?' · '+esc(t.area):''} · ${esc(nombreEntidadDtl(t.entidad_id))}${t.fecha_ingreso?' · Ingresó '+fmtDate(t.fecha_ingreso):''}${t.correo?' · '+esc(t.correo):''}</p></div>
+          <div><h1>${esc(t.nombre)}</h1><p>C.C. ${esc(t.identificacion)}${t.cargo?' · '+esc(t.cargo):''}${t.area?' · '+esc(t.area):''} · ${esc(nombreEntidadDtl(t.entidad_id))}${t.fecha_ingreso?' · Ingresó '+fmtDate(t.fecha_ingreso):''}${t.fecha_salida?' · Salió '+fmtDate(t.fecha_salida):''}${t.correo?' · '+esc(t.correo):''}</p></div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
             ${MIPERFIL.esAdmin?`<button class="btn btn-ghost" id="btnEditarTrabDtl">${I.pen} Editar datos</button>`:''}
             ${listaEntregas.length?(esContratoEscaneadoDtl
@@ -7994,15 +8137,15 @@ function eliminarEntregaDtl(entregaId, trabajadorId){
   };
 }
 
-/* ---------- Editar una entrega de Dotación ya registrada. La firma y la foto no se
-   pueden modificar aquí — son evidencia de lo que se firmó. ---------- */
+/* ---------- Editar una entrega de Dotación ya registrada. La foto no se puede
+   modificar aquí — es evidencia de lo que se firmó. Las firmas SÍ se pueden corregir. ---------- */
 let editarEntregaDtlDraft = null;
 async function abrirEditarEntregaDtl(entregaId, trabajadorId){
   bloquear("Cargando…");
   let entrega;
   try{
     const { data:e } = await sb.from("dtl_entregas")
-      .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,responsable_cargo,via")
+      .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,responsable_cargo,via,firma_trabajador,firma_responsable")
       .eq("id",entregaId).maybeSingle();
     entrega = e;
   } finally { desbloquear(); }
@@ -8015,7 +8158,9 @@ async function abrirEditarEntregaDtl(entregaId, trabajadorId){
     botasCantidad: entrega.botas_cantidad, botasTalla: entrega.botas_talla || '',
     adicional: entrega.adicional || '',
     responsableNombre: entrega.responsable_nombre || '', responsableCargo: entrega.responsable_cargo || '',
-    via: entrega.via
+    via: entrega.via,
+    firmaTrabajador: entrega.firma_trabajador || '',
+    firmaResponsable: entrega.firma_responsable || ''
   };
   renderFormEditarEntregaDtl();
 }
@@ -8023,7 +8168,7 @@ async function abrirEditarEntregaDtl(entregaId, trabajadorId){
 function renderFormEditarEntregaDtl(){
   const d = editarEntregaDtlDraft;
   openModal(`<div class="modal lg">
-    <div class="modal-head"><div><h2>Editar entrega de dotación</h2><p>Corrige los datos registrados. La firma y la foto no se pueden modificar aquí.</p></div>
+    <div class="modal-head"><div><h2>Editar entrega de dotación</h2><p>Corrige los datos registrados y las firmas si hace falta. La foto no se puede modificar aquí.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
       <div class="field"><label>Fecha de entrega</label><input type="date" id="eeDtlFecha" value="${d.fecha}"></div>
@@ -8046,6 +8191,19 @@ function renderFormEditarEntregaDtl(){
         <div><label>Responsable</label><input id="eeDtlRespNombre" value="${esc(d.responsableNombre)}" placeholder="Nombre del responsable"></div>
         <div><label>Cargo</label><input id="eeDtlRespCargo" value="${esc(d.responsableCargo)}" placeholder="Cargo"></div>
       </div>`:`<p class="muted-sm" style="margin-top:10px">Esta entrega fue remota (por el enlace público) — no tiene responsable presencial que editar.</p>`}
+      <label style="font-weight:700;font-size:14px;display:block;margin:16px 0 10px">Firmas</label>
+      <div style="display:flex;gap:20px;flex-wrap:wrap">
+        <div style="text-align:center">
+          <div class="muted-sm" style="margin-bottom:4px">Firma del trabajador</div>
+          ${d.firmaTrabajador?`<img src="${d.firmaTrabajador}" class="sig-thumb">`:`<p class="muted-sm">— sin firma —</p>`}
+          <div style="margin-top:6px"><button class="btn btn-ghost btn-sm" id="btnCorregirFirmaTrabDtl">${I.pen} Corregir firma</button></div>
+        </div>
+        ${d.via==='presencial'?`<div style="text-align:center">
+          <div class="muted-sm" style="margin-bottom:4px">Firma del responsable</div>
+          ${d.firmaResponsable?`<img src="${d.firmaResponsable}" class="sig-thumb">`:`<p class="muted-sm">— sin firma —</p>`}
+          <div style="margin-top:6px"><button class="btn btn-ghost btn-sm" id="btnCorregirFirmaRespDtl">${I.pen} Corregir firma</button></div>
+        </div>`:''}
+      </div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
@@ -8053,6 +8211,8 @@ function renderFormEditarEntregaDtl(){
     </div>
   </div>`);
   document.getElementById('btnEeDtlGuardar').onclick = guardarEdicionEntregaDtl;
+  document.getElementById('btnCorregirFirmaTrabDtl').onclick = ()=> abrirCorregirFirmaEntrega('dtl_entregas','firma_trabajador','Firma del trabajador','dotacion');
+  const bcr = document.getElementById('btnCorregirFirmaRespDtl'); if(bcr) bcr.onclick = ()=> abrirCorregirFirmaEntrega('dtl_entregas','firma_responsable','Firma del responsable','dotacion');
 }
 
 async function guardarEdicionEntregaDtl(){
@@ -8554,6 +8714,58 @@ async function confirmarEntregaDtlPublica(){
 
 function renderDtlPublicoExito(){
   document.getElementById("app").innerHTML = pantallaFirmaOk("¡Listo!", "Tu entrega de dotación quedó registrada correctamente.");
+}
+
+/* ---------- Enlace "trabajadores nuevos" de Dotación (#/dotacionlegal/entrega-nuevo/<entidadId>).
+   Mismo concepto que el de EPP: crea la ficha primero, y reutiliza el mismo
+   formulario/RPC de registro del enlace normal (renderDtlPublicoFormulario/
+   confirmarEntregaDtlPublica). ---------- */
+async function renderDtlPublicoNuevo(entidadId){
+  dtlPublicoState = { trabajador:null, foto:null };
+  await cargarAppConfig();
+  bloquear("Cargando…");
+  const { data, error } = await sb.rpc('dtl_publico_entidad_info', { p_entidad_id: entidadId });
+  desbloquear();
+  if(error || !data || !data.ok || !data.activo){
+    document.getElementById("app").innerHTML = pantallaFirmaOk("Enlace no disponible", "Este enlace ya no está activo. Contacta a tu supervisor.");
+    return;
+  }
+  renderDtlPublicoNuevoFormulario(entidadId, data.nombre);
+}
+
+function renderDtlPublicoNuevoFormulario(entidadId, nombreEntidad){
+  document.getElementById("app").innerHTML = `
+    <div class="pub-wrap"><div class="pub-card"><div class="pub-body">
+      <img src="${LOGO}" alt="Don Aseo Ltda." style="height:48px;display:block;margin:0 auto 18px">
+      <h2 style="text-align:center;margin-bottom:6px">Registro de trabajador nuevo</h2>
+      <p class="muted-sm" style="text-align:center;margin-bottom:20px">${esc(nombreEntidad)} — completa tus datos para crear tu ficha. Solo se hace una vez.</p>
+      <div class="field"><label>Nombre completo *</label><input id="npDtlNombre" placeholder="Nombres y apellidos"></div>
+      <div class="field"><label>Número de identificación (cédula) *</label><input id="npDtlCedula" inputmode="numeric" placeholder="C.C."></div>
+      <div class="field"><label>Cargo <span class="opt">(opcional)</span></label><input id="npDtlCargo" placeholder="Cargo"></div>
+      <div id="npDtlError" class="login-err"></div>
+      <button class="btn btn-primary" id="npDtlContinuarBtn" style="width:100%;padding:13px;margin-top:6px">${I.check} Continuar</button>
+    </div></div></div>`;
+  document.getElementById('npDtlContinuarBtn').onclick = async ()=>{
+    const nombre = document.getElementById('npDtlNombre').value.trim();
+    const cedula = document.getElementById('npDtlCedula').value.trim();
+    const cargo = document.getElementById('npDtlCargo').value.trim();
+    const err = document.getElementById('npDtlError'); err.textContent = '';
+    if(!nombre){ err.textContent = 'Escribe tu nombre completo.'; return; }
+    if(!cedula){ err.textContent = 'Escribe tu cédula.'; return; }
+    const btn = document.getElementById('npDtlContinuarBtn'); btn.disabled=true; btn.innerHTML='Creando ficha…';
+    const { data, error } = await sb.rpc('dtl_publico_crear_nuevo', { p_entidad_id: entidadId, p_nombre: nombre, p_cedula: cedula, p_cargo: cargo||null });
+    if(error || !data || !data.ok){
+      btn.disabled=false; btn.innerHTML=`${I.check} Continuar`;
+      const motivo = data && data.motivo;
+      err.textContent = motivo==='ya_registrado'
+        ? 'Ya tienes una ficha registrada en este sistema — usa el enlace normal de entregas para tu próximo registro.'
+        : motivo==='contrato_invalido' ? 'Este enlace ya no está disponible.'
+        : 'No se pudo crear tu ficha. Intenta de nuevo.';
+      return;
+    }
+    dtlPublicoState.trabajador = { id: data.trabajador_id, nombre, identificacion: cedula, cargo, entidad_nombre: nombreEntidad };
+    renderDtlPublicoFormulario();
+  };
 }
 
 /* ============================================================
