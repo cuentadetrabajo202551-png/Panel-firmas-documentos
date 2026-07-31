@@ -1465,7 +1465,8 @@ async function openDetail(id){
             <div class="rf-v">${esc(l.responsableNombre||"Responsable")}${l.responsableCargo?` · ${esc(l.responsableCargo)}`:""}</div>
           </div>
           <img class="rf-img" src="${l.responsableFirma}" alt="firma del responsable">
-          ${puedoTocarCerrable(l.creadaPor,!act)?`<button class="btn btn-ghost btn-sm" title="Eliminar firma del responsable" onclick="eliminarFirmaResponsable('${l.id}')">${I.trash} Eliminar firma</button>`:''}
+          ${puedoTocarCerrable(l.creadaPor,!act)?`<button class="btn btn-ghost btn-sm" title="Editar firma del responsable" onclick="abrirEditarFirmaResponsable('${l.id}')">${I.pen} Editar firma</button>
+          <button class="btn btn-ghost btn-sm" title="Eliminar firma del responsable" onclick="eliminarFirmaResponsable('${l.id}')">${I.trash} Eliminar firma</button>`:''}
         </div>` : ""}
 
         ${(l.asistentes||[]).length && puedeEscribir() ? `<div class="doc-cta">
@@ -1511,6 +1512,7 @@ function eliminarAsistente(aid, listaId, nombre){
       return;
     }
     await loadState();
+    closeModal();
     openDetail(listaId);
     toast("Registro eliminado","ok");
   };
@@ -1543,8 +1545,63 @@ function eliminarFirmaResponsable(listaId){
       return;
     }
     const l = getList(listaId); if(l) l.responsableFirma = null;
+    closeModal();
     openDetail(listaId);
     toast("Firma del responsable eliminada","ok");
+  };
+}
+
+/* ---------- Editar (reemplazar) la firma del responsable, sin pasar por el enlace
+   público — mismo sistema de EPP/Dotación: firmar en el lienzo o adjuntar una foto
+   de la firma (le quitamos el fondo automáticamente con quitarFondoFirma). Asistencia
+   no tiene "plantillas" de responsable como EPP/Dotación (el responsable se define
+   por lista, no se reutiliza de una lista de guardados), así que este modal es solo
+   lienzo + adjuntar imagen, sin la sección de "usar una firma guardada". ---------- */
+function abrirEditarFirmaResponsable(listaId){
+  const l = getList(listaId);
+  openModal(`<div class="modal" style="max-width:480px">
+    <div class="modal-head"><div><h2>Editar firma del responsable</h2><p>${esc(l?.responsableNombre||'Responsable')}${l?.responsableCargo?' · '+esc(l.responsableCargo):''}</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      ${l?.responsableFirma?`<div style="text-align:center;margin-bottom:14px"><img src="${l.responsableFirma}" style="height:80px;max-width:100%;border:1px solid var(--line);border-radius:8px;background:#fff;padding:4px"></div>`:''}
+      <div class="sig-box" id="sigBox"><canvas id="sigCanvas"></canvas><div class="sig-placeholder" id="sigPh">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div></div>
+      <div class="sig-actions">
+        <button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="btnAefAdjuntarFirma">${I.plus} Adjuntar imagen de firma</button>
+      </div>
+      <p class="muted-sm" style="margin-top:4px">Si ya tienes la firma guardada como foto o imagen, la puedes subir — le quitamos el fondo automáticamente para que quede igual de limpia que si la dibujaras aquí.</p>
+      <input type="file" id="aefArchivoFirma" accept="image/*" style="display:none">
+      <div id="aefFirmaSubidaPreview"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardarFirmaResponsableEditada">${I.check} Guardar firma</button>
+    </div></div>`);
+  initSignature();
+  document.getElementById('sigClear').onclick = ()=> sigPad.clear();
+  let firmaSubida = null;
+  document.getElementById('btnAefAdjuntarFirma').onclick = ()=> document.getElementById('aefArchivoFirma').click();
+  document.getElementById('aefArchivoFirma').onchange = async (e)=>{
+    const f = e.target.files[0]; if(!f) return;
+    const prev = document.getElementById('aefFirmaSubidaPreview');
+    prev.innerHTML = `<p class="muted-sm">Procesando…</p>`;
+    try{
+      firmaSubida = await quitarFondoFirma(f);
+      prev.innerHTML = `<div style="text-align:center;margin-top:8px;padding:10px;background:repeating-conic-gradient(#e9ecf5 0% 25%,#fff 0% 50%) 50%/16px 16px"><img src="${firmaSubida}" style="height:80px;max-width:100%"></div>`;
+    }catch(err){ prev.innerHTML = `<p class="muted-sm" style="color:var(--danger)">No se pudo procesar la imagen</p>`; firmaSubida = null; }
+  };
+  document.getElementById('btnGuardarFirmaResponsableEditada').onclick = async ()=>{
+    const firma = firmaSubida || ((sigPad && !sigPad.isEmpty()) ? sigPad.dataURL() : null);
+    if(!firma){ toast("Firma primero, o adjunta una imagen","err"); return; }
+    const btn = document.getElementById('btnGuardarFirmaResponsableEditada'); btn.disabled=true; btn.innerHTML="Guardando…";
+    bloquear("Guardando firma…");
+    const { error } = await sb.from("asis_listas").update({ responsable_firma: firma }).eq("id", listaId);
+    desbloquear();
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar firma`; toast("No se pudo guardar: "+error.message,"err"); return; }
+    if(l) l.responsableFirma = firma;
+    closeModal();
+    openDetail(listaId);
+    toast("Firma actualizada","ok");
   };
 }
 
@@ -3197,6 +3254,12 @@ async function enviarPorCorreo(id){
 let editDocFirmantes = [];
 
 async function renderEditarDocumento(id){
+  // Se llega aquí normalmente desde el botón "Editar" DENTRO del modal de detalle del
+  // documento (abrirDocumento) — ese botón solo cambia location.hash, no cierra el
+  // modal, así que la página de edición terminaba renderizando por debajo del modal
+  // (que sigue abierto, con su propio overlay encima). Cerrarlo aquí, al entrar a la
+  // pantalla de edición, lo resuelve sin importar desde dónde se haya llegado.
+  closeModal();
   bloquear("Cargando…");
   const { data:doc } = await sb.from("doc_documentos").select("id,nombre,estado,fecha_limite,firma_ordenada,config,creado_por").eq("id",id).maybeSingle();
   if(!doc){ desbloquear(); toast("Documento no encontrado","err"); location.hash="#/docs"; return; }
@@ -3389,6 +3452,7 @@ async function guardarEditarEntregaEscaneada(){
     return;
   }
   const { trabajadorId, tabla } = editEscaneadaState;
+  closeModal();
   toast("Entrega actualizada","ok");
   if(tabla === 'dot_entregas'){ renderFichaTrabajador(trabajadorId); } else { renderFichaTrabajadorDtl(trabajadorId); }
 }
@@ -3563,22 +3627,31 @@ async function componerPdfFirmado(doc, firmantes){
     }
   }
 
-  // Constancia de firma electrónica al pie de la última página (IP, fecha y hora exactas)
+  // Constancia de firma electrónica al pie de la última página (IP, fecha y hora
+  // exactas, dispositivo/SO, y ubicación GPS cuando la plantilla la pidió — cada
+  // firmante puede aportar 1 o 2 líneas, así que primero se arma la lista completa
+  // y de ahí se calcula el alto real del bloque, en vez de asumir una línea fija.
   if(firmados.length){
     const last = pages[pages.length-1];
     const { width:lpw } = last.getSize();
     const lineH = 8.2, baseY = 20;
-    const blockH = baseY + firmados.length*lineH + 12;
-    last.drawRectangle({ x:0, y:0, width:lpw, height:blockH, color:rgb(1,1,1), opacity:0.9 });
-    last.drawLine({ start:{x:26,y:blockH-3}, end:{x:lpw-26,y:blockH-3}, thickness:0.5, color:rgb(0.7,0.7,0.78) });
-    try{ last.drawText('Constancia de firma electrónica - Don Aseo Ltda.', { x:26, y:blockH-10, size:6.8, font, color:rgb(0.45,0.45,0.55) }); }catch(e){}
-    firmados.forEach((f,i)=>{
+    const lineas = [];
+    firmados.forEach(f=>{
       const ev=f.evidencia||{};
       const fhRaw = ev.fecha_hora || f.firmado_en;
       const fh = fhRaw ? new Date(fhRaw).toLocaleString('es-CO') : '-';
       const disp = f.dispositivo_ua ? resumenDispositivoUA(f.dispositivo_ua) : null;
-      const line = pdfTexto((f.nombre||'-')+'   |   C.C. '+(f.identificacion||'-')+'   |   Firmado: '+fh+'   |   IP: '+(f.ip_address||ev.ip||'-')+(disp?'   |   '+disp:''));
-      try{ last.drawText(line, { x:26, y:baseY + (firmados.length-1-i)*lineH, size:6.8, font, color:rgb(0.28,0.28,0.36) }); }catch(e){}
+      lineas.push({ x:26, texto: pdfTexto((f.nombre||'-')+'   |   C.C. '+(f.identificacion||'-')+'   |   Firmado: '+fh+'   |   IP: '+(f.ip_address||ev.ip||'-')+(disp?'   |   '+disp:'')) });
+      if(ev.gps && ev.gps.lat!=null && ev.gps.lng!=null){
+        lineas.push({ x:32, texto: pdfTexto('Ubicación: '+(+ev.gps.lat).toFixed(5)+', '+(+ev.gps.lng).toFixed(5)+(ev.gps.precision?' (±'+Math.round(ev.gps.precision)+' m)':'')) });
+      }
+    });
+    const blockH = baseY + lineas.length*lineH + 12;
+    last.drawRectangle({ x:0, y:0, width:lpw, height:blockH, color:rgb(1,1,1), opacity:0.9 });
+    last.drawLine({ start:{x:26,y:blockH-3}, end:{x:lpw-26,y:blockH-3}, thickness:0.5, color:rgb(0.7,0.7,0.78) });
+    try{ last.drawText('Constancia de firma electrónica - Don Aseo Ltda.', { x:26, y:blockH-10, size:6.8, font, color:rgb(0.45,0.45,0.55) }); }catch(e){}
+    lineas.forEach((l,i)=>{
+      try{ last.drawText(l.texto, { x:l.x, y:baseY + (lineas.length-1-i)*lineH, size:6.8, font, color:rgb(0.28,0.28,0.36) }); }catch(e){}
     });
   }
 
@@ -3755,6 +3828,7 @@ function repetirFirmaFirmante(firmanteId, docId, nombre){
     if(doc && doc.estado==='finalizado'){ await sb.from("doc_documentos").update({estado:'enviado'}).eq("id",docId); }
     await sb.from("doc_eventos").insert({ documento_id:docId, firmante_id:firmanteId, tipo:'editado', detalle:{accion:'repetir_firma', nombre} });
     toast("Firma restablecida — el firmante puede firmar de nuevo","ok");
+    closeModal();
     abrirDocumento(docId);
   };
 }
@@ -3801,6 +3875,7 @@ function eliminarFirmanteDoc(firmanteId, docId, nombre){
     if(error){ btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`; toast("No se pudo eliminar: "+error.message,"err"); return; }
     await sb.from("doc_eventos").insert({ documento_id:docId, tipo:'editado', detalle:{accion:'eliminar_firmante', nombre} });
     toast("Firmante eliminado","ok");
+    closeModal();
     abrirDocumento(docId);
   };
 }
@@ -4322,7 +4397,7 @@ let seleccionadosDot = new Set();
 
 async function loadDotacionState(){
   const [co, t, e, ei] = await Promise.all([
-    sb.from("dot_contratos").select("id,nombre,activo,creado_en,modo_registro,link_nuevos_activo").order("creado_en",{ascending:true}),
+    sb.from("dot_contratos").select("id,nombre,activo,creado_en,modo_registro,link_nuevos_activo").order("nombre",{ascending:true}),
     cargarTodasFilas(()=> sb.from("dot_trabajadores").select("id,nombre,identificacion,cargo,area,contrato_id,fecha_ingreso,fecha_salida,aviso_cedula_rh,activo,inactivo_por_archivo,creado_en").order("nombre",{ascending:true}).order("id",{ascending:true})),
     cargarTodasFilas(()=> sb.from("dot_entregas").select("id,trabajador_id,fecha").order("fecha",{ascending:false}).order("id",{ascending:true})),
     cargarTodasFilas(()=> sb.from("dot_entrega_items").select("entrega_id,nombre_item,cantidad").order("id",{ascending:true}))
@@ -4429,8 +4504,8 @@ async function renderDotacionAdmin(silent){
         <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
           <div class="ph-icon">${I.building}</div>
           <select id="selContrato" style="font-weight:700;font-size:13.5px;padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--brand-deep);width:240px;max-width:calc(100vw - 40px);box-sizing:border-box;text-overflow:ellipsis;white-space:nowrap;overflow:hidden">
-            ${DOTACION.contratos.filter(x=>tieneContratoDotacion(x.id)).map(x=>`<option value="${x.id}" ${x.id===contratoActualId?'selected':''}>${esc(x.nombre)}${x.activo?'':' (archivado)'}</option>`).join('')}
             ${MIPERFIL.esAdmin?`<option value="todos" ${enTodos?'selected':''}>— Todos los contratos —</option>`:''}
+            ${DOTACION.contratos.filter(x=>tieneContratoDotacion(x.id)).map(x=>`<option value="${x.id}" ${x.id===contratoActualId?'selected':''}>${esc(x.nombre)}${x.activo?'':' (archivado)'}</option>`).join('')}
           </select>
           ${MIPERFIL.esAdmin?`<button class="btn btn-ghost btn-pc-only" id="btnGestionContratos">${I.pen} Gestionar contratos</button>`:''}
         </div>
@@ -5247,7 +5322,7 @@ function eliminarTodoCatalogo(){
     const { error } = await sb.from("dot_catalogo").delete().eq("contrato_id", contratoActualId);
     if(error){ toast("No se pudo eliminar: "+error.message,"err"); btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar todo`; return; }
     await loadDotacionState();
-    abrirCatalogoModal();
+    closeModal();
     toast("Catálogo eliminado","ok");
   };
 }
@@ -5812,10 +5887,7 @@ function renderPasoEntregaFirmaResponsable(){
       <p class="muted-sm" style="margin-bottom:10px">Confirma que hiciste la entrega.</p>
       ${plantilla?`
       <div id="firmaRGuardada" style="text-align:center;margin-bottom:12px"><img src="${plantilla.firma}" style="height:80px;max-width:100%;border:1px solid var(--line);border-radius:8px;background:#fff;padding:4px"></div>
-      <p class="muted-sm" style="text-align:center;margin-bottom:10px">Firma guardada en "${esc(plantilla.nombre)}"</p>
-      <div style="display:flex;justify-content:center;margin-bottom:6px">
-        <button class="btn btn-ghost btn-sm" id="btnRefirmarR">${I.pen} Firmar de nuevo (solo para esta entrega)</button>
-      </div>`:''}
+      <p class="muted-sm" style="text-align:center;margin-bottom:10px">Firma guardada en "${esc(plantilla.nombre)}"</p>`:''}
       <div id="padWrapR" style="${plantilla?'display:none':''}">
         <div class="sig-box" id="sigBox"><canvas id="sigCanvas"></canvas><div class="sig-placeholder" id="sigPh">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div></div>
         <div class="sig-actions"><button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar</button></div>
@@ -5829,19 +5901,14 @@ function renderPasoEntregaFirmaResponsable(){
       <button class="btn btn-green" id="btnFirmaRespOk">${I.check} Guardar entrega</button>
     </div>
   </div>`);
+  // Si se eligió la plantilla desde el paso 1, se usa esa firma sin opción de
+  // "firmar de nuevo" — dar esa opción aquí solo abría la puerta a que un supervisor
+  // firmara sin querer con una firma distinta a la que ya había seleccionado.
   let usarGuardada = !!plantilla;
   if(!usarGuardada){ initSignature(); document.getElementById('sigClear').onclick = ()=> sigPad.clear(); }
   const chkGuardarPredet = document.getElementById('chkGuardarPredet');
   if(chkGuardarPredet) chkGuardarPredet.onchange = ()=>{
     document.getElementById('nuevaPredetNombreWrap').style.display = chkGuardarPredet.checked ? 'block' : 'none';
-  };
-  const reBtn = document.getElementById('btnRefirmarR');
-  if(reBtn) reBtn.onclick = ()=>{
-    document.getElementById('firmaRGuardada').style.display='none';
-    reBtn.parentElement.style.display='none';
-    document.getElementById('padWrapR').style.display='block';
-    usarGuardada = false;
-    initSignature(); document.getElementById('sigClear').onclick = ()=> sigPad.clear();
   };
   document.getElementById('btnFirmaRespOk').onclick = async ()=>{
     let firma;
@@ -6856,7 +6923,7 @@ const DTL_DECLARACION = "Declaro haber recibido a satisfacción los elementos de
 
 async function loadDtlState(){
   const [en, t, e] = await Promise.all([
-    sb.from("dtl_entidades").select("id,nombre,activo,creado_en,modo_registro,link_nuevos_activo,catalogo_unico").order("creado_en",{ascending:true}),
+    sb.from("dtl_entidades").select("id,nombre,activo,creado_en,modo_registro,link_nuevos_activo,catalogo_unico").order("nombre",{ascending:true}),
     cargarTodasFilas(()=> sb.from("dtl_trabajadores").select("id,nombre,identificacion,cargo,area,entidad_id,fecha_ingreso,fecha_salida,aviso_cedula_rh,correo,activo,inactivo_por_archivo,creado_en").order("nombre",{ascending:true}).order("id",{ascending:true})),
     cargarTodasFilas(()=> sb.from("dtl_entregas").select("id,trabajador_id,fecha").order("fecha",{ascending:false}).order("id",{ascending:true}))
   ]);
@@ -8342,10 +8409,7 @@ function renderPasoDtl3(){
       <p class="muted-sm" style="margin-bottom:10px">Confirma que hiciste la entrega.</p>
       ${plantilla?`
       <div id="firmaRGuardadaDtl" style="text-align:center;margin-bottom:12px"><img src="${plantilla.firma}" style="height:80px;max-width:100%;border:1px solid var(--line);border-radius:8px;background:#fff;padding:4px"></div>
-      <p class="muted-sm" style="text-align:center;margin-bottom:10px">Firma guardada en "${esc(plantilla.nombre)}"</p>
-      <div style="display:flex;justify-content:center;margin-bottom:6px">
-        <button class="btn btn-ghost btn-sm" id="btnRefirmarRDtl">${I.pen} Firmar de nuevo (solo para esta entrega)</button>
-      </div>`:''}
+      <p class="muted-sm" style="text-align:center;margin-bottom:10px">Firma guardada en "${esc(plantilla.nombre)}"</p>`:''}
       <div id="padWrapRDtl" style="${plantilla?'display:none':''}">
         <div class="sig-box" id="sigBox"><canvas id="sigCanvas"></canvas><div class="sig-placeholder" id="sigPh">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div></div>
         <div class="sig-actions"><button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar</button></div>
@@ -8359,19 +8423,13 @@ function renderPasoDtl3(){
       <button class="btn btn-green" id="btnFirmaRespOkDtl">${I.check} Guardar entrega</button>
     </div>
   </div>`);
+  // Igual que en EPP: si la plantilla se eligió desde el paso 1, se usa esa firma
+  // sin dar la opción de "firmar de nuevo" aquí (evita confundir a los supervisores).
   let usarGuardada = !!plantilla;
   if(!usarGuardada){ initSignature(); document.getElementById('sigClear').onclick = ()=> sigPad.clear(); }
   const chkGuardarPredet = document.getElementById('chkGuardarPredetDtl');
   if(chkGuardarPredet) chkGuardarPredet.onchange = ()=>{
     document.getElementById('nuevaPredetDtlNombreWrap').style.display = chkGuardarPredet.checked ? 'block' : 'none';
-  };
-  const reBtn = document.getElementById('btnRefirmarRDtl');
-  if(reBtn) reBtn.onclick = ()=>{
-    document.getElementById('firmaRGuardadaDtl').style.display='none';
-    reBtn.parentElement.style.display='none';
-    document.getElementById('padWrapRDtl').style.display='block';
-    usarGuardada = false;
-    initSignature(); document.getElementById('sigClear').onclick = ()=> sigPad.clear();
   };
   document.getElementById('btnFirmaRespOkDtl').onclick = async ()=>{
     let firma;
@@ -10587,6 +10645,7 @@ async function guardarEditarInspeccion(id){
     toast("Inspección actualizada","ok");
     inspeccionDraft = null;
     await loadInspeccionesState();
+    closeModal();
     verInspeccion(id);
   } finally { desbloquear(); }
 }
