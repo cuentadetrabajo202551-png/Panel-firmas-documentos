@@ -194,6 +194,9 @@ input,textarea,select{font-family:inherit;font-size:14px;color:var(--ink)}
 .hstat-ic.c-blue{background:var(--brand-soft);color:var(--brand-deep)}
 .hstat-ic.c-green{background:var(--green-soft);color:#0f6e56}
 .hstat-ic.c-amber{background:#faeeda;color:#854f0b}
+.hstat-ic.c-purple{background:#eeedfe;color:#3c3489}
+.hstat-click{border:1px solid var(--line);cursor:pointer;font-family:inherit;text-align:left;transition:.15s}
+.hstat-click:hover{border-color:var(--brand);box-shadow:0 2px 8px rgba(29,51,199,.12)}
 .hstat .label{font-size:10px;color:var(--ink-3);font-weight:700;letter-spacing:.02em;text-transform:uppercase;line-height:1.25;white-space:nowrap}
 .hstat .value{font-family:var(--display);font-size:19px;font-weight:700;letter-spacing:-.01em;margin-top:1px}
 .field-label-sm{font-size:11.5px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.02em;margin-bottom:6px}
@@ -2085,6 +2088,11 @@ async function generarPDF(id, firmaResp){
   const doc = new jsPDF({unit:"mm", format:"a4"});
   const PW = 210, M = 10, RIGHT = PW - M;
   const asis = l.asistentes || [];
+  // Convertidas a JPEG antes de armar la tabla (ver firmaParaPdf) — jsPDF infla mucho
+  // las firmas PNG al incrustarlas, así que se resuelven todas de una vez aquí.
+  const firmasJpg = new Map();
+  await Promise.all(asis.filter(a=>a && a.firma).map(async a=>{ firmasJpg.set(a.id, await firmaParaPdf(a.firma)); }));
+  if(firmaResp) firmaResp = await firmaParaPdf(firmaResp);
 
   // columnas tabla asistentes
   const cNo = M, cNom = M+14, cCed = M+74, cCar = M+114, cFir = M+154, cEnd = RIGHT; // 14/60/40/40/36
@@ -2216,7 +2224,7 @@ async function generarPDF(id, firmaResp){
         doc.text(partesAudit.join(" · "), cNom+2, y+h-2.3);
       }
       doc.setTextColor(20,20,20);
-      if(a.firma){ try{ doc.addImage(a.firma, "PNG", cFir+2, y+1.5, cEnd-cFir-4, h-3); }catch(e){} }
+      if(a.firma){ try{ doc.addImage(firmasJpg.get(a.id)||a.firma, "JPEG", cFir+2, y+1.5, cEnd-cFir-4, h-3); }catch(e){} }
     }
   }
 
@@ -2243,7 +2251,7 @@ async function generarPDF(id, firmaResp){
     doc.setFontSize(8.4); doc.setTextColor(20,20,20); doc.setFont("helvetica","normal");
     doc.text(doc.splitTextToSize(l.responsableNombre||"", w-4)[0]||"", M+2, fy+11);
     doc.text(doc.splitTextToSize(l.responsableCargo||"", w-4)[0]||"", M+w+2, fy+11);
-    if(firmaResp){ try{ doc.addImage(firmaResp,'PNG', M+2*w+2, fy+5, w-4, 9); }catch(e){} }
+    if(firmaResp){ try{ doc.addImage(firmaResp,'JPEG', M+2*w+2, fy+5, w-4, 9); }catch(e){} }
 
     doc.setFontSize(6.6); doc.setTextColor(140,140,160);
     doc.text("Generado el "+fmtDateTime(new Date())+" · Sistema Digital "+CODIGO+" · Don Aseo Ltda.", PW/2, 293, {align:"center"});
@@ -2675,6 +2683,32 @@ function quitarFondoFirma(file){
     };
     rd.onerror = () => rej(new Error('No se pudo leer el archivo'));
     rd.readAsDataURL(file);
+  });
+}
+
+/* jsPDF NO reconstruye el PNG comprimido tal cual — lo decodifica a píxeles crudos y lo
+   vuelve a comprimir por su cuenta, mucho peor que el PNG original (una firma de ~15KB
+   puede terminar pesando ~480KB DENTRO del PDF). Las firmas (dibujadas a mano, siempre
+   con fondo blanco de sigPad.dataURL(); o subidas con quitarFondoFirma(), con fondo
+   TRANSPARENTE) se convierten aquí a JPEG justo antes de meterlas al PDF — jsPDF sí
+   respeta la compresión JPEG tal cual viene, así que el peso final es el real de la
+   imagen. Se rellena blanco primero SIEMPRE (haga falta o no) para que una firma con
+   fondo transparente no salga con fondo negro al perder el canal alfa en JPEG. Calidad
+   alta (0.92) porque una firma es casi puro blanco+trazo fino: sigue pesando poquísimo
+   incluso a esa calidad, y así no se le resta nitidez a algo que es evidencia legal. */
+function firmaParaPdf(dataUrlPng){
+  return new Promise(res=>{
+    if(!dataUrlPng){ res(dataUrlPng); return; }
+    const img = new Image();
+    img.onload = () => {
+      const cv = document.createElement("canvas"); cv.width = img.width; cv.height = img.height;
+      const ctx = cv.getContext("2d");
+      ctx.fillStyle = "#ffffff"; ctx.fillRect(0,0,cv.width,cv.height);
+      ctx.drawImage(img,0,0);
+      res(cv.toDataURL("image/jpeg", 0.92));
+    };
+    img.onerror = () => res(dataUrlPng);
+    img.src = dataUrlPng;
   });
 }
 
@@ -4478,6 +4512,7 @@ async function renderDotacionAdmin(silent){
   const totalEntregas = entregasC.length;
   const mesActual = hoyLocal().slice(0,7);
   const entregasMes = entregasC.filter(e=>(e.fecha||"").startsWith(mesActual)).length;
+  const entregasHoy = entregasC.filter(e=>e.fecha===hoyLocal()).length;
   const c = contratoActual();
   const enTodos = contratoActualId==='todos';
 
@@ -4490,6 +4525,7 @@ async function renderDotacionAdmin(silent){
           <div class="hstat"><div class="hstat-ic c-blue">${I.users}</div><div><div class="label">Trabajadores</div><div class="value">${totalTrab}</div></div></div>
           <div class="hstat"><div class="hstat-ic c-green">${I.check}</div><div><div class="label">Entregas registradas</div><div class="value">${totalEntregas}</div></div></div>
           <div class="hstat"><div class="hstat-ic c-amber">${I.cal}</div><div><div class="label">Entregas este mes</div><div class="value">${entregasMes}</div></div></div>
+          <button type="button" class="hstat hstat-click" id="btnEntregasHoyDot"><div class="hstat-ic c-purple">${I.cal}</div><div><div class="label">Entregas hoy</div><div class="value">${entregasHoy}</div></div></button>
         </div>
         <p style="color:var(--ink-3);font-size:14.5px;font-weight:500;margin:0;white-space:nowrap">Registra la entrega de elementos de protección personal, con firma digital en el momento.</p>
         <div class="ph-quicklinks dot-pc-only">
@@ -4571,9 +4607,9 @@ function renderDotacionBody(){
         ${I.search}
         <input type="text" id="dotSearch" placeholder="Buscar por nombre, cédula, cargo o área…" value="${esc(dotQuery)}">
       </div>
-      ${puedeEscribir()?`<button class="btn btn-ghost btn-sm" id="btnEntregasHoyDot" style="white-space:nowrap">${I.cal} Entregas de hoy</button>`:''}
       ${MIPERFIL.esAdmin?`<label class="chk" style="white-space:nowrap"><input type="checkbox" id="chkTodosDot"> Todos</label>`:''}
       <label class="chk" style="white-space:nowrap"><input type="checkbox" id="chkMostrarInactivosDot" ${dotMostrarInactivos?'checked':''}> Mostrar inactivos</label>
+      <button class="btn btn-ghost btn-sm" id="btnLimpiarFiltrosDot" style="white-space:nowrap" title="Quitar la búsqueda y volver a Todos los contratos">${I.close} Limpiar</button>
     </div>
     <div class="resp-firma" id="barraSeleccionDot" style="margin-bottom:16px;align-items:center;gap:12px;flex-wrap:wrap;display:${seleccionadosDot.size?'flex':'none'}">
       <span class="muted-sm" id="contadorSeleccionDot">${seleccionadosDot.size} seleccionado(s)</span>
@@ -4583,9 +4619,14 @@ function renderDotacionBody(){
       <button class="btn btn-danger btn-sm" id="btnEliminarSeleccionDot">${I.trash} Eliminar seleccionados</button>
     </div>
     <div id="dotGrid"></div>`;
-  const behd=document.getElementById("btnEntregasHoyDot"); if(behd) behd.onclick = abrirEntregasHoyDot;
   document.getElementById("dotSearch").oninput = (e)=>{ dotQuery = e.target.value; renderDotTrabajadoresGrid(); };
   document.getElementById("chkMostrarInactivosDot").onchange = (e)=>{ dotMostrarInactivos = e.target.checked; renderDotTrabajadoresGrid(); };
+  document.getElementById("btnLimpiarFiltrosDot").onclick = ()=>{
+    dotQuery = '';
+    contratoActualId = 'todos';
+    localStorage.setItem('dot_contrato_actual', contratoActualId);
+    renderDotacionAdmin();
+  };
   const chkTodosDot = document.getElementById("chkTodosDot");
   if(chkTodosDot) chkTodosDot.onchange = (e)=>{
     const visibles = trabajadoresFiltradosDot();
@@ -6668,6 +6709,14 @@ async function construirKardexPDF(trabajadorId, filtroFechas){
       if(e.adjunto_archivo && e.adjunto_tipo!=='application/pdf') dimsPorEntrega[e.id] = await getImageSize(e.adjunto_archivo);
     } else if(e.foto_trabajador) dimsPorEntrega[e.id] = await getImageSize(e.foto_trabajador);
   }));
+  // Firmas convertidas a JPEG en paralelo, mismo motivo que dimsPorEntrega arriba (ver
+  // firmaParaPdf): jsPDF infla mucho una firma PNG al incrustarla en el PDF.
+  const firmasJpgPorEntrega = {};
+  await Promise.all(listaEntregas.map(async e=>{
+    if(e.tipo_registro==='escaneado') return;
+    const [t,r] = await Promise.all([firmaParaPdf(e.firma_trabajador), firmaParaPdf(e.firma_responsable)]);
+    firmasJpgPorEntrega[e.id] = { t, r };
+  }));
   let y = encabezado();
   y = tablaHead(y);
   let pag = 1;
@@ -6732,8 +6781,8 @@ async function construirKardexPDF(trabajadorId, filtroFechas){
           else doc.addImage(e.foto_trabajador,"JPEG",x2+2,y+2,colFotoW,rowH-4); // sin dimensiones (raro): antiguo comportamiento de respaldo
         }catch(err){}
       }
-      if(e.firma_trabajador){ try{ doc.addImage(e.firma_trabajador,"PNG",x2f+3,y+2,x3-x2f-6,rowH-4); }catch(err){} }
-      if(e.firma_responsable){ try{ doc.addImage(e.firma_responsable,"PNG",x3+3,y+2,x4-x3-6,rowH-4); }catch(err){} }
+      if(e.firma_trabajador){ try{ doc.addImage((firmasJpgPorEntrega[e.id]||{}).t||e.firma_trabajador,"JPEG",x2f+3,y+2,x3-x2f-6,rowH-4); }catch(err){} }
+      if(e.firma_responsable){ try{ doc.addImage((firmasJpgPorEntrega[e.id]||{}).r||e.firma_responsable,"JPEG",x3+3,y+2,x4-x3-6,rowH-4); }catch(err){} }
       else if(e.via==='remoto'){
         doc.setFont("helvetica","italic"); doc.setFontSize(7.5); doc.setTextColor(130,130,150);
         doc.text("Firmado remotamente", (x3+x4)/2, y+rowH/2, {align:"center"});
@@ -7013,6 +7062,7 @@ async function renderDtlAdmin(silent){
   const totalEntregas = entregasE.length;
   const mesActual = hoyLocal().slice(0,7);
   const entregasMes = entregasE.filter(e=>(e.fecha||"").startsWith(mesActual)).length;
+  const entregasHoy = entregasE.filter(e=>e.fecha===hoyLocal()).length;
 
   const entidadesAcc = DTL.entidades.filter(x=>tieneEntidadDtl(x.id));
   // Si el supervisor solo tiene UNA entidad asignada, "todas las entidades" es lo mismo que
@@ -7033,6 +7083,7 @@ async function renderDtlAdmin(silent){
           <div class="hstat"><div class="hstat-ic c-blue">${I.users}</div><div><div class="label">Trabajadores</div><div class="value">${totalTrab}</div></div></div>
           <div class="hstat"><div class="hstat-ic c-green">${I.check}</div><div><div class="label">Entregas registradas</div><div class="value">${totalEntregas}</div></div></div>
           <div class="hstat"><div class="hstat-ic c-amber">${I.cal}</div><div><div class="label">Entregas este mes</div><div class="value">${entregasMes}</div></div></div>
+          <button type="button" class="hstat hstat-click" id="btnEntregasHoyDtl"><div class="hstat-ic c-purple">${I.cal}</div><div><div class="label">Entregas hoy</div><div class="value">${entregasHoy}</div></div></button>
         </div>
         <p style="color:var(--ink-3);font-size:14.5px;font-weight:500;margin:0;white-space:nowrap">Entrega de dotación legal (pantalones, camisas y botas), con firma digital. Todos los trabajadores, de todos los contratos, en un solo lugar.</p>
         <div class="ph-quicklinks dot-pc-only">
@@ -7081,9 +7132,9 @@ async function renderDtlAdmin(silent){
           ${I.search}
           <input type="text" id="dtlSearch" placeholder="Buscar por nombre, cédula, cargo o área…" value="${esc(dtlQuery)}">
         </div>
-        ${puedeEscribir()?`<button class="btn btn-ghost btn-sm" id="btnEntregasHoyDtl" style="white-space:nowrap">${I.cal} Entregas de hoy</button>`:''}
         ${MIPERFIL.esAdmin?`<label class="chk" style="white-space:nowrap"><input type="checkbox" id="chkTodosDtl"> Todos</label>`:''}
         <label class="chk" style="white-space:nowrap"><input type="checkbox" id="chkMostrarInactivosDtl" ${dtlMostrarInactivos?'checked':''}> Mostrar inactivos</label>
+        <button class="btn btn-ghost btn-sm" id="btnLimpiarFiltrosDtl" style="white-space:nowrap" title="Quitar la búsqueda y volver a Todos los contratos">${I.close} Limpiar</button>
       </div>
       <div class="resp-firma" id="barraSeleccionDtl" style="margin-bottom:16px;align-items:center;gap:12px;flex-wrap:wrap;display:${seleccionadosDtl.size?'flex':'none'}">
         <span class="muted-sm" id="contadorSeleccionDtl">${seleccionadosDtl.size} seleccionado(s)</span>
@@ -7119,6 +7170,12 @@ async function renderDtlAdmin(silent){
   const behdtl=document.getElementById("btnEntregasHoyDtl"); if(behdtl) behdtl.onclick = abrirEntregasHoyDtl;
   document.getElementById("dtlSearch").oninput = (e)=>{ dtlQuery = e.target.value; renderDtlGrid(); };
   document.getElementById("chkMostrarInactivosDtl").onchange = (e)=>{ dtlMostrarInactivos = e.target.checked; renderDtlGrid(); };
+  document.getElementById("btnLimpiarFiltrosDtl").onclick = ()=>{
+    dtlQuery = '';
+    dtlFiltroEntidad = 'todas';
+    localStorage.setItem('dtl_filtro_entidad', dtlFiltroEntidad);
+    renderDtlAdmin(true);
+  };
   const chkTodosDtl = document.getElementById("chkTodosDtl");
   if(chkTodosDtl) chkTodosDtl.onchange = (e)=>{
     const visibles = trabajadoresFiltradosDtl();
@@ -8883,6 +8940,13 @@ async function construirKardexDtlPDF(trabajadorId, filtroFechas){
       if(e.adjunto_archivo && e.adjunto_tipo!=='application/pdf') dimsPorEntrega[e.id] = await getImageSize(e.adjunto_archivo);
     } else if(e.foto_trabajador) dimsPorEntrega[e.id] = await getImageSize(e.foto_trabajador);
   }));
+  // Firmas convertidas a JPEG en paralelo (ver mismo comentario en construirKardexPDF de EPP).
+  const firmasJpgPorEntrega = {};
+  await Promise.all(listaEntregas.map(async e=>{
+    if(e.tipo_registro==='escaneado') return;
+    const [t,r] = await Promise.all([firmaParaPdf(e.firma_trabajador), firmaParaPdf(e.firma_responsable)]);
+    firmasJpgPorEntrega[e.id] = { t, r };
+  }));
   let y = encabezado();
   y = tablaHead(y);
   let pag = 1;
@@ -8947,8 +9011,8 @@ async function construirKardexDtlPDF(trabajadorId, filtroFechas){
           else doc.addImage(e.foto_trabajador,"JPEG",x2+2,y+2,colFotoW,rowH-4);
         }catch(err){}
       }
-      if(e.firma_trabajador){ try{ doc.addImage(e.firma_trabajador,"PNG",x2f+3,y+2,x3-x2f-6,rowH-4); }catch(err){} }
-      if(e.firma_responsable){ try{ doc.addImage(e.firma_responsable,"PNG",x3+3,y+2,x4-x3-6,rowH-4); }catch(err){} }
+      if(e.firma_trabajador){ try{ doc.addImage((firmasJpgPorEntrega[e.id]||{}).t||e.firma_trabajador,"JPEG",x2f+3,y+2,x3-x2f-6,rowH-4); }catch(err){} }
+      if(e.firma_responsable){ try{ doc.addImage((firmasJpgPorEntrega[e.id]||{}).r||e.firma_responsable,"JPEG",x3+3,y+2,x4-x3-6,rowH-4); }catch(err){} }
       else if(e.via==='remoto'){
         doc.setFont("helvetica","italic"); doc.setFontSize(7.5); doc.setTextColor(130,130,150);
         doc.text("Firmado remotamente", (x3+x4)/2, y+rowH/2, {align:"center"});
@@ -10902,8 +10966,8 @@ async function construirInspeccionPDF(idOrData){
   doc.rect(M,y,colW,boxH); doc.rect(M+colW+6,y,colW,boxH);
   doc.setFont("helvetica","bold"); doc.setFontSize(7.5); doc.setTextColor(90,90,110);
   doc.text("INSPECTOR", M+3, y+5); doc.text("RESPONSABLE DEL ÁREA", M+colW+9, y+5);
-  try{ if(insp.firma_inspector) doc.addImage(insp.firma_inspector,"PNG",M+3,y+7,colW-6,20); }catch(e){}
-  try{ if(insp.firma_responsable) doc.addImage(insp.firma_responsable,"PNG",M+colW+9,y+7,colW-6,20); }catch(e){}
+  try{ if(insp.firma_inspector) doc.addImage(await firmaParaPdf(insp.firma_inspector),"JPEG",M+3,y+7,colW-6,20); }catch(e){}
+  try{ if(insp.firma_responsable) doc.addImage(await firmaParaPdf(insp.firma_responsable),"JPEG",M+colW+9,y+7,colW-6,20); }catch(e){}
   doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(20,20,20);
   doc.text(pdfTexto(insp.inspector_nombre||""), M+3, y+boxH-2);
   doc.text(pdfTexto((insp.responsable_nombre||"")+(insp.responsable_cargo?" · "+insp.responsable_cargo:"")), M+colW+9, y+boxH-2);
