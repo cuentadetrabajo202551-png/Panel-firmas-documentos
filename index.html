@@ -447,6 +447,25 @@ table.dt tr:hover td{background:#fafbfe}
 .cons-preview{position:sticky;top:16px}
 .cons-preview .pub-card{max-height:calc(100vh - 110px);overflow-y:auto}
 @media(max-width:900px){ .cons-grid{grid-template-columns:1fr} .cons-preview{position:static} .cons-preview .pub-card{max-height:none} }
+/* Tarjetas de sección del constructor de Inspecciones — barra de acento a la
+   izquierda para que cada sección se distinga de las demás sin depender solo del
+   borde gris de siempre (misma idea que un ".panel-section", pero sin tocar esa
+   clase compartida por el resto de la app). */
+.sec-card{border:1px solid var(--line);border-left:4px solid var(--brand);border-radius:12px;padding:14px;margin-bottom:12px;background:#fff;transition:box-shadow .15s,opacity .15s}
+/* Color de acento distinto por tipo de sección (info=azul de marca por defecto arriba) */
+.sec-card.t-checklist{border-left-color:var(--green)}
+.sec-card.t-tabla_dinamica{border-left-color:var(--yellow)}
+.sec-card.t-fotos{border-left-color:#e8720c}
+.sec-card.t-gps{border-left-color:#0e8a8a}
+.sec-card.sec-dragging{opacity:.6;box-shadow:0 6px 18px rgba(20,30,90,.18)}
+.sec-drag-handle{display:flex;flex:none;color:var(--ink-3);cursor:grab;touch-action:none;padding:2px;border-radius:6px}
+.sec-drag-handle:hover{color:var(--ink-2);background:var(--line-2)}
+.sec-drag-handle svg{width:18px;height:18px;display:block}
+.sec-card.sec-dragging .sec-drag-handle{cursor:grabbing}
+/* Acciones de eliminar/duplicar más discretas — solo se ven con fuerza al pasar el
+   cursor, para que el contenido (títulos, campos) sea lo que más resalte. */
+.insp-del-btn{opacity:.5;transition:opacity .15s}
+.insp-del-btn:hover{opacity:1}
 .paleta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:18px;box-shadow:var(--shadow-sm);position:sticky;top:72px;z-index:20}
 .paleta b{width:100%;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-3)}
 .paleta button{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:9px;background:var(--brand-soft);color:var(--brand-deep);font-weight:700;font-size:12.5px;border:1px solid var(--brand-soft2);transition:.15s}
@@ -521,6 +540,15 @@ table.dt tr:hover td{background:#fafbfe}
 .chip-estado.active.bien{background:var(--green)}
 .chip-estado.active.mal{background:var(--danger)}
 .chip-estado.active.na{background:#9aa2b8}
+/* Marcado manual de qué estado de un checklist cuenta como conforme/no conforme,
+   en el constructor (ver 7.111 en MEMORY.md) — reutiliza los mismos 3 colores de
+   .chip-estado (verde/rojo/gris) para que el criterio se vea igual en todos lados. */
+.tipo-estado-btn{font-size:11px;font-weight:700;padding:4px 9px;border-radius:7px;border:1.5px solid var(--line);background:#fff;color:var(--ink-3);cursor:pointer;transition:.15s}
+.tipo-estado-btn:hover{border-color:var(--brand-soft2)}
+.tipo-estado-btn.active{color:#fff;border-color:transparent}
+.tipo-estado-btn.active.bien{background:var(--green)}
+.tipo-estado-btn.active.mal{background:var(--danger)}
+.tipo-estado-btn.active.na{background:#9aa2b8}
 .trab-summary .tk{font-size:12px;color:var(--ink-3);font-weight:600;text-transform:uppercase}
 .trab-summary .tv{font-size:15px;font-weight:700;color:var(--ink);margin-top:2px}
 .entrega-item-tag{display:inline-block;background:var(--brand-soft);color:var(--brand-deep);border-radius:7px;padding:2px 9px;font-size:12px;font-weight:600;margin:0 5px 5px 0}
@@ -651,7 +679,8 @@ const I = {
   navEpp:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="8.5" width="8" height="7" rx="2.4"/><rect x="14" y="8.5" width="8" height="7" rx="2.4"/><path d="M10 12h4"/><path d="M2 12H0.3M22 12h1.7"/></svg>',
   navDotacion:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.38 3.46 16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 .55.45 1 1 1h10a1 1 0 0 0 1-1V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"/></svg>',
   navInspeccion:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="12" height="16" rx="2"/><rect x="8.7" y="3.3" width="4.6" height="2.2" rx="0.8" fill="#0b1330" stroke-width="1.2"/><rect x="7.3" y="9" width="2.2" height="2.2" rx="0.4"/><path d="m7.6 10.1.4.4.9-.9"/><path d="M10.9 10.1h3.2"/><rect x="7.3" y="13" width="2.2" height="2.2" rx="0.4"/><path d="m7.6 14.1.4.4.9-.9"/><path d="M10.9 14.1h3.2"/><circle cx="17.3" cy="17.3" r="2.8"/><path d="m20.5 20.5-1.6-1.6"/></svg>',
-  navAuditoria:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12.5c0 5-3.5 7.3-7.66 8.7a1 1 0 0 1-.68 0C7.5 19.8 4 17.5 4 12.5V6.2a1 1 0 0 1 1-1c1.9 0 4.3-1.1 5.95-2.6a1.1 1.1 0 0 1 1.45 0C14.05 4.1 16.5 5.2 18.4 5.2a1 1 0 0 1 1 1z"/><path d="M8 12c1.2-1.6 2.6-2.4 4-2.4s2.8.8 4 2.4c-1.2 1.6-2.6 2.4-4 2.4S9.2 13.6 8 12Z"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>'
+  navAuditoria:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12.5c0 5-3.5 7.3-7.66 8.7a1 1 0 0 1-.68 0C7.5 19.8 4 17.5 4 12.5V6.2a1 1 0 0 1 1-1c1.9 0 4.3-1.1 5.95-2.6a1.1 1.1 0 0 1 1.45 0C14.05 4.1 16.5 5.2 18.4 5.2a1 1 0 0 1 1 1z"/><path d="M8 12c1.2-1.6 2.6-2.4 4-2.4s2.8.8 4 2.4c-1.2 1.6-2.6 2.4-4 2.4S9.2 13.6 8 12Z"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>',
+  dragHandle:'<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>'
 };
 
 /* ============================================================
@@ -1799,10 +1828,16 @@ function pubHeader(l){
 }
 
 /* ---------- Firma en canvas (mouse + touch + lápiz) ---------- */
-function initSignature(){
-  const canvas = document.getElementById("sigCanvas");
-  const box = document.getElementById("sigBox");
-  const ph = document.getElementById("sigPh");
+/* Refactor mínimo: la lógica de dibujo vivía ligada a los ids fijos "sigCanvas"/
+   "sigBox"/"sigPh" y al global "sigPad" — initSignature() sigue funcionando IGUAL
+   para los 25+ sitios que ya la usan así (EPP, Dotación, Documentos, Asistencia,
+   predeterminados...), pero ahora es un envoltorio de una versión parametrizada
+   (crearFirmaPad) que Inspecciones usa para tener VARIOS pads a la vez (un
+   firmante "fresco" por sección, ver 7.11x en MEMORY.md) sin tocar el sigPad global. */
+function crearFirmaPad(canvasId, boxId, phId){
+  const canvas = document.getElementById(canvasId);
+  const box = document.getElementById(boxId);
+  const ph = document.getElementById(phId);
   const ctx = canvas.getContext("2d");
   let drawing=false, hasInk=false, last=null;
 
@@ -1848,7 +1883,7 @@ function initSignature(){
   canvas.addEventListener("touchmove",move,{passive:false});
   canvas.addEventListener("touchend",end,{passive:false});
 
-  sigPad = {
+  return {
     isEmpty: ()=>!hasInk,
     clear: ()=>{ ctx.clearRect(0,0,canvas.width,canvas.height); hasInk=false; ph.style.display="grid"; },
     dataURL: ()=>{
@@ -1865,6 +1900,7 @@ function initSignature(){
     }
   };
 }
+function initSignature(){ sigPad = crearFirmaPad("sigCanvas","sigBox","sigPh"); }
 
 /* ---------- Registrar asistencia ---------- */
 async function registrarAsistencia(id){
@@ -9458,8 +9494,8 @@ let contratoInspActualId = localStorage.getItem('insp_contrato_actual') || null;
 async function loadInspeccionesState(){
   const [co, fo, en, ins] = await Promise.all([
     sb.from("insp_contratos").select("id,nombre,activo,creado_en").order("creado_en",{ascending:true}),
-    sb.from("insp_formatos").select("id,nombre,activo,tiene_fotos").order("nombre",{ascending:true}),
-    sb.from("insp_enlaces").select("id,contrato_id,formato_id,predeterminado_id,nombre,activo,creado_en").order("creado_en",{ascending:true}),
+    sb.from("insp_formatos").select("id,nombre,activo,tiene_fotos,firmantes,color_acento").order("nombre",{ascending:true}),
+    sb.from("insp_enlaces").select("id,contrato_id,formato_id,predeterminado_id,firmantes_banco,nombre,activo,creado_en").order("creado_en",{ascending:true}),
     cargarTodasFilas(()=> sb.from("insp_inspecciones").select("id,enlace_id,contrato_id,formato_nombre,creado_en,creado_por,inspector_nombre").order("creado_en",{ascending:false}).order("id",{ascending:true}))
   ]);
   const err = co.error || fo.error || en.error || ins.error;
@@ -9571,6 +9607,10 @@ let formatoEditorId = null;
 let formatoEditorState = null; // { nombre, activo, tiene_fotos, estructura:[...] }
 
 function nuevoIdCampoInsp(){ return 'c'+Math.random().toString(36).slice(2,9); }
+// Mismo default que la columna insp_formatos.firmantes en Supabase (CAMBIOS_SQL_56) —
+// reproduce EXACTO el comportamiento de siempre (Inspector fresco + Responsable del
+// área banco) para que un formato sin personalizar no cambie nada.
+const FIRMANTES_DEFAULT_INSP = [{id:'inspector',rol:'Inspector',origen:'fresco'},{id:'responsable',rol:'Responsable del área',origen:'banco'}];
 
 async function renderConstructorFormatoInsp(formatoId){
   formatoEditorId = formatoId;
@@ -9579,15 +9619,20 @@ async function renderConstructorFormatoInsp(formatoId){
     const { data, error } = await sb.from("insp_formatos").select("*").eq("id",formatoId).maybeSingle();
     desbloquear();
     if(error || !data){ toast("No se pudo cargar el formato","err"); location.hash="#/inspecciones"; return; }
-    formatoEditorState = { nombre: data.nombre||"", activo: data.activo!==false, estructura: Array.isArray(data.estructura) ? JSON.parse(JSON.stringify(data.estructura)) : [] };
+    formatoEditorState = {
+      nombre: data.nombre||"", activo: data.activo!==false,
+      estructura: Array.isArray(data.estructura) ? JSON.parse(JSON.stringify(data.estructura)) : [],
+      firmantes: Array.isArray(data.firmantes) ? JSON.parse(JSON.stringify(data.firmantes)) : JSON.parse(JSON.stringify(FIRMANTES_DEFAULT_INSP)),
+      color_acento: data.color_acento || '#14215a'
+    };
     // Compatibilidad con formatos guardados antes de que "fotos" fuera una sección
     // movible: si tenían fotos activadas pero ninguna sección tipo 'fotos' en su
     // estructura, se la agregamos al final — mismo lugar donde siempre salían.
     if(data.tiene_fotos!==false && !formatoEditorState.estructura.some(s=>s.tipo==='fotos')){
-      formatoEditorState.estructura.push({ id: nuevoIdCampoInsp(), tipo:'fotos', titulo:'Registro fotográfico' });
+      formatoEditorState.estructura.push({ id: nuevoIdCampoInsp(), tipo:'fotos', titulo:'Registro fotográfico', max:5, requerido:false });
     }
   } else {
-    formatoEditorState = { nombre:"", activo:true, estructura: [{ id: nuevoIdCampoInsp(), tipo:'fotos', titulo:'Registro fotográfico' }] };
+    formatoEditorState = { nombre:"", activo:true, estructura: [{ id: nuevoIdCampoInsp(), tipo:'fotos', titulo:'Registro fotográfico', max:5, requerido:false }], firmantes: JSON.parse(JSON.stringify(FIRMANTES_DEFAULT_INSP)), color_acento: '#14215a' };
   }
 
   // El panel de la derecha es una previsualización EN VIVO: reutiliza el mismo motor
@@ -9609,6 +9654,21 @@ async function renderConstructorFormatoInsp(formatoId){
       <div class="cons-head">
         <input class="nombre" id="fiNombre" placeholder="Nombre del formato (ej. Inspección operativa y SST)" value="${esc(formatoEditorState.nombre)}">
       </div>
+      <div class="panel-section" style="margin-bottom:18px">
+        <div class="section-label">Firmantes</div>
+        <p class="muted-sm" style="margin:0 0 10px">Quiénes firman esta inspección — de 0 a los que necesites. "Firma en vivo" la pide el enlace público cada vez; "Firma guardada" se elige de un banco de firmas del contrato al crear el enlace (para roles que nunca están presentes para firmar).</p>
+        <div id="firmantesFormatoInsp"></div>
+        <button class="btn btn-ghost btn-sm" id="btnAddFirmanteInsp" style="margin-top:8px">${I.plus} Agregar firmante</button>
+      </div>
+      <div class="panel-section" style="margin-bottom:18px">
+        <div class="section-label">Apariencia del PDF</div>
+        <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+          <label style="font-size:13px;color:var(--ink-2);display:flex;align-items:center;gap:8px">Color de acento:
+            <input type="color" id="fiColorAcento" value="${esc(formatoEditorState.color_acento||'#14215a')}" style="width:44px;height:32px;padding:2px;border:1px solid var(--line);border-radius:6px;cursor:pointer">
+          </label>
+          <button type="button" class="btn btn-ghost btn-sm" id="btnResetColorAcento">Restablecer azul institucional</button>
+        </div>
+      </div>
       <div class="cons-grid">
         <div>
           <div id="seccionesFormatoInsp"></div>
@@ -9617,16 +9677,24 @@ async function renderConstructorFormatoInsp(formatoId){
             <button class="btn btn-ghost btn-sm" data-add-seccion="checklist">${I.plus} Sección de checklist</button>
             <button class="btn btn-ghost btn-sm" data-add-seccion="tabla_dinamica">${I.plus} Tabla (compromisos, etc.)</button>
             <button class="btn btn-ghost btn-sm" data-add-seccion="fotos">${I.plus} Sección de fotos</button>
+            <button class="btn btn-ghost btn-sm" data-add-seccion="gps">${I.pin} Ubicación GPS</button>
           </div>
         </div>
         <div class="cons-preview">
-          <div class="muted-sm" style="margin-bottom:8px;font-weight:700">👁 Así lo va a ver el inspector</div>
-          <div class="pub-card">
+          <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
+            <button type="button" class="btn btn-primary btn-sm" data-cons-tab="form">👁 Formulario</button>
+            <button type="button" class="btn btn-ghost btn-sm" data-cons-tab="pdf">${I.doc} Ver PDF final</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="btnActualizarPdfPreview" style="display:none;margin-left:auto">${I.check} Actualizar</button>
+          </div>
+          <div id="consVistaForm" class="pub-card">
             <div class="pub-head" style="padding:18px">
               <div class="acc"></div>
               <h1 style="font-size:17px" id="prevNombreFormato">${esc(formatoEditorState.nombre)||'Nombre del formato'}</h1>
             </div>
             <div class="pub-body" style="padding:18px" id="inspFormBody"></div>
+          </div>
+          <div id="consVistaPdf" style="display:none;height:calc(100vh - 160px);min-height:400px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#525659">
+            <iframe id="pdfPreviewFrame" title="Vista previa del PDF final" style="width:100%;height:100%;border:none"></iframe>
           </div>
         </div>
       </div>
@@ -9635,6 +9703,54 @@ async function renderConstructorFormatoInsp(formatoId){
   wireLogout();
   document.getElementById('btnVolverFormatoInsp').onclick = ()=>{ location.hash = "#/inspecciones"; };
   document.getElementById('btnGuardarFormatoInsp').onclick = guardarFormatoInsp;
+
+  // "Ver PDF final": arma el PDF REAL (construirInspeccionPDF, el mismo que usa el
+  // enlace público) con los datos de prueba que ya haya en la previsualización de
+  // formulario (inspeccionDraft.respuestas/fotos — lo que sea que el admin haya
+  // llenado ahí de prueba se refleja también acá) y firmantes de relleno (no hay
+  // firma real todavía en el constructor). Se regenera bajo demanda (al cambiar de
+  // pestaña o con "Actualizar"), no en cada tecla — armar el PDF no es gratis
+  // (fotos, conversión de firmas) y no aporta nada regenerar en cada letra escrita.
+  let pdfPreviewUrl = null;
+  async function actualizarPdfPreviewInsp(){
+    const btn = document.getElementById('btnActualizarPdfPreview');
+    const frame = document.getElementById('pdfPreviewFrame');
+    if(btn){ btn.disabled = true; btn.innerHTML = "Generando…"; }
+    try{
+      const firmantesPreview = (formatoEditorState.firmantes||[]).map(f=>({
+        rol: f.rol || 'Firmante',
+        nombre: f.origen==='banco' ? '(se completa con la firma guardada del banco)' : '(nombre del firmante)',
+        cargo: null, firma: null
+      }));
+      const insp = {
+        formato_nombre: formatoEditorState.nombre || 'Nombre del formato',
+        contrato_nombre: 'Contrato de ejemplo',
+        creado_en: new Date().toISOString(),
+        estructura: formatoEditorState.estructura,
+        respuestas: inspeccionDraft.respuestas,
+        fotos: inspeccionDraft.fotos,
+        firmantes: firmantesPreview,
+        color_acento: formatoEditorState.color_acento
+      };
+      const r = await construirInspeccionPDF(insp);
+      if(pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
+      pdfPreviewUrl = r.doc.output('bloburl');
+      if(frame) frame.src = pdfPreviewUrl;
+    }catch(e){ console.error(e); toast("No se pudo generar la vista previa del PDF","err"); }
+    if(btn){ btn.disabled = false; btn.innerHTML = `${I.check} Actualizar`; }
+  }
+  document.querySelectorAll('[data-cons-tab]').forEach(b=>{
+    b.onclick = async ()=>{
+      document.querySelectorAll('[data-cons-tab]').forEach(x=>{ x.classList.remove('btn-primary'); x.classList.add('btn-ghost'); });
+      b.classList.remove('btn-ghost'); b.classList.add('btn-primary');
+      const tab = b.dataset.consTab;
+      document.getElementById('consVistaForm').style.display = tab==='form' ? '' : 'none';
+      document.getElementById('consVistaPdf').style.display = tab==='pdf' ? '' : 'none';
+      document.getElementById('btnActualizarPdfPreview').style.display = tab==='pdf' ? '' : 'none';
+      if(tab==='pdf') await actualizarPdfPreviewInsp();
+    };
+  });
+  document.getElementById('btnActualizarPdfPreview').onclick = actualizarPdfPreviewInsp;
   document.getElementById('fiNombre').oninput = (e)=>{
     formatoEditorState.nombre = e.target.value;
     const prev = document.getElementById('prevNombreFormato'); if(prev) prev.textContent = e.target.value || 'Nombre del formato';
@@ -9643,58 +9759,180 @@ async function renderConstructorFormatoInsp(formatoId){
     b.onclick = ()=>{
       const tipo = b.dataset.addSeccion;
       if(tipo==='fotos' && formatoEditorState.estructura.some(s=>s.tipo==='fotos')){ toast("Ya hay una sección de fotos — solo puede haber una, pero la puedes mover con las flechas","err"); return; }
+      if(tipo==='gps' && formatoEditorState.estructura.some(s=>s.tipo==='gps')){ toast("Ya hay una sección de ubicación GPS — solo puede haber una, pero la puedes mover","err"); return; }
       const nueva = tipo==='info' ? { id: nuevoIdCampoInsp(), tipo:'info', titulo:'Nueva sección', campos: [] }
         : tipo==='checklist' ? { id: nuevoIdCampoInsp(), tipo:'checklist', titulo:'Nuevo checklist', estados:['Cumple','No cumple','N/A'], conObservaciones:true, items: [] }
-        : tipo==='fotos' ? { id: nuevoIdCampoInsp(), tipo:'fotos', titulo:'Registro fotográfico' }
+        : tipo==='fotos' ? { id: nuevoIdCampoInsp(), tipo:'fotos', titulo:'Registro fotográfico', max:5, requerido:false }
+        : tipo==='gps' ? { id: nuevoIdCampoInsp(), tipo:'gps', titulo:'Ubicación de la inspección' }
         : { id: nuevoIdCampoInsp(), tipo:'tabla_dinamica', titulo:'Nueva tabla', columnas: [] };
       formatoEditorState.estructura.push(nueva);
       renderSeccionesFormatoInsp();
     };
   });
+  document.getElementById('btnAddFirmanteInsp').onclick = ()=>{
+    formatoEditorState.firmantes.push({ id: nuevoIdCampoInsp(), rol:'', origen:'fresco' });
+    renderFirmantesFormatoInsp();
+  };
+  document.getElementById('fiColorAcento').oninput = (e)=>{ formatoEditorState.color_acento = e.target.value; };
+  document.getElementById('btnResetColorAcento').onclick = ()=>{
+    formatoEditorState.color_acento = '#14215a';
+    document.getElementById('fiColorAcento').value = '#14215a';
+  };
+  renderFirmantesFormatoInsp();
   renderSeccionesFormatoInsp();
+}
+
+/* Lista de firmantes del formato — vive aparte de "estructura" (no es una
+   sección movible, es información estructural del formato completo). Cada
+   fila: rol (texto libre) + origen (fresco/banco, ver CAMBIOS_SQL_56). */
+function renderFirmantesFormatoInsp(){
+  const host = document.getElementById('firmantesFormatoInsp');
+  if(!host) return;
+  const firmantes = formatoEditorState.firmantes;
+  host.innerHTML = firmantes.length ? firmantes.map((f,i)=>`
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
+      <input data-firmante-rol="${i}" value="${esc(f.rol||'')}" placeholder="Rol (ej. Inspector, Supervisor, Cliente)" style="flex:1;min-width:180px;padding:6px 8px;border:1px solid var(--line);border-radius:6px">
+      <select data-firmante-origen="${i}" style="padding:6px 8px;border:1px solid var(--line);border-radius:6px">
+        <option value="fresco" ${f.origen==='fresco'?'selected':''}>Firma en vivo (en el enlace)</option>
+        <option value="banco" ${f.origen==='banco'?'selected':''}>Firma guardada (banco del contrato)</option>
+      </select>
+      <button class="icon-btn danger insp-del-btn" title="Quitar firmante" data-firmante-del="${i}">${I.trash}</button>
+    </div>`).join('') : '<p class="muted-sm">Sin firmantes — esta inspección se guarda sin ninguna firma.</p>';
+
+  host.querySelectorAll('[data-firmante-rol]').forEach(el=>{
+    el.oninput = (e)=>{ formatoEditorState.firmantes[+el.dataset.firmanteRol].rol = e.target.value; };
+  });
+  host.querySelectorAll('[data-firmante-origen]').forEach(el=>{
+    el.onchange = (e)=>{ formatoEditorState.firmantes[+el.dataset.firmanteOrigen].origen = e.target.value; };
+  });
+  host.querySelectorAll('[data-firmante-del]').forEach(b=>{
+    b.onclick = ()=>{ formatoEditorState.firmantes.splice(+b.dataset.firmanteDel,1); renderFirmantesFormatoInsp(); };
+  });
+}
+
+/* Clona una sección completa con IDs nuevos (la propia y las de sus campos/ítems/
+   columnas) para que no colisionen con la original al editar — mismo criterio que
+   duplicarFormatoInsp, que le agrega " (copia)" al nombre para que sea obvio cuál es cuál. */
+function duplicarSeccionInsp(s){
+  const copia = JSON.parse(JSON.stringify(s));
+  copia.id = nuevoIdCampoInsp();
+  copia.titulo = (copia.titulo||'') + ' (copia)';
+  (copia.campos||[]).forEach(c=> c.id = nuevoIdCampoInsp());
+  (copia.items||[]).forEach(it=> it.id = nuevoIdCampoInsp());
+  (copia.columnas||[]).forEach(col=> col.id = nuevoIdCampoInsp());
+  return copia;
 }
 
 function renderSeccionesFormatoInsp(){
   const host = document.getElementById('seccionesFormatoInsp');
   if(!host) return;
-  const etiquetaTipo = { info:'Información', checklist:'Checklist', tabla_dinamica:'Tabla', fotos:'Fotos' };
+  const etiquetaTipo = { info:'Información', checklist:'Checklist', tabla_dinamica:'Tabla', fotos:'Fotos', gps:'Ubicación GPS' };
   host.innerHTML = formatoEditorState.estructura.map((s,i)=>`
-    <div style="border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px;background:#fff">
+    <div class="sec-card t-${s.tipo}" data-sec-card="${i}">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <span class="sec-drag-handle" data-sec-drag="${i}" title="Arrastrar para reordenar">${I.dragHandle}</span>
         <input data-sec-titulo="${i}" value="${esc(s.titulo||'')}" style="flex:1;min-width:180px;font-weight:700;border:1px solid var(--line);border-radius:8px;padding:6px 10px" placeholder="Título de la sección">
         <span class="muted-sm" style="white-space:nowrap">${etiquetaTipo[s.tipo]||''}</span>
-        <button class="icon-btn" title="Subir" data-sec-up="${i}" ${i===0?'disabled':''}>▲</button>
-        <button class="icon-btn" title="Bajar" data-sec-down="${i}" ${i===formatoEditorState.estructura.length-1?'disabled':''}>▼</button>
-        <button class="icon-btn danger" title="Eliminar sección" data-sec-del="${i}">${I.trash}</button>
+        <button class="icon-btn insp-del-btn" title="Duplicar sección" data-sec-dup="${i}">${I.copy}</button>
+        <button class="icon-btn danger insp-del-btn" title="Eliminar sección" data-sec-del="${i}">${I.trash}</button>
       </div>
-      ${s.tipo==='info' ? renderEditorSeccionInfo(s, i) : s.tipo==='checklist' ? renderEditorSeccionChecklist(s, i) : s.tipo==='tabla_dinamica' ? renderEditorSeccionTabla(s, i) : renderEditorSeccionFotos(s, i)}
+      ${s.tipo==='info' ? renderEditorSeccionInfo(s, i) : s.tipo==='checklist' ? renderEditorSeccionChecklist(s, i) : s.tipo==='tabla_dinamica' ? renderEditorSeccionTabla(s, i) : s.tipo==='gps' ? renderEditorSeccionGps(s, i) : renderEditorSeccionFotos(s, i)}
     </div>`).join('') || '<p class="muted-sm">Todavía no hay secciones — agrega una abajo.</p>';
 
   host.querySelectorAll('[data-sec-titulo]').forEach(el=>{
     el.oninput = (e)=>{ formatoEditorState.estructura[+el.dataset.secTitulo].titulo = e.target.value; renderInspFormBody(); };
   });
-  host.querySelectorAll('[data-sec-up]').forEach(b=>{
-    b.onclick = ()=>{ const i=+b.dataset.secUp; const arr=formatoEditorState.estructura; [arr[i-1],arr[i]]=[arr[i],arr[i-1]]; renderSeccionesFormatoInsp(); };
-  });
-  host.querySelectorAll('[data-sec-down]').forEach(b=>{
-    b.onclick = ()=>{ const i=+b.dataset.secDown; const arr=formatoEditorState.estructura; [arr[i+1],arr[i]]=[arr[i],arr[i+1]]; renderSeccionesFormatoInsp(); };
+  host.querySelectorAll('[data-sec-dup]').forEach(b=>{
+    b.onclick = ()=>{
+      const i = +b.dataset.secDup;
+      formatoEditorState.estructura.splice(i+1, 0, duplicarSeccionInsp(formatoEditorState.estructura[i]));
+      renderSeccionesFormatoInsp();
+    };
   });
   host.querySelectorAll('[data-sec-del]').forEach(b=>{
     b.onclick = ()=>{ formatoEditorState.estructura.splice(+b.dataset.secDel,1); renderSeccionesFormatoInsp(); };
   });
+  wireDragSeccionesInsp(host);
   wireEditoresSeccionInsp(host);
   renderInspFormBody();
 }
 
+/* Arrastrar para reordenar (reemplaza los botones ▲/▼) — Pointer Events en vez de la
+   API HTML5 de drag-and-drop porque esa API se comporta mal con dedo en celular/tablet
+   (justo donde más se va a usar el constructor). Mientras se arrastra, la tarjeta se
+   reordena de una vez en el DOM (insertBefore, conserva el mismo nodo capturado — si se
+   re-renderizara a cada movimiento se perdería el pointer capture a mitad del gesto);
+   el estado (formatoEditorState.estructura) solo se sincroniza UNA VEZ al soltar,
+   leyendo el orden final directo del DOM. */
+/* Arrastrar para reordenar con la API nativa de HTML5 (draggable + dragstart/dragover/
+   dragend) en vez de Pointer Events — el constructor de formatos SOLO se usa en
+   computador (nunca en el enlace público que llena el inspector, ese sí es para
+   celular), así que no hace falta que el arrastre funcione con el dedo; a cambio se
+   gana algo mucho más simple y confiable con mouse, que es justo lo que se necesita
+   aquí. Un primer intento con Pointer Events + setPointerCapture se sentía elegante
+   pero en la práctica el evento de soltar (pointerup) no siempre llegaba de forma
+   confiable al elemento con la captura — con drag-and-drop nativo del navegador ese
+   problema no existe. */
+function wireDragSeccionesInsp(host){
+  let arrastrando = null; // la tarjeta (elemento del DOM) que se está moviendo
+  host.querySelectorAll('[data-sec-drag]').forEach(handle=>{
+    handle.draggable = true;
+    handle.ondragstart = (e)=>{
+      const card = handle.closest('[data-sec-card]');
+      if(!card) return;
+      arrastrando = card;
+      e.dataTransfer.effectAllowed = 'move';
+      try{ e.dataTransfer.setData('text/plain', card.dataset.secCard); }catch(err){}
+      try{ e.dataTransfer.setDragImage(card, 20, 20); }catch(err){}
+      setTimeout(()=> card.classList.add('sec-dragging'), 0);
+    };
+    handle.ondragend = ()=>{
+      if(!arrastrando) return;
+      arrastrando.classList.remove('sec-dragging');
+      // Mutar el arreglo EN EL MISMO SITIO (no reasignar formatoEditorState.estructura a
+      // uno nuevo) — la previsualización en vivo apunta a esta misma referencia
+      // (inspeccionDraft.estructura = formatoEditorState.estructura, fijado una sola vez
+      // al abrir el constructor); reasignar rompe ese enlace y la deja desactualizada.
+      const nuevoOrden = Array.from(host.querySelectorAll('[data-sec-card]')).map(c=>+c.dataset.secCard);
+      const reordenado = nuevoOrden.map(idx=>formatoEditorState.estructura[idx]);
+      formatoEditorState.estructura.splice(0, formatoEditorState.estructura.length, ...reordenado);
+      arrastrando = null;
+      renderSeccionesFormatoInsp();
+    };
+  });
+  host.ondragover = (e)=>{
+    if(!arrastrando) return;
+    e.preventDefault(); // obligatorio para que el navegador permita soltar aquí
+    const cards = Array.from(host.querySelectorAll('[data-sec-card]'));
+    const destino = cards.find(c=>{
+      if(c===arrastrando) return false;
+      const r = c.getBoundingClientRect();
+      return e.clientY < r.top + r.height/2;
+    });
+    if(destino){ host.insertBefore(arrastrando, destino); }
+    else if(cards[cards.length-1]!==arrastrando){ host.appendChild(arrastrando); }
+  };
+}
+
 function renderEditorSeccionFotos(s, i){
-  return `<p class="muted-sm">El inspector podrá agregar hasta 5 fotos aquí al llenar el formulario. Muévela con las flechas de arriba para cambiar en qué parte del formulario aparece — por defecto va al final.</p>`;
+  return `
+    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+      <label style="font-size:13px;color:var(--ink-2)">Máximo de fotos:
+        <input type="number" min="1" max="30" data-fotos-max="${i}" value="${s.max||5}" style="margin-left:6px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;width:70px">
+      </label>
+      <label class="chk"><input type="checkbox" data-fotos-requerido="${i}" ${s.requerido?'checked':''}> Obligatoria (al menos 1 foto)</label>
+    </div>`;
+}
+
+function renderEditorSeccionGps(s, i){
+  return `<p class="muted-sm">Al llenar el formulario, se le pedirá al inspector compartir su ubicación GPS desde el navegador — queda guardada con la inspección y sale en el PDF. Es obligatoria: sin ubicación no se puede enviar el formulario.</p>`;
 }
 
 function renderEditorSeccionInfo(s, i){
   return `
     <div data-campos-info="${i}">
       ${(s.campos||[]).map((c,j)=>`
-        <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:8px;flex-wrap:wrap;padding:8px;background:#f6f8fd;border-radius:8px">
+        <div style="display:flex;gap:6px;align-items:flex-start;margin-bottom:6px;flex-wrap:wrap;padding:6px 8px;background:#f6f8fd;border-radius:8px">
           <input data-campo-etiqueta="${i}:${j}" value="${esc(c.etiqueta||'')}" placeholder="Etiqueta del campo" style="flex:1;min-width:160px;padding:6px 8px;border:1px solid var(--line);border-radius:6px">
           <select data-campo-tipo="${i}:${j}" style="padding:6px 8px;border:1px solid var(--line);border-radius:6px">
             <option value="texto" ${c.tipo==='texto'?'selected':''}>Texto corto</option>
@@ -9704,7 +9942,8 @@ function renderEditorSeccionInfo(s, i){
             <option value="seleccion_unica" ${c.tipo==='seleccion_unica'?'selected':''}>Selección única</option>
             <option value="seleccion_multiple" ${c.tipo==='seleccion_multiple'?'selected':''}>Selección múltiple</option>
           </select>
-          <button class="icon-btn danger" title="Quitar campo" data-campo-del="${i}:${j}">${I.trash}</button>
+          <label class="chk" style="white-space:nowrap"><input type="checkbox" data-campo-requerido="${i}:${j}" ${c.requerido?'checked':''}> Obligatorio</label>
+          <button class="icon-btn danger insp-del-btn" title="Quitar campo" data-campo-del="${i}:${j}">${I.trash}</button>
           ${(c.tipo==='seleccion_unica'||c.tipo==='seleccion_multiple') ? `
           <textarea data-campo-opciones="${i}:${j}" placeholder="Una opción por línea" style="flex-basis:100%;min-height:70px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;box-sizing:border-box">${esc((c.opciones||[]).join('\n'))}</textarea>` : ''}
         </div>`).join('') || '<p class="muted-sm">Sin campos — agrega uno abajo.</p>'}
@@ -9714,6 +9953,7 @@ function renderEditorSeccionInfo(s, i){
 
 function renderEditorSeccionChecklist(s, i){
   const estadosStr = (s.estados||[]).join(', ');
+  const tipoLabel = { bien:'Conforme', mal:'No conforme', na:'No cuenta' };
   return `
     <div style="margin-bottom:10px;display:flex;gap:14px;flex-wrap:wrap;align-items:center">
       <label style="font-size:13px;color:var(--ink-2)">Estados (separados por coma):
@@ -9721,11 +9961,23 @@ function renderEditorSeccionChecklist(s, i){
       </label>
       <label class="chk"><input type="checkbox" data-checklist-obs="${i}" ${s.conObservaciones?'checked':''}> Con observaciones por ítem</label>
     </div>
+    ${(s.estados||[]).length ? `<div style="display:flex;flex-direction:column;gap:7px;margin:0 0 12px;padding:10px 12px;background:#f6f8fd;border-radius:8px">
+      <span class="muted-sm" style="font-weight:700">¿Cuál estado cuenta como conforme / no conforme? (para el % de cumplimiento — márcalo tú, no se adivina)</span>
+      ${s.estados.map(estado=>{
+        const actual = (s.estadosTipo||{})[estado] || 'na';
+        return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="min-width:100px;font-size:13px;font-weight:600">${esc(estado)}</span>
+          <div style="display:flex;gap:4px">
+            ${['bien','mal','na'].map(t=>`<button type="button" class="tipo-estado-btn ${actual===t?'active '+t:''}" data-tipo-estado="${i}" data-tipo-estado-val="${esc(estado)}" data-tipo-estado-tipo="${t}">${tipoLabel[t]}</button>`).join('')}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>` : ''}
     <div data-items-checklist="${i}">
       ${(s.items||[]).map((it,j)=>`
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
           <input data-item-texto="${i}:${j}" value="${esc(it.texto||'')}" placeholder="Texto del ítem" style="flex:1;padding:6px 8px;border:1px solid var(--line);border-radius:6px">
-          <button class="icon-btn danger" title="Quitar ítem" data-item-del="${i}:${j}">${I.trash}</button>
+          <button class="icon-btn danger insp-del-btn" title="Quitar ítem" data-item-del="${i}:${j}">${I.trash}</button>
         </div>`).join('') || '<p class="muted-sm">Sin ítems — agrega uno o pega varios abajo.</p>'}
     </div>
     <div style="display:flex;gap:8px;margin-top:6px">
@@ -9747,7 +9999,7 @@ function renderEditorSeccionTabla(s, i){
             <option value="texto" ${c.tipo==='texto'?'selected':''}>Texto</option>
             <option value="fecha" ${c.tipo==='fecha'?'selected':''}>Fecha</option>
           </select>
-          <button class="icon-btn danger" title="Quitar columna" data-col-del="${i}:${j}">${I.trash}</button>
+          <button class="icon-btn danger insp-del-btn" title="Quitar columna" data-col-del="${i}:${j}">${I.trash}</button>
         </div>`).join('') || '<p class="muted-sm">Sin columnas — agrega una abajo.</p>'}
     </div>
     <button class="btn btn-ghost btn-sm" data-add-col="${i}">${I.plus} Agregar columna</button>`;
@@ -9755,12 +10007,27 @@ function renderEditorSeccionTabla(s, i){
 
 function wireEditoresSeccionInsp(host){
   const st = formatoEditorState;
+  // --- fotos ---
+  host.querySelectorAll('[data-fotos-max]').forEach(el=>{
+    el.onchange = (e)=>{
+      const i = +el.dataset.fotosMax;
+      const v = Math.max(1, Math.min(30, parseInt(e.target.value,10)||5));
+      st.estructura[i].max = v; e.target.value = v;
+      renderInspFormBody();
+    };
+  });
+  host.querySelectorAll('[data-fotos-requerido]').forEach(el=>{
+    el.onchange = (e)=>{ const i=+el.dataset.fotosRequerido; st.estructura[i].requerido = e.target.checked; renderInspFormBody(); };
+  });
   // --- info: campos ---
   host.querySelectorAll('[data-campo-etiqueta]').forEach(el=>{
     el.oninput = (e)=>{ const [i,j]=el.dataset.campoEtiqueta.split(':').map(Number); st.estructura[i].campos[j].etiqueta = e.target.value; renderInspFormBody(); };
   });
   host.querySelectorAll('[data-campo-tipo]').forEach(el=>{
     el.onchange = (e)=>{ const [i,j]=el.dataset.campoTipo.split(':').map(Number); st.estructura[i].campos[j].tipo = e.target.value; renderSeccionesFormatoInsp(); };
+  });
+  host.querySelectorAll('[data-campo-requerido]').forEach(el=>{
+    el.onchange = (e)=>{ const [i,j]=el.dataset.campoRequerido.split(':').map(Number); st.estructura[i].campos[j].requerido = e.target.checked; renderInspFormBody(); };
   });
   host.querySelectorAll('[data-campo-opciones]').forEach(el=>{
     el.oninput = (e)=>{ const [i,j]=el.dataset.campoOpciones.split(':').map(Number); st.estructura[i].campos[j].opciones = e.target.value.split('\n').map(v=>v.trim()).filter(Boolean); renderInspFormBody(); };
@@ -9774,6 +10041,16 @@ function wireEditoresSeccionInsp(host){
   // --- checklist ---
   host.querySelectorAll('[data-checklist-estados]').forEach(el=>{
     el.oninput = (e)=>{ const i=+el.dataset.checklistEstados; st.estructura[i].estados = e.target.value.split(',').map(v=>v.trim()).filter(Boolean); renderInspFormBody(); };
+    el.onchange = ()=> renderSeccionesFormatoInsp();
+  });
+  host.querySelectorAll('[data-tipo-estado]').forEach(b=>{
+    b.onclick = ()=>{
+      const i = +b.dataset.tipoEstado, val = b.dataset.tipoEstadoVal, tipo = b.dataset.tipoEstadoTipo;
+      const s = st.estructura[i];
+      s.estadosTipo = s.estadosTipo || {};
+      s.estadosTipo[val] = tipo;
+      renderSeccionesFormatoInsp();
+    };
   });
   host.querySelectorAll('[data-checklist-obs]').forEach(el=>{
     el.onchange = (e)=>{ const i=+el.dataset.checklistObs; st.estructura[i].conObservaciones = e.target.checked; renderInspFormBody(); };
@@ -9820,19 +10097,24 @@ async function guardarFormatoInsp(){
     if(s.tipo==='checklist' && (!s.estados||!s.estados.length)){ toast(`La sección "${s.titulo||'sin título'}" necesita al menos un estado (ej. Cumple, No cumple)`,"err"); return; }
     if(s.tipo==='tabla_dinamica' && (!s.columnas||!s.columnas.length)){ toast(`La tabla "${s.titulo||'sin título'}" necesita al menos una columna`,"err"); return; }
   }
+  for(const f of formatoEditorState.firmantes){
+    if(!f.rol || !f.rol.trim()){ toast("Ponle un rol a cada firmante (o quítalo si no hace falta)","err"); return; }
+  }
   const btn = document.getElementById('btnGuardarFormatoInsp');
   if(btn){ btn.disabled=true; btn.innerHTML="Guardando…"; }
   bloquear("Guardando formato…");
-  const payload = { nombre, tiene_fotos: formatoEditorState.estructura.some(s=>s.tipo==='fotos'), estructura: formatoEditorState.estructura };
+  const payload = { nombre, tiene_fotos: formatoEditorState.estructura.some(s=>s.tipo==='fotos'), estructura: formatoEditorState.estructura, firmantes: formatoEditorState.firmantes, color_acento: formatoEditorState.color_acento };
   const res = formatoEditorId
     ? await sb.from("insp_formatos").update(payload).eq("id", formatoEditorId)
     : await sb.from("insp_formatos").insert(payload).select().single();
   desbloquear();
   if(res.error){ if(btn){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar formato`; } toast("No se pudo guardar: "+res.error.message,"err"); return; }
-  // El enlace (firma del responsable) se asocia aparte, desde su tarjeta en el panel
-  // — así queda claro que es un paso deliberado, no algo automático que pueda tomar
-  // el predeterminado equivocado.
-  toast(formatoEditorId?"Formato actualizado":"Formato creado — asígnale su firma del responsable desde su tarjeta","ok");
+  // El enlace (firmas guardadas del banco) se asocia aparte, desde su tarjeta en el
+  // panel — así queda claro que es un paso deliberado, no algo automático que pueda
+  // tomar la plantilla equivocada. Si el formato no tiene ningún firmante "banco",
+  // no hace falta ese paso — el enlace se puede crear directo.
+  const tieneBanco = formatoEditorState.firmantes.some(f=>f.origen==='banco');
+  toast(formatoEditorId?"Formato actualizado":("Formato creado"+(tieneBanco?" — asígnale sus firmas guardadas desde su tarjeta":"")),"ok");
   location.hash = "#/inspecciones";
 }
 
@@ -9934,9 +10216,16 @@ function renderFormatosInspGrid(){
   }
   host.innerHTML = '<div class="grid grid-insp">' + lista.map(f=>{
     const en = enTodos ? null : INSPECCIONES.enlaces.find(e=>e.formato_id===f.id && e.contrato_id===contratoInspActualId);
-    const predet = en ? INSPECCIONES.predeterminados.find(p=>p.id===en.predeterminado_id) : null;
+    const firmantesFmt = Array.isArray(f.firmantes) ? f.firmantes : FIRMANTES_DEFAULT_INSP;
+    const bancoSlots = firmantesFmt.filter(x=>x.origen==='banco');
+    const nombresBanco = en ? bancoSlots.map(slot=>{
+      const pid = (en.firmantes_banco||{})[slot.id] || (slot.id==='responsable' ? en.predeterminado_id : null);
+      const p = pid ? INSPECCIONES.predeterminados.find(x=>x.id===pid) : null;
+      return p ? `${slot.rol}: ${p.responsable_nombre}` : null;
+    }).filter(Boolean) : [];
     const n = en ? INSPECCIONES.inspecciones.filter(i=>i.enlace_id===en.id).length : 0;
     const act = f.activo;
+    const etiquetaFirma = bancoSlots.length>1 ? "firmas guardadas" : "firma guardada";
     return `
       <div class="lcard">
         <div class="lcard-top">
@@ -9948,7 +10237,7 @@ function renderFormatosInspGrid(){
           ${enTodos
             ? `<div>${I.building}<span>Elige un contrato para gestionar su enlace</span></div>`
             : en
-              ? `<div>${I.user}<span>${esc(predet?.responsable_nombre||'—')}${predet?.responsable_cargo?' · '+esc(predet.responsable_cargo):''}</span></div>
+              ? `${nombresBanco.length ? `<div>${I.user}<span>${esc(nombresBanco.join(' · '))}</span></div>` : (bancoSlots.length ? '' : `<div>${I.user}<span>Sin firmantes de banco — solo firma(s) en vivo</span></div>`)}
                  <div>${I.cal}<span>Enlace creado ${fmtDate((en.creado_en||'').slice(0,10))}</span></div>
                  <div>${en.activo?I.check:I.lock}<span>Enlace ${en.activo?'activo':'inactivo'}</span></div>`
               : `<div>${I.link}<span>Sin enlace en este contrato todavía</span></div>`}
@@ -9963,9 +10252,9 @@ function renderFormatosInspGrid(){
               ? `<button class="icon-btn" title="Ver detalle" data-fa="ver" data-id="${en.id}">${I.eye}</button>
                  <button class="icon-btn" title="Copiar enlace" data-fa="link" data-id="${en.id}">${I.link}</button>
                  <button class="icon-btn" title="Compartir QR" data-fa="qr" data-id="${en.id}">${I.qr}</button>
-                 ${puedeEscribir()?`<button class="icon-btn" title="Cambiar firma del responsable" data-fa="firma" data-id="${en.id}">${I.firma}</button>
+                 ${puedeEscribir()?`${bancoSlots.length?`<button class="icon-btn" title="Cambiar ${etiquetaFirma}" data-fa="firma" data-id="${en.id}">${I.firma}</button>`:''}
                  <button class="icon-btn" title="${en.activo?'Desactivar enlace':'Activar enlace'}" data-fa="toggleEnlace" data-id="${en.id}">${en.activo?I.lock:I.check}</button>`:''}`
-              : (puedeEscribir() && !enTodos && act ? `<button class="btn btn-primary btn-sm" data-fa="asociar" data-id="${f.id}">${I.firma} Asociar firma del responsable</button>` : '')}
+              : (puedeEscribir() && !enTodos && act ? `<button class="btn btn-primary btn-sm" data-fa="asociar" data-id="${f.id}">${I.firma} ${bancoSlots.length?"Asociar "+etiquetaFirma:"Crear enlace"}</button>` : '')}
           </div>
         </div>
         ${puedeEscribir()?`<div class="card-actions" style="padding-top:10px;border-top:1px solid var(--line-2);margin-top:10px">
@@ -10033,9 +10322,9 @@ async function toggleActivoFormatoInsp(id){
 
 async function duplicarFormatoInsp(id){
   bloquear("Duplicando formato…");
-  const { data, error } = await sb.from("insp_formatos").select("nombre,tiene_fotos,estructura").eq("id",id).maybeSingle();
+  const { data, error } = await sb.from("insp_formatos").select("nombre,tiene_fotos,estructura,firmantes,color_acento").eq("id",id).maybeSingle();
   if(error || !data){ desbloquear(); toast("No se pudo cargar el formato","err"); return; }
-  const { error: errIns } = await sb.from("insp_formatos").insert({ nombre: (data.nombre||"Formato")+" (copia)", tiene_fotos: data.tiene_fotos, estructura: data.estructura, activo: true });
+  const { error: errIns } = await sb.from("insp_formatos").insert({ nombre: (data.nombre||"Formato")+" (copia)", tiene_fotos: data.tiene_fotos, estructura: data.estructura, firmantes: data.firmantes, color_acento: data.color_acento, activo: true });
   desbloquear();
   if(errIns){ toast("No se pudo duplicar: "+errIns.message,"err"); return; }
   await loadInspeccionesState();
@@ -10045,24 +10334,32 @@ async function duplicarFormatoInsp(id){
 
 function cambiarFirmaEnlaceInsp(enlaceId){
   const en = INSPECCIONES.enlaces.find(x=>x.id===enlaceId); if(!en) return;
+  const formato = INSPECCIONES.formatos.find(f=>f.id===en.formato_id);
+  const firmantesFmt = formato && Array.isArray(formato.firmantes) ? formato.firmantes : FIRMANTES_DEFAULT_INSP;
+  const bancoSlots = firmantesFmt.filter(x=>x.origen==='banco');
   const predets = INSPECCIONES.predeterminados;
+  if(!bancoSlots.length){ toast("Este formato no tiene firmantes de banco","err"); return; }
   if(!predets.length){ toast('No hay firmas guardadas — créala primero en "Firmas"',"err"); return; }
   openModal(`<div class="modal" style="max-width:440px">
-    <div class="modal-head"><div><h2>Cambiar firma del responsable</h2><p>Se usará en las próximas inspecciones registradas con este enlace.</p></div>
+    <div class="modal-head"><div><h2>Cambiar ${bancoSlots.length>1?'firmas guardadas':'firma guardada'}</h2><p>Se usará en las próximas inspecciones registradas con este enlace.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
-      <div class="field"><label>Firma del responsable *</label>
-        <select id="cfResponsable">${predets.map(p=>`<option value="${p.id}" ${p.id===en.predeterminado_id?'selected':''}>${esc(p.nombre)} — ${esc(p.responsable_nombre)}</option>`).join('')}</select>
-      </div>
+      ${bancoSlots.map(slot=>{
+        const actual = (en.firmantes_banco||{})[slot.id] || (slot.id==='responsable' ? en.predeterminado_id : null);
+        return `<div class="field"><label>Firma de "${esc(slot.rol)}" *</label>
+          <select data-cf-banco="${esc(slot.id)}">${predets.map(p=>`<option value="${p.id}" ${p.id===actual?'selected':''}>${esc(p.nombre)} — ${esc(p.responsable_nombre)}</option>`).join('')}</select></div>`;
+      }).join('')}
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" id="btnGuardarFirmaEnlace">${I.check} Guardar</button>
     </div></div>`);
   document.getElementById('btnGuardarFirmaEnlace').onclick = async ()=>{
-    const predeterminado_id = document.getElementById('cfResponsable').value;
+    const firmantes_banco = { ...(en.firmantes_banco||{}) };
+    document.querySelectorAll('[data-cf-banco]').forEach(sel=>{ firmantes_banco[sel.dataset.cfBanco] = sel.value; });
+    const predeterminado_id = firmantes_banco['responsable'] || en.predeterminado_id || null;
     const btn = document.getElementById('btnGuardarFirmaEnlace'); btn.disabled=true; btn.innerHTML="Guardando…";
-    const { error } = await sb.from("insp_enlaces").update({ predeterminado_id }).eq("id", enlaceId);
+    const { error } = await sb.from("insp_enlaces").update({ firmantes_banco, predeterminado_id }).eq("id", enlaceId);
     if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
     await loadInspeccionesState();
     toast("Firma actualizada","ok");
@@ -10109,15 +10406,21 @@ async function abrirDetalleEnlaceInsp(enlaceId){
   </table></div>`;
 }
 
-/* ---------- Nuevo enlace: formato + predeterminado del responsable + etiqueta ---------- */
+/* ---------- Nuevo enlace: formato + firmas de banco por cada firmante "banco" + etiqueta ---------- */
 /* formatoIdFijo: siempre viene de la tarjeta de un formato específico (botón "Asociar
-   firma del responsable"), así que nunca se deja elegir formato — solo responsable + etiqueta. */
+   firma(s)"), así que nunca se deja elegir formato — solo las firmas de banco + etiqueta.
+   El formato puede tener 0, 1 o varios firmantes "banco" (ver CAMBIOS_SQL_56) — se pide
+   una plantilla del banco del contrato por cada uno; si no tiene ninguno, el enlace se
+   crea directo sin pedir nada de firmas. */
 function abrirNuevoEnlaceInsp(formatoIdFijo){
   if(contratoInspActualId==='todos'){ toast("Elige un contrato específico primero","err"); return; }
   const formatos = INSPECCIONES.formatos.filter(f=>f.activo);
   const predets = INSPECCIONES.predeterminados;
   if(!formatos.length){ toast('No hay formatos activos — créalo primero desde "Formatos"',"err"); return; }
   const formatoFijo = formatoIdFijo ? formatos.find(f=>f.id===formatoIdFijo) : null;
+  const firmantesFmt = formatoFijo ? (Array.isArray(formatoFijo.firmantes)?formatoFijo.firmantes:FIRMANTES_DEFAULT_INSP) : FIRMANTES_DEFAULT_INSP;
+  const bancoSlots = firmantesFmt.filter(x=>x.origen==='banco');
+  const faltaBanco = bancoSlots.length>0 && !predets.length;
   openModal(`<div class="modal" style="max-width:480px">
     <div class="modal-head"><div><h2>Nuevo enlace de inspección</h2><p>Los inspectores usarán este enlace para registrar sus inspecciones.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
@@ -10125,27 +10428,29 @@ function abrirNuevoEnlaceInsp(formatoIdFijo){
       ${formatoFijo
         ? `<div class="field"><label>Formato</label><input value="${esc(formatoFijo.nombre)}" readonly></div>`
         : `<div class="field"><label>Formato *</label><select id="neFormato">${formatos.map(f=>`<option value="${f.id}">${esc(f.nombre)}</option>`).join('')}</select></div>`}
-      <div class="field">
-        <label>Firma del responsable del área *</label>
-        ${predets.length
-          ? `<select id="neResponsable">${predets.map(p=>`<option value="${p.id}">${esc(p.nombre)} — ${esc(p.responsable_nombre)}</option>`).join('')}</select>`
-          : `<p class="muted-sm">Todavía no has guardado ninguna firma de responsable. <a href="#" id="neIrFirmas">Créala primero en "Firmas"</a>.</p>`}
-      </div>
+      ${!bancoSlots.length
+        ? `<p class="muted-sm">Este formato no tiene firmantes de banco — no hace falta elegir ninguna firma guardada.</p>`
+        : !predets.length
+          ? `<p class="muted-sm">Todavía no has guardado ninguna firma en este contrato. <a href="#" id="neIrFirmas">Créala primero en "Firmas"</a>.</p>`
+          : bancoSlots.map(slot=>`<div class="field"><label>Firma de "${esc(slot.rol)}" *</label>
+              <select data-ne-banco="${esc(slot.id)}">${predets.map(p=>`<option value="${p.id}">${esc(p.nombre)} — ${esc(p.responsable_nombre)}</option>`).join('')}</select></div>`).join('')}
       <div class="field"><label>Etiqueta <span class="opt">(opcional)</span></label><input id="neNombre" placeholder="Ej. Turno mañana"></div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      ${predets.length?`<button class="btn btn-primary" id="btnGuardarEnlaceInsp">${I.check} Crear enlace</button>`:''}
+      ${!faltaBanco?`<button class="btn btn-primary" id="btnGuardarEnlaceInsp">${I.check} Crear enlace</button>`:''}
     </div></div>`);
   const irFirmas = document.getElementById('neIrFirmas');
   if(irFirmas) irFirmas.onclick = (e)=>{ e.preventDefault(); abrirPredeterminadosInsp(); };
   const btn = document.getElementById('btnGuardarEnlaceInsp');
   if(btn) btn.onclick = async ()=>{
     const formato_id = formatoFijo ? formatoFijo.id : document.getElementById('neFormato').value;
-    const predeterminado_id = document.getElementById('neResponsable').value;
+    const firmantes_banco = {};
+    document.querySelectorAll('[data-ne-banco]').forEach(sel=>{ firmantes_banco[sel.dataset.neBanco] = sel.value; });
+    const predeterminado_id = firmantes_banco['responsable'] || null; // compat con el enlace legado
     const nombre = document.getElementById('neNombre').value.trim() || null;
     btn.disabled = true; btn.innerHTML = "Creando…";
-    const { data, error } = await sb.from("insp_enlaces").insert({ contrato_id: contratoInspActualId, formato_id, predeterminado_id, nombre }).select().single();
+    const { data, error } = await sb.from("insp_enlaces").insert({ contrato_id: contratoInspActualId, formato_id, predeterminado_id, firmantes_banco, nombre }).select().single();
     if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Crear enlace`; toast("No se pudo crear: "+error.message,"err"); return; }
     await loadInspeccionesState();
     mostrarEnlaceCreadoInsp(data.id);
@@ -10303,11 +10608,36 @@ function eliminarPredeterminadoInsp(id){
 
 /* ---------- Asistente de 3 pasos: nueva inspección ---------- */
 let inspeccionDraft = null;
-function claseEstadoInsp(estado){
+function claseEstadoInsp(estado, estadosTipo){
+  // Si la sección ya tiene el marcado manual del usuario (estadosTipo, ver 7.111 en
+  // MEMORY.md), ese manda. Si no (formatos creados antes de esa función), se cae al
+  // adivinado por texto de siempre, solo para no dejar sin color a formatos viejos.
+  if(estadosTipo && estadosTipo[estado]) return estadosTipo[estado];
   const e = (estado||'').trim().toLowerCase();
   if(e==='n/a' || e==='na') return 'na';
   if(e.startsWith('no')) return 'mal';
   return 'bien';
+}
+
+// % de cumplimiento de una inspección: cuenta las respuestas de TODAS las secciones
+// checklist según el marcado manual (o el adivinado, para formatos viejos sin marcar
+// — ver claseEstadoInsp). Los ítems marcados "na" (no cuenta) y los sin responder NO
+// entran en el % (solo se cuentan conformes+no conformes como el total).
+function calcularCumplimientoInsp(estructura, respuestas){
+  let conformes=0, noConformes=0, neutrales=0, sinResponder=0;
+  for(const s of (estructura||[])){
+    if(s.tipo!=='checklist') continue;
+    for(const it of (s.items||[])){
+      const r = (respuestas||{})[it.id] || {};
+      if(!r.estado){ sinResponder++; continue; }
+      const cls = claseEstadoInsp(r.estado, s.estadosTipo);
+      if(cls==='bien') conformes++;
+      else if(cls==='mal') noConformes++;
+      else neutrales++;
+    }
+  }
+  const total = conformes+noConformes;
+  return { conformes, noConformes, neutrales, sinResponder, pct: total ? Math.round(conformes/total*100) : null };
 }
 
 function renderInspFormBody(){
@@ -10323,6 +10653,7 @@ function renderInspFormBody(){
     if(s.tipo==='checklist') return renderSeccionChecklistInsp(s);
     if(s.tipo==='tabla_dinamica') return renderSeccionTablaInsp(s);
     if(s.tipo==='fotos') return renderSeccionFotosInsp(s);
+    if(s.tipo==='gps') return renderSeccionGpsInsp(s);
     return '';
   }).join('') + (!tieneSeccionFotos && inspeccionDraft.tieneFotos ? renderSeccionFotosInsp() : '');
   wireInspFormBody(host);
@@ -10359,7 +10690,7 @@ function renderSeccionChecklistInsp(s){
       return `<div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px">
         <div style="font-weight:600;font-size:13.5px;margin-bottom:8px">${esc(it.texto)}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          ${(s.estados||[]).map(estado=>`<button type="button" class="chip-estado ${r.estado===estado?'active '+claseEstadoInsp(estado):''}" data-item-estado="${it.id}" data-estado-val="${esc(estado)}">${esc(estado)}</button>`).join('')}
+          ${(s.estados||[]).map(estado=>{ const cls = claseEstadoInsp(estado, s.estadosTipo); return `<button type="button" class="chip-estado ${r.estado===estado?'active '+cls:''}" data-item-estado="${it.id}" data-estado-val="${esc(estado)}" data-estado-cls="${cls}">${esc(estado)}</button>`; }).join('')}
         </div>
         ${s.conObservaciones?`<input data-item-obs="${it.id}" value="${esc(r.observaciones||'')}" placeholder="Observaciones (opcional)" style="width:100%;margin-top:8px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;box-sizing:border-box">`:''}
       </div>`;
@@ -10382,12 +10713,36 @@ function renderSeccionTablaInsp(s){
   </div>`;
 }
 
+// El límite y la obligatoriedad los decide el admin al armar el formato
+// (checkbox + campo numérico en renderEditorSeccionFotos) — ya no hay un
+// tope fijo de 5 para todos. "s" puede venir undefined (formatos viejos que
+// solo tenían el booleano suelto "tieneFotos"), por eso el fallback a 5/false.
+function maxFotosInsp(){
+  const s = inspeccionDraft.estructura.find(x=>x.tipo==='fotos');
+  return (s && s.max) ? s.max : 5;
+}
+function requeridoFotosInsp(){
+  const s = inspeccionDraft.estructura.find(x=>x.tipo==='fotos');
+  return !!(s && s.requerido);
+}
 function renderSeccionFotosInsp(s){
+  const max = maxFotosInsp(), req = requeridoFotosInsp();
   return `<div class="panel-section" style="margin-bottom:18px">
-    <div class="section-label">${esc((s&&s.titulo)||'Registro fotográfico')} <span class="muted-sm">(máximo 5)</span></div>
+    <div class="section-label">${esc((s&&s.titulo)||'Registro fotográfico')}${req?' *':''} <span class="muted-sm">(máximo ${max})</span></div>
     <div id="inspFotosGrid" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">${fotosInspGridHTML()}</div>
     <input type="file" id="fileFotoInsp" accept="image/*" capture="environment" style="display:none">
-    <button type="button" class="btn btn-ghost btn-sm" id="btnAddFotoInsp" ${inspeccionDraft.fotos.length>=5?'disabled':''}>${I.plus} Agregar foto</button>
+    <button type="button" class="btn btn-ghost btn-sm" id="btnAddFotoInsp" ${inspeccionDraft.fotos.length>=max?'disabled':''}>${I.plus} Agregar foto</button>
+  </div>`;
+}
+
+function renderSeccionGpsInsp(s){
+  const g = inspeccionDraft.respuestas[s.id];
+  return `<div class="panel-section" style="margin-bottom:18px">
+    <div class="section-label">${esc(s.titulo||'Ubicación')} *</div>
+    <div id="gpsBoxInsp_${s.id}" class="cap-box">
+      ${g ? `<div class="cap-ok">${I.check} Ubicación capturada (±${Math.round(g.precision||0)} m)</div>`
+          : `<button type="button" class="btn btn-ghost" data-gps-insp="${s.id}">${I.pin} Compartir mi ubicación</button>`}
+    </div>
   </div>`;
 }
 function fotosInspGridHTML(){
@@ -10399,7 +10754,7 @@ function wireFotosInspGrid(){
       inspeccionDraft.fotos.splice(+b.dataset.fotoDel,1);
       const grid = document.getElementById('inspFotosGrid'); if(grid) grid.innerHTML = fotosInspGridHTML();
       wireFotosInspGrid();
-      const btnAdd = document.getElementById('btnAddFotoInsp'); if(btnAdd) btnAdd.disabled = inspeccionDraft.fotos.length>=5;
+      const btnAdd = document.getElementById('btnAddFotoInsp'); if(btnAdd) btnAdd.disabled = inspeccionDraft.fotos.length>=maxFotosInsp();
     };
   });
 }
@@ -10424,7 +10779,7 @@ function wireInspFormBody(host){
       r.estado = r.estado===val ? null : val;
       host.querySelectorAll(`[data-item-estado="${id}"]`).forEach(x=>{
         const activa = x.dataset.estadoVal===r.estado;
-        x.className = 'chip-estado' + (activa ? ' active '+claseEstadoInsp(r.estado) : '');
+        x.className = 'chip-estado' + (activa ? ' active '+x.dataset.estadoCls : '');
       });
     };
   });
@@ -10458,30 +10813,51 @@ function wireInspFormBody(host){
   const fileFoto = host.querySelector('#fileFotoInsp');
   if(fileFoto) fileFoto.onchange = async ()=>{
     const f = fileFoto.files[0]; if(!f) return;
-    if(inspeccionDraft.fotos.length>=5){ toast("Máximo 5 fotos","err"); return; }
+    const max = maxFotosInsp();
+    if(inspeccionDraft.fotos.length>=max){ toast("Máximo "+max+" fotos","err"); return; }
     const comprimida = await comprimirImagen(f, 900);
     inspeccionDraft.fotos.push(comprimida);
     fileFoto.value = '';
     const grid = document.getElementById('inspFotosGrid'); if(grid) grid.innerHTML = fotosInspGridHTML();
     wireFotosInspGrid();
-    const btnAdd = document.getElementById('btnAddFotoInsp'); if(btnAdd) btnAdd.disabled = inspeccionDraft.fotos.length>=5;
+    const btnAdd = document.getElementById('btnAddFotoInsp'); if(btnAdd) btnAdd.disabled = inspeccionDraft.fotos.length>=max;
   };
   const btnAddFoto = host.querySelector('#btnAddFotoInsp');
   if(btnAddFoto) btnAddFoto.onclick = ()=> fileFoto.click();
   wireFotosInspGrid();
+  host.querySelectorAll('[data-gps-insp]').forEach(b=>{
+    b.onclick = async ()=>{
+      const sid = b.dataset.gpsInsp;
+      b.disabled = true; b.innerHTML = "Obteniendo ubicación…";
+      const g = await obtenerGPS();
+      if(!g){ toast("No se pudo obtener tu ubicación — revisa el permiso de GPS del navegador","err"); b.disabled=false; b.innerHTML = `${I.pin} Compartir mi ubicación`; return; }
+      inspeccionDraft.respuestas[sid] = g;
+      const box = document.getElementById('gpsBoxInsp_'+sid);
+      if(box) box.innerHTML = `<div class="cap-ok">${I.check} Ubicación capturada (±${Math.round(g.precision||0)} m)</div>`;
+    };
+  });
 }
 
-/* Valida los campos "requeridos" de las secciones tipo info (ej. Área inspeccionada)
-   contra inspeccionDraft.respuestas. Se reutiliza tanto en la página pública como en
-   cualquier otro lugar que use este mismo draft. */
+/* Valida contra inspeccionDraft.respuestas: (1) los campos "requeridos" de las
+   secciones tipo info (ej. Área inspeccionada), (2) TODOS los ítems de TODAS las
+   secciones checklist — a diferencia de los campos de info, esto no es opcional
+   por ítem, siempre se exige marcar algún estado, para que al inspector no se le
+   pase ninguno por accidente (pedido explícito del usuario). Se reutiliza tanto
+   en la página pública como en cualquier otro lugar que use este mismo draft. */
 function validarCamposRequeridosInsp(){
   for(const s of inspeccionDraft.estructura){
-    if(s.tipo!=='info') continue;
-    for(const c of (s.campos||[])){
-      if(!c.requerido) continue;
-      const v = inspeccionDraft.respuestas[c.id];
-      const vacio = c.tipo==='seleccion_multiple' ? !(Array.isArray(v)&&v.length) : !v;
-      if(vacio){ toast(`Falta "${c.etiqueta}"`,"err"); return false; }
+    if(s.tipo==='info'){
+      for(const c of (s.campos||[])){
+        if(!c.requerido) continue;
+        const v = inspeccionDraft.respuestas[c.id];
+        const vacio = c.tipo==='seleccion_multiple' ? !(Array.isArray(v)&&v.length) : !v;
+        if(vacio){ toast(`Falta "${c.etiqueta}"`,"err"); return false; }
+      }
+    } else if(s.tipo==='checklist'){
+      for(const it of (s.items||[])){
+        const r = inspeccionDraft.respuestas[it.id];
+        if(!r || !r.estado){ toast(`Falta marcar "${it.texto}" en "${s.titulo||'checklist'}"`,"err"); return false; }
+      }
     }
   }
   return true;
@@ -10574,7 +10950,7 @@ function renderSeccionChecklistLectura(s, respuestas){
       <thead><tr><th>Ítem</th><th>Estado</th>${s.conObservaciones?'<th>Observaciones</th>':''}</tr></thead>
       <tbody>${(s.items||[]).map(it=>{
         const r = respuestas[it.id]||{};
-        return `<tr><td>${esc(it.texto)}</td><td>${r.estado?`<span class="chip-estado active ${claseEstadoInsp(r.estado)}" style="cursor:default;padding:4px 10px;font-size:12px">${esc(r.estado)}</span>`:'—'}</td>${s.conObservaciones?`<td>${esc(r.observaciones||'—')}</td>`:''}</tr>`;
+        return `<tr><td>${esc(it.texto)}</td><td>${r.estado?`<span class="chip-estado active ${claseEstadoInsp(r.estado, s.estadosTipo)}" style="cursor:default;padding:4px 10px;font-size:12px">${esc(r.estado)}</span>`:'—'}</td>${s.conObservaciones?`<td>${esc(r.observaciones||'—')}</td>`:''}</tr>`;
       }).join('')}</tbody>
     </table></div>
   </div>`;
@@ -10589,11 +10965,21 @@ function renderSeccionTablaLectura(s, respuestas){
     </table></div>` : '<p class="muted-sm">Sin registros.</p>'}
   </div>`;
 }
+function renderSeccionGpsLectura(s, respuestas){
+  const g = respuestas[s.id];
+  return `<div class="panel-section" style="margin-bottom:14px">
+    <div class="section-label">${esc(s.titulo||'Ubicación')}</div>
+    ${g && g.lat!=null && g.lng!=null
+      ? `<div class="info-item full"><div class="k">Coordenadas</div><div class="v">${(+g.lat).toFixed(5)}, ${(+g.lng).toFixed(5)}${g.precision?' (±'+Math.round(g.precision)+' m)':''} — <a href="https://www.google.com/maps?q=${(+g.lat)},${(+g.lng)}" target="_blank">ver en el mapa</a></div></div>`
+      : '<p class="muted-sm">Sin ubicación registrada.</p>'}
+  </div>`;
+}
 function renderInspContenidoLectura(estructura, respuestas){
   return (estructura||[]).map(s=>{
     if(s.tipo==='info') return renderSeccionInfoLectura(s, respuestas||{});
     if(s.tipo==='checklist') return renderSeccionChecklistLectura(s, respuestas||{});
     if(s.tipo==='tabla_dinamica') return renderSeccionTablaLectura(s, respuestas||{});
+    if(s.tipo==='gps') return renderSeccionGpsLectura(s, respuestas||{});
     return '';
   }).join('');
 }
@@ -10607,13 +10993,25 @@ async function verInspeccion(id){
   const nombreEnlace = INSPECCIONES.enlaces.find(e=>e.id===data.enlace_id)?.nombre || '';
   const hora = data.creado_en ? new Date(data.creado_en).toLocaleTimeString("es-CO",{hour:'2-digit',minute:'2-digit'}) : '';
   const puedeTocar = puedoTocarInspeccionReciente(data.creado_en);
+  const cump = calcularCumplimientoInsp(data.estructura, data.respuestas);
+  // Misma compatibilidad que construirInspeccionPDF: usa el arreglo "firmantes"
+  // (CAMBIOS_SQL_56) si existe, si no arma la lista equivalente desde las
+  // columnas viejas fijas (inspecciones guardadas antes de esa migración).
+  let firmasListaVer = Array.isArray(data.firmantes) && data.firmantes.length ? data.firmantes : [];
+  if(!firmasListaVer.length){
+    if(data.firma_inspector) firmasListaVer.push({ rol:'Inspector', nombre:data.inspector_nombre, cargo:null, firma:data.firma_inspector });
+    if(data.firma_responsable) firmasListaVer.push({ rol:'Responsable del área', nombre:data.responsable_nombre, cargo:data.responsable_cargo, firma:data.firma_responsable });
+  }
   openModal(`<div class="modal lg">
     <div class="modal-head"><div><h2>${esc(data.formato_nombre)}</h2><p>${fmtDate((data.creado_en||'').slice(0,10))}${hora?' · '+hora:''} · ${esc(nombreContrato)}${nombreEnlace?' · '+esc(nombreEnlace):''}</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
+      ${cump.pct!=null?`<div class="panel-section" style="margin-bottom:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+        <div style="font-size:28px;font-weight:800;color:${cump.pct>=80?'var(--green)':cump.pct>=50?'#c98a1a':'var(--danger)'}">${cump.pct}%</div>
+        <div style="font-size:13px;color:var(--ink-2)"><b>Cumplimiento</b><br>${cump.conformes} conforme${cump.conformes===1?'':'s'} · ${cump.noConformes} no conforme${cump.noConformes===1?'':'s'}${cump.neutrales?` · ${cump.neutrales} no aplica`:''}${cump.sinResponder?` · ${cump.sinResponder} sin responder`:''}</div>
+      </div>`:''}
       <div class="info-grid">
-        <div class="info-item"><div class="k">Inspector</div><div class="v">${esc(data.inspector_nombre||'—')}</div></div>
-        <div class="info-item"><div class="k">Responsable del área</div><div class="v">${esc(data.responsable_nombre||'—')}${data.responsable_cargo?' · '+esc(data.responsable_cargo):''}</div></div>
+        ${firmasListaVer.map(f=>`<div class="info-item"><div class="k">${esc(f.rol||'Firmante')}</div><div class="v">${esc(f.nombre||'—')}${f.cargo?' · '+esc(f.cargo):''}</div></div>`).join('')}
         <div class="info-item"><div class="k">Fecha y hora</div><div class="v">${fmtDate((data.creado_en||'').slice(0,10))}${hora?' · '+hora:''}</div></div>
         <div class="info-item"><div class="k">Dirección IP</div><div class="v">${esc(data.ip_address||'—')}</div></div>
         <div class="info-item full"><div class="k">Dispositivo</div><div class="v" title="${esc(data.dispositivo_ua||'')}">${data.dispositivo_ua?esc(resumenDispositivoUA(data.dispositivo_ua)):'—'}</div></div>
@@ -10624,13 +11022,12 @@ async function verInspeccion(id){
       ${(data.fotos||[]).length?`<div class="panel-section" style="margin-bottom:14px"><div class="section-label">Registro fotográfico (${data.fotos.length})</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">${data.fotos.map(f=>`<img src="${f}" style="width:90px;height:90px;object-fit:cover;border-radius:8px;border:1px solid var(--line)">`).join('')}</div>
       </div>`:''}
-      <div class="panel-section">
+      ${firmasListaVer.length?`<div class="panel-section">
         <div class="section-label">Firmas</div>
         <div style="display:flex;gap:16px;flex-wrap:wrap">
-          <div><div class="muted-sm" style="font-weight:700;margin-bottom:4px">Inspector</div><img src="${data.firma_inspector}" style="height:70px;border:1px solid var(--line);border-radius:8px;background:#fff;padding:4px"></div>
-          <div><div class="muted-sm" style="font-weight:700;margin-bottom:4px">Responsable del área</div><img src="${data.firma_responsable}" style="height:70px;border:1px solid var(--line);border-radius:8px;background:#fff;padding:4px"></div>
+          ${firmasListaVer.map(f=>`<div><div class="muted-sm" style="font-weight:700;margin-bottom:4px">${esc(f.rol||'Firmante')}</div><img src="${f.firma}" style="height:70px;border:1px solid var(--line);border-radius:8px;background:#fff;padding:4px"></div>`).join('')}
         </div>
-      </div>
+      </div>`:''}
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
@@ -10718,10 +11115,21 @@ async function guardarEditarInspeccion(id){
    construirKardexPDF), recorriendo dinámicamente la "estructura" congelada de la
    inspección — cada tipo de sección tiene su propia función de dibujo, pensadas para
    poder reutilizarse si mañana hay un formato distinto con otras secciones. ---------- */
+// Color de acento configurable por formato (insp_formatos.color_acento) — reemplaza
+// el azul institucional fijo (#14215a = rgb(20,33,90)) en las cabeceras del PDF. Vía
+// ctx.colorAcento, calculado una sola vez en construirInspeccionPDF y compartido por
+// todos los dibujadores (ya reciben "ctx" como parámetro). Cualquier hex inválido o
+// vacío se cae al azul institucional, nunca revienta el PDF.
+function hexToRgbInsp(hex){
+  const m = /^#?([0-9a-f]{6})$/i.exec((hex||'').trim());
+  if(!m) return [20,33,90];
+  const n = parseInt(m[1],16);
+  return [(n>>16)&255, (n>>8)&255, n&255];
+}
 function dibujarSeccionInfoPDF(doc, y, seccion, respuestas, ctx){
   const { M, RIGHT, asegurarEspacio } = ctx;
   y = asegurarEspacio(y, 14);
-  doc.setFillColor(20,33,90); doc.rect(M,y,RIGHT-M,7,"F");
+  doc.setFillColor(ctx.colorAcento[0],ctx.colorAcento[1],ctx.colorAcento[2]); doc.rect(M,y,RIGHT-M,7,"F");
   doc.setFont("helvetica","bold"); doc.setFontSize(9.5); doc.setTextColor(255,255,255);
   doc.text(pdfTexto(seccion.titulo||""), M+3, y+5);
   y += 7+3;
@@ -10753,7 +11161,7 @@ function dibujarSeccionChecklistPDF(doc, y, seccion, respuestas, ctx){
   if(conObs) xs.push(RIGHT);
 
   function tituloYCab(yy){
-    doc.setFillColor(20,33,90); doc.rect(M,yy,RIGHT-M,7,"F");
+    doc.setFillColor(ctx.colorAcento[0],ctx.colorAcento[1],ctx.colorAcento[2]); doc.rect(M,yy,RIGHT-M,7,"F");
     doc.setFont("helvetica","bold"); doc.setFontSize(9.5); doc.setTextColor(255,255,255);
     doc.text(pdfTexto(seccion.titulo||""), M+3, yy+5);
     yy += 7;
@@ -10802,7 +11210,7 @@ function dibujarSeccionTablaPDF(doc, y, seccion, respuestas, ctx){
   const columnas = seccion.columnas || [];
   const filas = Array.isArray(respuestas[seccion.id]) ? respuestas[seccion.id] : [];
   y = asegurarEspacio(y, 14);
-  doc.setFillColor(20,33,90); doc.rect(M,y,RIGHT-M,7,"F");
+  doc.setFillColor(ctx.colorAcento[0],ctx.colorAcento[1],ctx.colorAcento[2]); doc.rect(M,y,RIGHT-M,7,"F");
   doc.setFont("helvetica","bold"); doc.setFontSize(9.5); doc.setTextColor(255,255,255);
   doc.text(pdfTexto(seccion.titulo||""), M+3, y+5);
   y += 7;
@@ -10834,6 +11242,23 @@ function dibujarSeccionTablaPDF(doc, y, seccion, respuestas, ctx){
     y += rowH;
   }
   return y+4;
+}
+
+function dibujarSeccionGpsPDF(doc, y, seccion, respuestas, ctx){
+  const { M, RIGHT, asegurarEspacio } = ctx;
+  const g = respuestas[seccion.id];
+  y = asegurarEspacio(y, 14);
+  doc.setFillColor(ctx.colorAcento[0],ctx.colorAcento[1],ctx.colorAcento[2]); doc.rect(M,y,RIGHT-M,7,"F");
+  doc.setFont("helvetica","bold"); doc.setFontSize(9.5); doc.setTextColor(255,255,255);
+  doc.text(pdfTexto(seccion.titulo||"Ubicación"), M+3, y+5);
+  y += 7;
+  doc.setDrawColor(150,160,190); doc.rect(M,y,RIGHT-M,9);
+  doc.setFont("helvetica","normal"); doc.setFontSize(8.5); doc.setTextColor(20,20,20);
+  const texto = (g && g.lat!=null && g.lng!=null)
+    ? 'Coordenadas: '+(+g.lat).toFixed(5)+', '+(+g.lng).toFixed(5)+(g.precision?' (±'+Math.round(g.precision)+' m)':'')
+    : 'Sin ubicación registrada.';
+  doc.text(pdfTexto(texto), M+3, y+6);
+  return y+9+4;
 }
 
 async function dibujarFotosPDF(doc, y, fotos, ctx){
@@ -10880,6 +11305,14 @@ async function construirInspeccionPDF(idOrData){
     insp = idOrData;
   }
   if(!insp) return null;
+  // color_acento: el flujo público (idOrData objeto, respuesta de insp_publica_registrar)
+  // ya lo trae; el flujo administrado (idOrData string, "Descargar PDF" del historial)
+  // no lo trae en insp_inspecciones — se busca en el formato ya cacheado en memoria
+  // (INSPECCIONES.formatos, mismo criterio que nombreContrato aquí abajo).
+  if(insp.color_acento == null){
+    const fmt = INSPECCIONES.formatos.find(f=>f.id===insp.formato_id);
+    if(fmt) insp.color_acento = fmt.color_acento;
+  }
   const nombreContrato = insp.contrato_nombre != null ? insp.contrato_nombre : ((INSPECCIONES.contratos.find(c=>c.id===insp.contrato_id)||{}).nombre || "");
 
   const { jsPDF } = window.jspdf;
@@ -10895,7 +11328,7 @@ async function construirInspeccionPDF(idOrData){
   }
   function nuevaPagina(){ piePagina(); doc.addPage(); pag++; return M+2; }
   function asegurarEspacio(y, alto){ return (y+alto > FOOTER_TOP) ? nuevaPagina() : y; }
-  const ctx = { M, RIGHT, FOOTER_TOP, asegurarEspacio, nuevaPagina };
+  const ctx = { M, RIGHT, FOOTER_TOP, asegurarEspacio, nuevaPagina, colorAcento: hexToRgbInsp(insp.color_acento) };
 
   // Encabezado
   let y = M;
@@ -10903,7 +11336,7 @@ async function construirInspeccionPDF(idOrData){
   doc.setDrawColor(150,160,190); doc.setLineWidth(0.3); doc.rect(M,y,RIGHT-M,hH);
   doc.line(M+logoW,y,M+logoW,y+hH);
   try{ doc.addImage(LOGO,"JPEG",M+4,y+2,36,36*315/570); }catch(e){}
-  doc.setTextColor(20,33,90); doc.setFont("helvetica","bold"); doc.setFontSize(12.5);
+  doc.setTextColor(ctx.colorAcento[0],ctx.colorAcento[1],ctx.colorAcento[2]); doc.setFont("helvetica","bold"); doc.setFontSize(12.5);
   doc.text(doc.splitTextToSize(pdfTexto((insp.formato_nombre||"INSPECCIÓN").toUpperCase()), RIGHT-M-logoW-6), M+logoW+(RIGHT-M-logoW)/2, y+11, {align:"center"});
   doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(90,90,110);
   doc.text(pdfTexto("Don Aseo Ltda."+(nombreContrato?" · "+nombreContrato:"")), M+logoW+(RIGHT-M-logoW)/2, y+20, {align:"center"});
@@ -10921,6 +11354,25 @@ async function construirInspeccionPDF(idOrData){
   doc.text("Don Aseo Ltda.", M+129, y+10.5);
   y += fh + 4;
 
+  // Resumen de cumplimiento — calculado con el mismo marcado manual conforme/no
+  // conforme/no aplica que el usuario definió por sección (claseEstadoInsp /
+  // calcularCumplimientoInsp). Si el formato no tiene ninguna sección checklist con
+  // respuestas, "pct" sale null y esta caja simplemente no se dibuja.
+  const cump = calcularCumplimientoInsp(insp.estructura, insp.respuestas);
+  if(cump.pct!=null){
+    const boxH = 12;
+    y = asegurarEspacio(y, boxH+4);
+    const color = cump.pct>=80 ? [31,168,78] : cump.pct>=50 ? [201,138,26] : [214,59,80];
+    doc.setDrawColor(150,160,190); doc.setFillColor(246,248,253); doc.rect(M,y,RIGHT-M,boxH,"FD");
+    doc.setFont("helvetica","bold"); doc.setFontSize(15); doc.setTextColor(color[0],color[1],color[2]);
+    doc.text(cump.pct+"%", M+6, y+8.5);
+    doc.setFont("helvetica","bold"); doc.setFontSize(8); doc.setTextColor(ctx.colorAcento[0],ctx.colorAcento[1],ctx.colorAcento[2]);
+    doc.text("CUMPLIMIENTO", M+26, y+5.5);
+    doc.setFont("helvetica","normal"); doc.setFontSize(7.4); doc.setTextColor(90,90,110);
+    doc.text(pdfTexto(`${cump.conformes} conforme(s) · ${cump.noConformes} no conforme(s)`+(cump.neutrales?` · ${cump.neutrales} no aplica`:'')+(cump.sinResponder?` · ${cump.sinResponder} sin responder`:'')), M+26, y+9.5);
+    y += boxH + 4;
+  }
+
   // Secciones dinámicas — recorren la estructura congelada de la inspección, no la del
   // formato en vivo (que puede haber cambiado desde que se hizo esta inspección).
   const estructura = Array.isArray(insp.estructura) ? insp.estructura : [];
@@ -10930,10 +11382,11 @@ async function construirInspeccionPDF(idOrData){
     if(s.tipo==='info') y = dibujarSeccionInfoPDF(doc, y, s, respuestas, ctx);
     else if(s.tipo==='checklist') y = dibujarSeccionChecklistPDF(doc, y, s, respuestas, ctx);
     else if(s.tipo==='tabla_dinamica') y = dibujarSeccionTablaPDF(doc, y, s, respuestas, ctx);
+    else if(s.tipo==='gps') y = dibujarSeccionGpsPDF(doc, y, s, respuestas, ctx);
     else if(s.tipo==='fotos'){
       if((insp.fotos||[]).length){
         y = asegurarEspacio(y, 14);
-        doc.setFillColor(20,33,90); doc.rect(M,y,RIGHT-M,7,"F");
+        doc.setFillColor(ctx.colorAcento[0],ctx.colorAcento[1],ctx.colorAcento[2]); doc.rect(M,y,RIGHT-M,7,"F");
         doc.setFont("helvetica","bold"); doc.setFontSize(9.5); doc.setTextColor(255,255,255);
         doc.text(pdfTexto(s.titulo||"Registro fotográfico"), M+3, y+5);
         y += 7+3;
@@ -10947,31 +11400,49 @@ async function construirInspeccionPDF(idOrData){
   // sección movible dentro de la estructura (quedan igual que siempre: al final).
   if(!fotosDibujadas && (insp.fotos||[]).length){
     y = asegurarEspacio(y, 14);
-    doc.setFillColor(20,33,90); doc.rect(M,y,RIGHT-M,7,"F");
+    doc.setFillColor(ctx.colorAcento[0],ctx.colorAcento[1],ctx.colorAcento[2]); doc.rect(M,y,RIGHT-M,7,"F");
     doc.setFont("helvetica","bold"); doc.setFontSize(9.5); doc.setTextColor(255,255,255);
     doc.text("Registro fotográfico", M+3, y+5);
     y += 7+3;
     y = await dibujarFotosPDF(doc, y, insp.fotos, ctx);
   }
 
-  // Firmas
-  y = asegurarEspacio(y, 46);
-  doc.setFillColor(20,33,90); doc.rect(M,y,RIGHT-M,7,"F");
-  doc.setFont("helvetica","bold"); doc.setFontSize(9.5); doc.setTextColor(255,255,255);
-  doc.text("Firmas", M+3, y+5);
-  y += 7+3;
-  const colW = (RIGHT-M-6)/2;
-  const boxH = 34;
-  doc.setDrawColor(150,160,190);
-  doc.rect(M,y,colW,boxH); doc.rect(M+colW+6,y,colW,boxH);
-  doc.setFont("helvetica","bold"); doc.setFontSize(7.5); doc.setTextColor(90,90,110);
-  doc.text("INSPECTOR", M+3, y+5); doc.text("RESPONSABLE DEL ÁREA", M+colW+9, y+5);
-  try{ if(insp.firma_inspector) doc.addImage(await firmaParaPdf(insp.firma_inspector),"JPEG",M+3,y+7,colW-6,20); }catch(e){}
-  try{ if(insp.firma_responsable) doc.addImage(await firmaParaPdf(insp.firma_responsable),"JPEG",M+colW+9,y+7,colW-6,20); }catch(e){}
-  doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(20,20,20);
-  doc.text(pdfTexto(insp.inspector_nombre||""), M+3, y+boxH-2);
-  doc.text(pdfTexto((insp.responsable_nombre||"")+(insp.responsable_cargo?" · "+insp.responsable_cargo:"")), M+colW+9, y+boxH-2);
-  y += boxH;
+  // Firmas — arreglo genérico de 0 a N (insp.firmantes, ver CAMBIOS_SQL_56). Las
+  // inspecciones guardadas ANTES de esa migración no tienen "firmantes" (o viene
+  // vacío) — se arma la lista equivalente desde las columnas viejas fijas
+  // (inspector/responsable), mismo criterio de compatibilidad que el resto del
+  // módulo. Si de verdad no hay ningún firmante (formato con 0 firmantes), esta
+  // sección completa no se dibuja.
+  let firmasLista = Array.isArray(insp.firmantes) && insp.firmantes.length ? insp.firmantes : [];
+  if(!firmasLista.length){
+    if(insp.firma_inspector) firmasLista.push({ rol:'Inspector', nombre:insp.inspector_nombre, cargo:null, firma:insp.firma_inspector });
+    if(insp.firma_responsable) firmasLista.push({ rol:'Responsable del área', nombre:insp.responsable_nombre, cargo:insp.responsable_cargo, firma:insp.firma_responsable });
+  }
+  if(firmasLista.length){
+    y = asegurarEspacio(y, 14);
+    doc.setFillColor(ctx.colorAcento[0],ctx.colorAcento[1],ctx.colorAcento[2]); doc.rect(M,y,RIGHT-M,7,"F");
+    doc.setFont("helvetica","bold"); doc.setFontSize(9.5); doc.setTextColor(255,255,255);
+    doc.text("Firmas", M+3, y+5);
+    y += 7+3;
+    const colW = (RIGHT-M-6)/2;
+    const boxH = 34;
+    for(let i=0;i<firmasLista.length;i+=2){
+      y = asegurarEspacio(y, boxH);
+      const par = firmasLista.slice(i,i+2);
+      doc.setDrawColor(150,160,190);
+      for(let j=0;j<par.length;j++){
+        const f = par[j];
+        const x = M + j*(colW+6);
+        doc.rect(x,y,colW,boxH);
+        doc.setFont("helvetica","bold"); doc.setFontSize(7.5); doc.setTextColor(90,90,110);
+        doc.text(pdfTexto((f.rol||'').toUpperCase()), x+3, y+5);
+        try{ if(f.firma) doc.addImage(await firmaParaPdf(f.firma),"JPEG",x+3,y+7,colW-6,20); }catch(e){}
+        doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(20,20,20);
+        doc.text(pdfTexto((f.nombre||"")+(f.cargo?" · "+f.cargo:"")), x+3, y+boxH-2);
+      }
+      y += boxH + (i+2<firmasLista.length ? 4 : 0);
+    }
+  }
 
   if(insp.ip_address || insp.dispositivo_ua){
     y += 4;
@@ -11005,6 +11476,11 @@ async function generarInspeccionPDF(id){
    para armar el PDF de una vez (esta página nunca tiene sesión para volver a
    consultar la tabla). Reutiliza renderInspFormBody y todo el motor del formulario
    dinámico ya escrito — no le importa si vive en un modal o en una página pública. ---------- */
+// Un pad de firma POR firmante "fresco" (0 a N, ver CAMBIOS_SQL_56) — aparte del
+// sigPad global de siempre, para no interferir con el resto de la app (ver
+// crearFirmaPad/initSignature más arriba).
+let firmantesPadsInsp = {};
+
 async function renderInspeccionPublica(enlaceId){
   document.body.style.overflow = "";
   bloquear("Cargando…");
@@ -11022,14 +11498,19 @@ async function renderInspeccionPublica(enlaceId){
     return;
   }
 
+  const firmantesFmt = Array.isArray(r.formato.firmantes) ? r.formato.firmantes : FIRMANTES_DEFAULT_INSP;
+  const firmantesFresco = firmantesFmt.filter(f=>f.origen==='fresco');
+
   inspeccionDraft = {
     enlaceId,
     formatoNombre: r.formato.nombre,
     estructura: Array.isArray(r.formato.estructura) ? r.formato.estructura : [],
     tieneFotos: r.formato.tiene_fotos !== false,
+    firmantesFmt, firmantesFresco,
     respuestas: {},
     fotos: []
   };
+  firmantesPadsInsp = {};
 
   document.getElementById("app").innerHTML = `
     <div class="pub-wrap">
@@ -11045,48 +11526,63 @@ async function renderInspeccionPublica(enlaceId){
             <div><div class="pt1">Don Aseo Ltda.</div><div class="pt2">NIT 812.000.152-7 · ${CODIGO}</div></div>
           </div>
           <div id="inspFormBody"></div>
-          <div class="field">
-            <label>Tu nombre (inspector) *</label>
-            <input id="pInspNombre" placeholder="Nombres y apellidos" autocomplete="off">
-          </div>
-          <div class="field" style="margin-bottom:8px">
-            <label>Firma digital *</label>
-            <div class="sig-box" id="sigBox">
-              <canvas id="sigCanvas"></canvas>
-              <div class="sig-placeholder" id="sigPh">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div>
+          ${firmantesFresco.map(f=>`
+            <div class="field">
+              <label>Tu nombre — ${esc(f.rol)} *</label>
+              <input data-firmante-nombre="${esc(f.id)}" placeholder="Nombres y apellidos" autocomplete="off">
             </div>
-            <div class="sig-actions"><button class="btn btn-ghost btn-sm" id="sigClear">${I.trash} Limpiar firma</button></div>
-          </div>
+            <div class="field" style="margin-bottom:8px">
+              <label>Firma digital — ${esc(f.rol)} *</label>
+              <div class="sig-box" id="sigBox_${esc(f.id)}">
+                <canvas id="sigCanvas_${esc(f.id)}"></canvas>
+                <div class="sig-placeholder" id="sigPh_${esc(f.id)}">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div>
+              </div>
+              <div class="sig-actions"><button type="button" class="btn btn-ghost btn-sm" data-sig-clear-insp="${esc(f.id)}">${I.trash} Limpiar firma</button></div>
+            </div>`).join('')}
           <button class="btn btn-green" id="pEnviarInsp" style="width:100%;padding:14px;margin-top:8px">${I.check} Enviar inspección</button>
         </div>
       </div>
     </div>`;
 
   renderInspFormBody();
-  initSignature();
-  document.getElementById("sigClear").onclick = ()=> sigPad.clear();
+  firmantesFresco.forEach(f=>{ firmantesPadsInsp[f.id] = crearFirmaPad('sigCanvas_'+f.id, 'sigBox_'+f.id, 'sigPh_'+f.id); });
+  document.querySelectorAll('[data-sig-clear-insp]').forEach(b=>{
+    b.onclick = ()=> firmantesPadsInsp[b.dataset.sigClearInsp]?.clear();
+  });
   document.getElementById("pEnviarInsp").onclick = ()=> enviarInspeccionPublica(enlaceId);
 }
 
 async function enviarInspeccionPublica(enlaceId){
   if(!validarCamposRequeridosInsp()) return;
-  const nombre = document.getElementById('pInspNombre').value.trim();
-  if(!nombre){ toast("Escribe tu nombre","err"); return; }
-  if(!sigPad || sigPad.isEmpty()){ toast("Falta tu firma","err"); return; }
-  const firma = sigPad.dataURL();
+  const seccionGps = inspeccionDraft.estructura.find(s=>s.tipo==='gps');
+  if(seccionGps && !inspeccionDraft.respuestas[seccionGps.id]){ toast("Comparte tu ubicación (GPS) antes de enviar","err"); return; }
+  if(requeridoFotosInsp() && !inspeccionDraft.fotos.length){ toast("Agrega al menos una foto antes de enviar","err"); return; }
+
+  const p_firmantes = [];
+  for(const f of inspeccionDraft.firmantesFresco){
+    const input = document.querySelector(`[data-firmante-nombre="${f.id}"]`);
+    const nombre = input ? input.value.trim() : '';
+    if(!nombre){ toast(`Falta el nombre de "${f.rol}"`,"err"); return; }
+    const pad = firmantesPadsInsp[f.id];
+    if(!pad || pad.isEmpty()){ toast(`Falta la firma de "${f.rol}"`,"err"); return; }
+    p_firmantes.push({ id: f.id, nombre, firma: pad.dataURL() });
+  }
+
   const btn = document.getElementById('pEnviarInsp');
   btn.disabled = true; btn.innerHTML = "Enviando…";
   const { data, error } = await sb.rpc("insp_publica_registrar", {
     p_enlace_id: enlaceId,
     p_respuestas: inspeccionDraft.respuestas,
-    p_inspector_nombre: nombre,
-    p_firma_inspector: firma,
+    p_firmantes,
     p_fotos: inspeccionDraft.fotos
   });
   if(error || !data || !data.ok){
     btn.disabled = false; btn.innerHTML = `${I.check} Enviar inspección`;
     const motivo = data && data.motivo;
-    const msg = motivo==='sin_responsable' ? "Este enlace no tiene una firma de responsable configurada — avisa a quien te lo compartió."
+    const msg = motivo==='falta_banco' ? "Este enlace no tiene todas sus firmas guardadas configuradas — avisa a quien te lo compartió."
+      : motivo==='falta_firmante' ? "Falta un nombre o una firma."
+      : motivo==='max_fotos' ? "Superaste el máximo de fotos permitido para este formato."
+      : motivo==='fotos_requeridas' ? "Este formato exige al menos una foto."
       : motivo==='formato_inactivo' ? "Este formato ya no está disponible."
       : motivo==='no_encontrado' ? "Este enlace ya no está activo."
       : "No se pudo enviar: "+((error&&error.message)||motivo||'');
