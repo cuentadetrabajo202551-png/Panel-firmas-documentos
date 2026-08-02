@@ -9794,9 +9794,7 @@ async function renderConstructorFormatoInsp(formatoId){
             </div>
             <div class="pub-body" style="padding:18px" id="inspFormBody"></div>
           </div>
-          <div id="consVistaPdf" style="display:none;height:calc(100vh - 160px);min-height:400px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#525659">
-            <embed id="pdfPreviewFrame" type="application/pdf" title="Vista previa del PDF final" style="width:100%;height:100%">
-          </div>
+          <div id="consVistaPdf" style="display:none;height:calc(100vh - 160px);min-height:400px;border:1px solid var(--line);border-radius:12px;overflow-y:auto;overflow-x:hidden;background:#525659;padding:18px 0"></div>
         </div>
       </div>
     </div>`;
@@ -9836,13 +9834,38 @@ async function renderConstructorFormatoInsp(formatoId){
       };
       const r = await construirInspeccionPDF(insp);
       if(pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
-      pdfPreviewUrl = r.doc.output('bloburl');
-      // Se REEMPLAZA el <embed> por uno nuevo en vez de solo cambiar su "src" — en
-      // varios navegadores, mutar el src de un <embed>/<iframe> ya existente que
-      // apunta a un PDF no vuelve a disparar el visor (se queda en blanco); crear
-      // el elemento de cero sí lo fuerza. Ver 7.11x en MEMORY.md.
-      host.innerHTML = `<embed id="pdfPreviewFrame" type="application/pdf" title="Vista previa del PDF final" src="${pdfPreviewUrl}" style="width:100%;height:100%">`;
-    }catch(e){ console.error(e); toast("No se pudo generar la vista previa del PDF","err"); }
+      pdfPreviewUrl = r.doc.output('bloburl'); // se conserva solo para "Abrir en pestaña nueva"
+
+      // La vista principal NO usa <iframe>/<embed> con el visor nativo de PDF del
+      // navegador — en producción eso salía en negro (probablemente por la opción
+      // "Descargar PDF en vez de abrirlo en Chrome", que un sitio web no puede
+      // detectar ni pasar por alto). En cambio se dibuja el PDF con pdf.js directo a
+      // <canvas>, el MISMO motor que ya usa el editor de plantillas de Documentos
+      // (renderPdfEditor) para mostrar el PDF subido — no depende en absoluto del
+      // visor nativo, así que funciona sin importar esa configuración del navegador.
+      host.innerHTML = '<p class="muted-sm" style="text-align:center;padding:24px;color:#fff">Generando vista previa…</p>';
+      const bytes = new Uint8Array(r.doc.output('arraybuffer'));
+      const pdf = await window.pdfjsLib.getDocument({data:bytes}).promise;
+      host.innerHTML = '';
+      const W = Math.min(820, Math.max(360, (host.clientWidth||760) - 36));
+      const dpr = Math.min(window.devicePixelRatio || 1, 3);
+      for(let i=1;i<=pdf.numPages;i++){
+        const page = await pdf.getPage(i);
+        const vp1 = page.getViewport({scale:1});
+        const vp = page.getViewport({scale: W/vp1.width});
+        const wrap = document.createElement('div');
+        wrap.style.cssText = `width:${vp.width}px;height:${vp.height}px;margin:0 auto 16px;box-shadow:0 4px 14px rgba(0,0,0,.4)`;
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.floor(vp.width*dpr); canvas.height = Math.floor(vp.height*dpr);
+        canvas.style.width = vp.width+'px'; canvas.style.height = vp.height+'px';
+        wrap.appendChild(canvas); host.appendChild(wrap);
+        await page.render({ canvasContext:canvas.getContext('2d'), viewport:vp, transform: dpr!==1 ? [dpr,0,0,dpr,0,0] : undefined }).promise;
+      }
+    }catch(e){
+      console.error(e);
+      toast("No se pudo generar la vista previa del PDF","err");
+      host.innerHTML = `<div class="empty" style="background:transparent"><div class="ic" style="color:#fff">${I.pdf}</div><h3 style="color:#fff">No se pudo generar la vista previa</h3></div>`;
+    }
     if(btn){ btn.disabled = false; btn.innerHTML = `${I.check} Actualizar`; }
   }
   document.getElementById('btnAbrirPdfPreview').onclick = ()=>{
@@ -9889,7 +9912,7 @@ async function renderConstructorFormatoInsp(formatoId){
     formatoEditorState.color_acento = '#14215a';
     document.getElementById('fiColorAcento').value = '#14215a';
   };
-  document.getElementById('fiMostrarCumplimiento').onchange = (e)=>{ formatoEditorState.mostrar_cumplimiento = e.target.checked; };
+  document.getElementById('fiMostrarCumplimiento').onchange = (e)=>{ formatoEditorState.mostrar_cumplimiento = e.target.checked; renderSeccionesFormatoInsp(); };
   renderFirmantesFormatoInsp();
   renderSeccionesFormatoInsp();
 }
@@ -10073,7 +10096,7 @@ function renderEditorSeccionChecklist(s, i){
       </label>
       <label class="chk"><input type="checkbox" data-checklist-obs="${i}" ${s.conObservaciones?'checked':''}> Con observaciones por ítem</label>
     </div>
-    ${(s.estados||[]).length ? `<div style="display:flex;flex-direction:column;gap:7px;margin:0 0 12px;padding:10px 12px;background:#f6f8fd;border-radius:8px">
+    ${(formatoEditorState.mostrar_cumplimiento && (s.estados||[]).length) ? `<div style="display:flex;flex-direction:column;gap:7px;margin:0 0 12px;padding:10px 12px;background:#f6f8fd;border-radius:8px">
       <span class="muted-sm" style="font-weight:700">¿Cuál estado cuenta como conforme / no conforme? (para el % de cumplimiento — márcalo tú, no se adivina)</span>
       ${s.estados.map(estado=>{
         const actual = (s.estadosTipo||{})[estado] || 'na';
