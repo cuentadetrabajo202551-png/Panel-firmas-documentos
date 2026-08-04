@@ -812,7 +812,7 @@ if(window.emailjs){ try{ emailjs.init({ publicKey: EMAILJS_KEY }); }catch(e){ tr
 let STATE = { listas: [], userEmail: "" };
 
 /* ---------- Permisos del usuario logueado (roles/módulos/contratos) ---------- */
-let MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], contratosInsp:[], nombre:"", uid:null };
+let MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], catalogoDot:[], entidadesDtl:[], contratosInsp:[], nombre:"", uid:null };
 /* Mapa uid -> nombre/correo, para mostrar "Creado por: X" sin exponer toda acc_perfiles */
 let PERFILES_NOMBRE = {};
 let PERFILES_CORREO = {};
@@ -828,12 +828,12 @@ async function cargarAppConfig(){
 async function cargarMiPerfil(){
   await cargarAppConfig();
   const { data:{ session } } = await sb.auth.getSession();
-  if(!session){ MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], contratosInsp:[], nombre:"", uid:null }; return; }
+  if(!session){ MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], catalogoDot:[], entidadesDtl:[], contratosInsp:[], nombre:"", uid:null }; return; }
   const uid = session.user.id;
   const [{ data:p }, { data:pm }, { data:pc }, { data:pe }, { data:pi }, { data:pn }] = await Promise.all([
     sb.from("acc_perfiles").select("es_admin,activo,nombre,rol").eq("id",uid).maybeSingle(),
     sb.from("acc_perfil_modulos").select("modulo").eq("perfil_id",uid),
-    sb.from("acc_perfil_contratos").select("contrato_id").eq("perfil_id",uid),
+    sb.from("acc_perfil_contratos").select("contrato_id,puede_agregar_catalogo").eq("perfil_id",uid),
     sb.from("acc_perfil_entidades").select("entidad_id").eq("perfil_id",uid),
     sb.from("acc_perfil_contratos_insp").select("contrato_id").eq("perfil_id",uid),
     sb.rpc("acc_perfiles_nombres")
@@ -845,6 +845,7 @@ async function cargarMiPerfil(){
     rol: (p && p.rol) || "editor",
     modulos: (pm||[]).map(x=>x.modulo),
     contratos: (pc||[]).map(x=>x.contrato_id),
+    catalogoDot: (pc||[]).filter(x=>x.puede_agregar_catalogo).map(x=>x.contrato_id),
     entidadesDtl: (pe||[]).map(x=>x.entidad_id),
     contratosInsp: (pi||[]).map(x=>x.contrato_id),
     nombre: (p && p.nombre) || session.user.email || "",
@@ -856,6 +857,7 @@ async function cargarMiPerfil(){
 }
 function tieneModulo(m){ return MIPERFIL.esAdmin || (MIPERFIL.activo && MIPERFIL.modulos.includes(m)); }
 function tieneContratoDotacion(id){ return MIPERFIL.esAdmin || MIPERFIL.contratos.includes(id); }
+function puedeAgregarCatalogoDot(id){ return MIPERFIL.esAdmin || MIPERFIL.catalogoDot.includes(id); }
 function tieneEntidadDtl(id){ return MIPERFIL.esAdmin || MIPERFIL.entidadesDtl.includes(id); }
 function tieneContratoInsp(id){ return MIPERFIL.esAdmin || MIPERFIL.contratosInsp.includes(id); }
 /* ¿Puede crear/editar/eliminar en general? admin o editor; visualizador nunca escribe (refuerzo visual — la RLS es la protección real) */
@@ -1117,8 +1119,10 @@ async function router(){
   } else if(location.hash === "#/inspecciones" || location.hash.startsWith("#/inspecciones/")){
     if(!tieneModulo('inspecciones')){ renderSinAcceso("Inspecciones"); return; }
     const mFormatoInsp = location.hash.match(/^#\/inspecciones\/formato\/(.+)$/);
-    if(mFormatoInsp && !puedeEscribir()){ renderSinAcceso("Inspecciones"); }
+    const mEnlaceInsp = location.hash.match(/^#\/inspecciones\/enlace\/(.+)\/editar$/);
+    if((mFormatoInsp||mEnlaceInsp) && !puedeEscribir()){ renderSinAcceso("Inspecciones"); }
     else if(mFormatoInsp){ await renderConstructorFormatoInsp(mFormatoInsp[1]==='nueva' ? null : decodeURIComponent(mFormatoInsp[1])); }
+    else if(mEnlaceInsp){ await renderConstructorFormatoInsp(null, decodeURIComponent(mEnlaceInsp[1])); }
     else { await renderInspeccionesAdmin(); }   // MÓDULO: Inspecciones
   } else {
     // Ruta por defecto (recién logueado, o cualquier hash no reconocido). Si no tiene Asistencia,
@@ -4568,7 +4572,8 @@ function esRutaEdicion(){
   return h === "#/docs/documento/nuevo"
     || /^#\/docs\/documento\/.+\/editar$/.test(h)
     || h.startsWith("#/docs/plantilla/")
-    || h.startsWith("#/inspecciones/formato/");
+    || h.startsWith("#/inspecciones/formato/")
+    || h.startsWith("#/inspecciones/enlace/");
 }
 
 /* ============================================================
@@ -4717,7 +4722,7 @@ async function renderDotacionAdmin(silent){
       <div class="panel-section dot-pc-only">
         <div class="section-label">Herramientas</div>
         <div class="action-grid">
-          ${MIPERFIL.esAdmin?`<button class="action-card" id="btnCatalogo" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.catalogo}</div><span class="ac-title">Catálogo de ítems</span><span class="ac-chevron">›</span></button>`:''}
+          ${(MIPERFIL.esAdmin || puedeAgregarCatalogoDot(contratoActualId))?`<button class="action-card" id="btnCatalogo" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.catalogo}</div><span class="ac-title">Catálogo de ítems</span><span class="ac-chevron">›</span></button>`:''}
           ${puedeEscribir()?`<button class="action-card" id="btnPredeterminados" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.firma}</div><span class="ac-title">Firmas</span><span class="ac-chevron">›</span></button>`:''}
           ${MIPERFIL.esAdmin?`<button class="action-card" id="btnCorregirCargos"><div class="ac-ic">${I.corregir}</div><span class="ac-title">Corregir cargos</span><span class="ac-chevron">›</span></button>`:''}
           ${totalTrab?`<button class="action-card" id="btnExcelEpp"><div class="ac-ic">${I.doc}</div><span class="ac-title">Descargar Excel</span><span class="ac-chevron">›</span></button>`:''}
@@ -5474,19 +5479,21 @@ async function cargarTrabajadoresExcelDot(file){
 
 /* ---------- Catálogo de ítems (guantes, botas, casco…) ---------- */
 function abrirCatalogoModal(){
-  const puedeEditar = MIPERFIL.esAdmin;
+  const puedeAdministrar = MIPERFIL.esAdmin;
+  const puedeAgregar = puedeAdministrar || puedeAgregarCatalogoDot(contratoActualId);
   const c = contratoActual();
   openModal(`<div class="modal" style="max-width:560px">
     <div class="modal-head"><div><h2>Catálogo de ítems</h2><p>Lo que se puede entregar como EPP en ${esc(c?.nombre||'este contrato')}. Cada contrato tiene su propio catálogo.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
-      ${!puedeEditar?`<p class="muted-sm" style="margin-bottom:12px">Solo puedes ver el catálogo. Si necesitas agregar o editar ítems, pídele al administrador que te dé ese permiso.</p>`:''}
-      ${puedeEditar?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      ${!puedeAgregar?`<p class="muted-sm" style="margin-bottom:12px">Solo puedes ver el catálogo. Si necesitas agregar o editar ítems, pídele al administrador que te dé ese permiso.</p>`
+        : !puedeAdministrar?`<p class="muted-sm" style="margin-bottom:12px">Puedes agregar ítems nuevos. Editar, activar/desactivar, eliminar o cargar por Excel es solo de administrador.</p>`:''}
+      ${puedeAdministrar?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
         <button class="btn btn-ghost btn-sm" id="btnPlantillaCat">${I.doc} Plantilla Excel</button>
         <button class="btn btn-ghost btn-sm" id="btnCargaCat">${I.plus} Carga masiva</button>
         ${DOTACION.catalogo.length?`<button class="btn btn-ghost btn-sm" id="btnDelTodoCat" style="color:var(--danger)">${I.trash} Eliminar todo</button>`:''}
-      </div>
-      <div class="field row2" style="margin-bottom:14px">
+      </div>`:''}
+      ${puedeAgregar?`<div class="field row2" style="margin-bottom:14px">
         <div><input id="catNombre" placeholder="Nombre del ítem (ej. Guantes de nitrilo)"></div>
         <div style="display:flex;gap:8px">
           <input id="catUnidad" placeholder="Unidad (par, unidad…)" style="flex:1">
@@ -5595,12 +5602,12 @@ async function cargarCatalogoExcelDot(file){
 function renderCatalogoLista(){
   const host = document.getElementById('catLista'); if(!host) return;
   const items = DOTACION.catalogo;
-  const puedeEditar = MIPERFIL.esAdmin;
+  const puedeAdministrar = MIPERFIL.esAdmin;
   host.innerHTML = items.length ? items.map(c=>`
     <div class="cat-row">
       <span style="flex:1;font-weight:600;font-size:13.5px;${c.activo?'':'opacity:.45;text-decoration:line-through'}">${esc(c.nombre)}</span>
       <span class="muted-sm" style="width:70px">${esc(c.unidad||'—')}</span>
-      ${puedeEditar
+      ${puedeAdministrar
         ? `<label class="chk" style="padding:0"><input type="checkbox" data-cat-activo="${c.id}" ${c.activo?'checked':''}> activo</label>
            <button class="icon-btn danger" title="Eliminar" data-cat-del="${c.id}">${I.trash}</button>`
         : `<span class="muted-sm" style="width:60px">${c.activo?'Activo':'Inactivo'}</span>`}
@@ -6282,7 +6289,15 @@ async function abrirEditarEntrega(entregaId, trabajadorId){
     firmaTrabajador: entrega.firma_trabajador || '',
     firmaResponsable: entrega.firma_responsable || '',
     fotoTrabajador: entrega.foto_trabajador || null,
-    items: items.length ? items.map(it=>({ nombreItem: it.nombre_item, cantidad: it.cantidad, talla: it.talla||'' })) : [{ nombreItem:'', cantidad:1, talla:'' }]
+    // Resuelve contra el catálogo activo por nombre exacto (sin distinguir mayúsculas)
+    // para poder mostrar un <select> en "Editar entrega" — si el ítem se renombró o
+    // desactivó desde que se registró esta entrega, no hay match: catalogoId queda
+    // vacío y nombreItem conserva el texto original tal cual (no se corrompe el
+    // histórico si el usuario no toca esa fila).
+    items: items.length ? items.map(it=>{
+      const match = DOTACION.catalogo.find(c=>c.activo && c.nombre.trim().toLowerCase()===String(it.nombre_item||'').trim().toLowerCase());
+      return { catalogoId: match ? match.id : '', nombreItem: it.nombre_item, cantidad: it.cantidad, talla: it.talla||'' };
+    }) : [{ catalogoId:'', nombreItem:'', cantidad:1, talla:'' }]
   };
   renderFormEditarEntrega();
 }
@@ -6326,7 +6341,7 @@ function renderFormEditarEntrega(){
     </div>
   </div>`);
   renderEeItemsList();
-  document.getElementById('btnEeAddItem').onclick = ()=>{ editarEntregaDraft.items.push({nombreItem:'',cantidad:1,talla:''}); renderEeItemsList(); };
+  document.getElementById('btnEeAddItem').onclick = ()=>{ editarEntregaDraft.items.push({catalogoId:'',nombreItem:'',cantidad:1,talla:''}); renderEeItemsList(); };
   document.getElementById('btnEeGuardar').onclick = guardarEdicionEntrega;
   document.getElementById('btnCorregirFirmaTrab').onclick = ()=> abrirCorregirFirmaEntrega('dot_entregas','firma_trabajador','Firma del trabajador','epp');
   document.getElementById('btnCorregirFirmaResp').onclick = ()=> abrirCorregirFirmaEntrega('dot_entregas','firma_responsable','Firma del responsable','epp');
@@ -6357,14 +6372,33 @@ function wireEeFotoPreview(draft){
 
 function renderEeItemsList(){
   const host = document.getElementById('eeItemsList'); if(!host) return;
-  host.innerHTML = editarEntregaDraft.items.map((it,i)=>`
+  const activos = DOTACION.catalogo.filter(c=>c.activo);
+  host.innerHTML = editarEntregaDraft.items.map((it,i)=>{
+    // Ítem legado sin match en el catálogo activo (se renombró/desactivó desde que se
+    // registró esta entrega): se muestra como opción fija no reseleccionable, para no
+    // corromper el histórico si el usuario no toca la fila.
+    const sinMatch = !it.catalogoId && it.nombreItem;
+    return `
     <div class="item-row" data-i="${i}">
       <span class="firmante-num">${i+1}</span>
-      <input data-f="nombreItem" value="${esc(it.nombreItem||'')}" placeholder="Nombre del ítem">
+      <select data-f="catalogoId">
+        <option value="">Elige el ítem…</option>
+        ${sinMatch?`<option value="" selected disabled>${esc(it.nombreItem)} (ya no está en el catálogo activo)</option>`:''}
+        ${activos.map(c=>`<option value="${c.id}" ${c.id===it.catalogoId?'selected':''}>${esc(c.nombre)}</option>`).join('')}
+      </select>
       <input data-f="cantidad" type="number" min="1" step="1" value="${it.cantidad}" placeholder="Cant.">
       <input data-f="talla" value="${esc(it.talla||'')}" placeholder="Talla (opc.)">
       <button class="icon-btn danger" data-del="${i}" title="Quitar" ${editarEntregaDraft.items.length<=1?'disabled':''}>${I.trash}</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+  host.querySelectorAll('select[data-f="catalogoId"]').forEach(el=>{
+    el.onchange = ()=>{
+      const i = +el.closest('.item-row').dataset.i;
+      const c = activos.find(x=>x.id===el.value);
+      editarEntregaDraft.items[i].catalogoId = el.value;
+      if(c) editarEntregaDraft.items[i].nombreItem = c.nombre;
+    };
+  });
   host.querySelectorAll('input[data-f]').forEach(el=>{
     el.oninput = ()=>{
       const i = +el.closest('.item-row').dataset.i;
@@ -9612,12 +9646,13 @@ function renderDtlPublicoNuevoFormulario(entidadId, nombreEntidad, catalogoUnico
    ============================================================ */
 let INSPECCIONES = { contratos: [], formatos: [], predeterminados: [], herramientas: [], enlaces: [], inspecciones: [] };
 let contratoInspActualId = localStorage.getItem('insp_contrato_actual') || null;
+let inspSubtabActiva = null; // recuerda la pestaña elegida (preop/insp/hv/formatos) entre refrescos silenciosos
 
 async function loadInspeccionesState(){
   const [co, fo, en, ins] = await Promise.all([
     sb.from("insp_contratos").select("id,nombre,activo,creado_en").order("creado_en",{ascending:true}),
     sb.from("insp_formatos").select("id,nombre,activo,tiene_fotos,firmantes,color_acento,mostrar_cumplimiento,tipo").order("nombre",{ascending:true}),
-    sb.from("insp_enlaces").select("id,contrato_id,formato_id,predeterminado_id,firmantes_banco,herramienta_id,nombre,activo,creado_en").order("creado_en",{ascending:true}),
+    sb.from("insp_enlaces").select("id,contrato_id,formato_id,predeterminado_id,firmantes_banco,herramienta_id,nombre,formato_nombre,tiene_fotos,firmantes,color_acento,mostrar_cumplimiento,tipo,activo,creado_en").order("creado_en",{ascending:true}),
     cargarTodasFilas(()=> sb.from("insp_inspecciones").select("id,enlace_id,contrato_id,formato_nombre,creado_en,creado_por,inspector_nombre").order("creado_en",{ascending:false}).order("id",{ascending:true}))
   ]);
   const err = co.error || fo.error || en.error || ins.error;
@@ -9734,6 +9769,7 @@ function abrirFormContratoInsp(id, alGuardar, comoRaiz){
 
 /* ---------- Constructor de formatos: secciones info / checklist / tabla_dinamica ---------- */
 let formatoEditorId = null;
+let enlaceEditorId = null; // si no es null, el constructor edita un insp_enlaces (activo en uso), no un insp_formatos (plantilla)
 let formatoEditorState = null; // { nombre, activo, tiene_fotos, estructura:[...] }
 
 function nuevoIdCampoInsp(){ return 'c'+Math.random().toString(36).slice(2,9); }
@@ -9742,15 +9778,18 @@ function nuevoIdCampoInsp(){ return 'c'+Math.random().toString(36).slice(2,9); }
 // área banco) para que un formato sin personalizar no cambie nada.
 const FIRMANTES_DEFAULT_INSP = [{id:'inspector',rol:'Inspector',origen:'fresco'},{id:'responsable',rol:'Responsable del área',origen:'banco'}];
 
-async function renderConstructorFormatoInsp(formatoId){
+async function renderConstructorFormatoInsp(formatoId, enlaceId){
   formatoEditorId = formatoId;
-  if(formatoId){
-    bloquear("Cargando formato…");
-    const { data, error } = await sb.from("insp_formatos").select("*").eq("id",formatoId).maybeSingle();
+  enlaceEditorId = enlaceId || null;
+  if(formatoId || enlaceId){
+    bloquear(enlaceId ? "Cargando…" : "Cargando formato…");
+    const { data, error } = enlaceId
+      ? await sb.from("insp_enlaces").select("formato_nombre,tiene_fotos,estructura,firmantes,color_acento,mostrar_cumplimiento,tipo,imagen_pdf,activo").eq("id",enlaceId).maybeSingle()
+      : await sb.from("insp_formatos").select("*").eq("id",formatoId).maybeSingle();
     desbloquear();
-    if(error || !data){ toast("No se pudo cargar el formato","err"); location.hash="#/inspecciones"; return; }
+    if(error || !data){ toast(enlaceId?"No se pudo cargar":"No se pudo cargar el formato","err"); location.hash="#/inspecciones"; return; }
     formatoEditorState = {
-      nombre: data.nombre||"", activo: data.activo!==false,
+      nombre: (enlaceId ? data.formato_nombre : data.nombre) || "", activo: data.activo!==false,
       estructura: Array.isArray(data.estructura) ? JSON.parse(JSON.stringify(data.estructura)) : [],
       firmantes: Array.isArray(data.firmantes) ? JSON.parse(JSON.stringify(data.firmantes)) : JSON.parse(JSON.stringify(FIRMANTES_DEFAULT_INSP)),
       color_acento: data.color_acento || '#14215a',
@@ -9758,9 +9797,9 @@ async function renderConstructorFormatoInsp(formatoId){
       tipo: data.tipo === 'preoperacional' ? 'preoperacional' : 'inspeccion',
       imagen_pdf: data.imagen_pdf || null
     };
-    // Compatibilidad con formatos guardados antes de que "fotos" fuera una sección
-    // movible: si tenían fotos activadas pero ninguna sección tipo 'fotos' en su
-    // estructura, se la agregamos al final — mismo lugar donde siempre salían.
+    // Compatibilidad con formatos/enlaces guardados antes de que "fotos" fuera una
+    // sección movible: si tenían fotos activadas pero ninguna sección tipo 'fotos' en
+    // su estructura, se la agregamos al final — mismo lugar donde siempre salían.
     if(data.tiene_fotos!==false && !formatoEditorState.estructura.some(s=>s.tipo==='fotos')){
       formatoEditorState.estructura.push({ id: nuevoIdCampoInsp(), tipo:'fotos', titulo:'Registro fotográfico', max:5, requerido:false });
     }
@@ -9782,13 +9821,15 @@ async function renderConstructorFormatoInsp(formatoId){
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
         <button class="btn btn-ghost btn-sm" id="btnVolverFormatoInsp">${I.back} Volver</button>
         <div style="flex:1"></div>
-        <button class="btn btn-primary" id="btnGuardarFormatoInsp">${I.check} Guardar formato</button>
+        <button class="btn btn-primary" id="btnGuardarFormatoInsp">${I.check} ${enlaceEditorId?'Guardar cambios':'Guardar formato'}</button>
       </div>
       <div class="cons-head">
         <input class="nombre" id="fiNombre" placeholder="Nombre del formato (ej. Inspección operativa y SST)" value="${esc(formatoEditorState.nombre)}">
         <div style="display:flex;gap:6px;margin-top:10px">
-          <button type="button" class="tipo-estado-btn ${formatoEditorState.tipo==='inspeccion'?'active bien':''}" data-fi-tipo="inspeccion">Inspección</button>
-          <button type="button" class="tipo-estado-btn ${formatoEditorState.tipo==='preoperacional'?'active bien':''}" data-fi-tipo="preoperacional">Preoperacional</button>
+          ${enlaceEditorId
+            ? `<span class="tipo-estado-btn active bien" style="cursor:default">${formatoEditorState.tipo==='preoperacional'?'Preoperacional':'Inspección'}</span>`
+            : `<button type="button" class="tipo-estado-btn ${formatoEditorState.tipo==='inspeccion'?'active bien':''}" data-fi-tipo="inspeccion">Inspección</button>
+          <button type="button" class="tipo-estado-btn ${formatoEditorState.tipo==='preoperacional'?'active bien':''}" data-fi-tipo="preoperacional">Preoperacional</button>`}
         </div>
       </div>
       <div class="panel-section" style="margin-bottom:18px">
@@ -10316,6 +10357,23 @@ async function guardarFormatoInsp(){
   }
   const btn = document.getElementById('btnGuardarFormatoInsp');
   if(btn){ btn.disabled=true; btn.innerHTML="Guardando…"; }
+
+  if(enlaceEditorId){
+    // Editando un enlace en uso: se guarda SU PROPIA copia (insp_enlaces), nunca la
+    // plantilla de "Formatos" — por diseño quedan independientes desde que se activó.
+    // No toca tipo/contrato_id/herramienta_id/firmantes_banco/predeterminado_id/activo.
+    bloquear("Guardando cambios…");
+    const payload = { formato_nombre: nombre, tiene_fotos: formatoEditorState.estructura.some(s=>s.tipo==='fotos'), estructura: formatoEditorState.estructura, firmantes: formatoEditorState.firmantes, color_acento: formatoEditorState.color_acento, mostrar_cumplimiento: formatoEditorState.mostrar_cumplimiento, imagen_pdf: formatoEditorState.imagen_pdf };
+    const { error } = await sb.from("insp_enlaces").update(payload).eq("id", enlaceEditorId);
+    desbloquear();
+    if(error){ if(btn){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar cambios`; } toast("No se pudo guardar: "+error.message,"err"); return; }
+    const enActual = INSPECCIONES.enlaces.find(e=>e.id===enlaceEditorId);
+    const tieneBancoSinAsignar = formatoEditorState.firmantes.some(f=>f.origen==='banco' && !((enActual?.firmantes_banco||{})[f.id] || (f.id==='responsable' && enActual?.predeterminado_id)));
+    toast("Cambios guardados"+(tieneBancoSinAsignar?" — configura la firma guardada que falte desde \"Cambiar firma(s) guardada(s)\"":""),"ok");
+    location.hash = "#/inspecciones";
+    return;
+  }
+
   bloquear("Guardando formato…");
   const payload = { nombre, tiene_fotos: formatoEditorState.estructura.some(s=>s.tipo==='fotos'), estructura: formatoEditorState.estructura, firmantes: formatoEditorState.firmantes, color_acento: formatoEditorState.color_acento, mostrar_cumplimiento: formatoEditorState.mostrar_cumplimiento, tipo: formatoEditorState.tipo, imagen_pdf: formatoEditorState.imagen_pdf };
   const res = formatoEditorId
@@ -10323,12 +10381,7 @@ async function guardarFormatoInsp(){
     : await sb.from("insp_formatos").insert(payload).select().single();
   desbloquear();
   if(res.error){ if(btn){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar formato`; } toast("No se pudo guardar: "+res.error.message,"err"); return; }
-  // El enlace (firmas guardadas del banco) se asocia aparte, desde su tarjeta en el
-  // panel — así queda claro que es un paso deliberado, no algo automático que pueda
-  // tomar la plantilla equivocada. Si el formato no tiene ningún firmante "banco",
-  // no hace falta ese paso — el enlace se puede crear directo.
-  const tieneBanco = formatoEditorState.firmantes.some(f=>f.origen==='banco');
-  toast(formatoEditorId?"Formato actualizado":("Formato creado"+(tieneBanco?" — asígnale sus firmas guardadas desde su tarjeta":"")),"ok");
+  toast(formatoEditorId?"Formato actualizado":"Formato creado","ok");
   location.hash = "#/inspecciones";
 }
 
@@ -10365,6 +10418,12 @@ async function renderInspeccionesAdmin(silent){
   const inspecc = inspeccionesDelContrato();
   const mesActual = hoyLocal().slice(0,7);
   const inspeccMes = inspecc.filter(x=>(x.creado_en||'').slice(0,7)===mesActual).length;
+  // Qué pestaña (preop/insp/hv/formatos) mostrar activa — respeta la que el usuario ya
+  // había elegido (inspSubtabActiva) para que un refresco silencioso (cada 20s) no lo
+  // regrese siempre a la primera; solo se resetea si esa pestaña ya no aplica (ej. pasó
+  // a "Todos los contratos", donde solo existe "Formatos").
+  const tabsDisponibles = enTodos ? ['formatos'] : ['preop','insp','hv','formatos'];
+  const tabInspActiva = tabsDisponibles.includes(inspSubtabActiva) ? inspSubtabActiva : tabsDisponibles[0];
 
   document.getElementById("app").innerHTML = `
     ${topbar('inspecciones')}
@@ -10403,20 +10462,20 @@ async function renderInspeccionesAdmin(silent){
       <div class="panel-section">
         <div class="subtab-wrap">
           <div class="subtab-list">
-            ${!enTodos?`<button type="button" class="subtab-item active" data-subtab="preop"><span class="st-ic">${I.check}</span>Inspección preoperacional</button>
-            <button type="button" class="subtab-item" data-subtab="insp"><span class="st-ic">${I.check}</span>Inspecciones</button>
-            <button type="button" class="subtab-item" data-subtab="hv"><span class="st-ic">${I.eye}</span>Hoja de vida</button>`:''}
-            <button type="button" class="subtab-item ${enTodos?'active':''}" data-subtab="formatos"><span class="st-ic">${I.doc}</span>Formatos</button>
+            ${!enTodos?`<button type="button" class="subtab-item ${tabInspActiva==='preop'?'active':''}" data-subtab="preop"><span class="st-ic">${I.check}</span>Inspección preoperacional</button>
+            <button type="button" class="subtab-item ${tabInspActiva==='insp'?'active':''}" data-subtab="insp"><span class="st-ic">${I.check}</span>Inspecciones</button>
+            <button type="button" class="subtab-item ${tabInspActiva==='hv'?'active':''}" data-subtab="hv"><span class="st-ic">${I.eye}</span>Hoja de vida</button>`:''}
+            <button type="button" class="subtab-item ${tabInspActiva==='formatos'?'active':''}" data-subtab="formatos"><span class="st-ic">${I.doc}</span>Formatos</button>
           </div>
           <div class="subtab-content">
             ${!enTodos?`
-            <div class="subtab-pane active" data-pane="preop">
+            <div class="subtab-pane ${tabInspActiva==='preop'?'active':''}" data-pane="preop">
               <div id="enlacesInspPreop"></div>
             </div>
-            <div class="subtab-pane" data-pane="insp">
+            <div class="subtab-pane ${tabInspActiva==='insp'?'active':''}" data-pane="insp">
               <div id="enlacesInspInsp"></div>
             </div>
-            <div class="subtab-pane" data-pane="hv">
+            <div class="subtab-pane ${tabInspActiva==='hv'?'active':''}" data-pane="hv">
               <p class="muted-sm" style="margin:0 0 10px">Elige una herramienta para ver todo lo que se le ha inspeccionado — mensuales y preoperacionales, en orden cronológico.</p>
               <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
                 <select id="selHojaVidaInsp" style="flex:1;min-width:220px;max-width:360px">
@@ -10425,7 +10484,7 @@ async function renderInspeccionesAdmin(silent){
                 <button class="btn btn-primary btn-sm" id="btnVerHojaVidaInsp" ${INSPECCIONES.herramientas.length?'':'disabled'}>${I.eye} Ver hoja de vida</button>
               </div>
             </div>`:''}
-            <div class="subtab-pane ${enTodos?'active':''}" data-pane="formatos">
+            <div class="subtab-pane ${tabInspActiva==='formatos'?'active':''}" data-pane="formatos">
               <div id="formatosInspGrid"></div>
             </div>
           </div>
@@ -10436,6 +10495,7 @@ async function renderInspeccionesAdmin(silent){
   wireLogout();
   document.querySelectorAll('[data-subtab]').forEach(b=>{
     b.onclick = ()=>{
+      inspSubtabActiva = b.dataset.subtab;
       document.querySelectorAll('[data-subtab]').forEach(x=> x.classList.toggle('active', x===b));
       document.querySelectorAll('[data-pane]').forEach(p=> p.classList.toggle('active', p.dataset.pane===b.dataset.subtab));
     };
@@ -10467,21 +10527,17 @@ async function renderInspeccionesAdmin(silent){
 /* ---------- Grillas de enlaces por tipo (preoperacional/inspección), y hoja de vida ---------- */
 function renderEnlacesInspPorTipo(tipo, hostId){
   const host = document.getElementById(hostId); if(!host) return;
-  const enlaces = enlacesDelContrato().filter(e=>{
-    const f = INSPECCIONES.formatos.find(x=>x.id===e.formato_id);
-    return f && f.tipo === tipo;
-  });
+  const enlaces = enlacesDelContrato().filter(e=> e.tipo === tipo);
   const botonNuevo = puedeEscribir() ? `<button class="btn btn-ghost btn-sm" data-nuevo-enlace-tipo="${tipo}" style="margin-top:10px">${I.plus} Nuevo enlace</button>` : '';
   if(!enlaces.length){
     host.innerHTML = `<div class="empty" style="padding:24px 20px"><div class="ic">${I.link}</div><h3>Sin enlaces todavía</h3><p>${tipo==='preoperacional'?'Crea uno para que un trabajador registre el preoperacional de una herramienta.':'Crea uno para que se registren inspecciones de una herramienta o equipo.'}</p></div>${botonNuevo}`;
   } else {
     host.innerHTML = '<div class="grid grid-insp">' + enlaces.map(en=>{
-      const f = INSPECCIONES.formatos.find(x=>x.id===en.formato_id);
       const herr = en.herramienta_id ? INSPECCIONES.herramientas.find(h=>h.id===en.herramienta_id) : null;
-      const titulo = herr ? herr.nombre : (en.nombre || (f?f.nombre:'Enlace'));
+      const titulo = herr ? herr.nombre : (en.nombre || en.formato_nombre || 'Enlace');
       const n = INSPECCIONES.inspecciones.filter(i=>i.enlace_id===en.id).length;
-      const firmantesFmt = f && Array.isArray(f.firmantes) ? f.firmantes : FIRMANTES_DEFAULT_INSP;
-      const bancoSlots = firmantesFmt.filter(x=>x.origen==='banco');
+      const firmantesEn = Array.isArray(en.firmantes) ? en.firmantes : FIRMANTES_DEFAULT_INSP;
+      const bancoSlots = firmantesEn.filter(x=>x.origen==='banco');
       return `
         <div class="lcard">
           <div class="lcard-top">
@@ -10490,7 +10546,7 @@ function renderEnlacesInspPorTipo(tipo, hostId){
           </div>
           <h3>${esc(titulo)}</h3>
           <div class="meta">
-            ${herr ? `<div>${I.doc}<span>${esc(f?f.nombre:'')}</span></div>` : ''}
+            ${herr ? `<div>${I.doc}<span>${esc(en.formato_nombre||'')}</span></div>` : ''}
             <div>${I.cal}<span>Enlace creado ${fmtDate((en.creado_en||'').slice(0,10))}</span></div>
           </div>
           <div class="lcard-foot">
@@ -10502,7 +10558,8 @@ function renderEnlacesInspPorTipo(tipo, hostId){
               <button class="icon-btn" title="Ver detalle" data-eit="ver" data-id="${en.id}">${I.eye}</button>
               <button class="icon-btn" title="Copiar enlace" data-eit="link" data-id="${en.id}">${I.link}</button>
               <button class="icon-btn" title="Compartir QR" data-eit="qr" data-id="${en.id}">${I.qr}</button>
-              ${puedeEscribir()?`<button class="icon-btn" title="Cambiar herramienta" data-eit="herramienta" data-id="${en.id}">${I.pen}</button>
+              ${puedeEscribir()?`<button class="icon-btn" title="Editar" data-eit="editar" data-id="${en.id}">${I.pen}</button>
+              <button class="icon-btn" title="Cambiar herramienta" data-eit="herramienta" data-id="${en.id}">${I.catalogo}</button>
               ${bancoSlots.length?`<button class="icon-btn" title="Cambiar firma(s) guardada(s)" data-eit="firma" data-id="${en.id}">${I.firma}</button>`:''}
               <button class="icon-btn" title="${en.activo?'Desactivar enlace':'Activar enlace'}" data-eit="toggle" data-id="${en.id}">${en.activo?I.lock:I.check}</button>`:''}
             </div>
@@ -10516,6 +10573,7 @@ function renderEnlacesInspPorTipo(tipo, hostId){
       if(act==='ver') abrirDetalleEnlaceInsp(id);
       else if(act==='link') copyText(linkInspeccion(id), "Enlace de inspección copiado");
       else if(act==='qr') mostrarQR(linkInspeccion(id), "Enlace de inspección");
+      else if(act==='editar') location.hash = "#/inspecciones/enlace/"+id+"/editar";
       else if(act==='herramienta') cambiarHerramientaEnlaceInsp(id);
       else if(act==='firma') cambiarFirmaEnlaceInsp(id);
       else if(act==='toggle') toggleActivoEnlaceInsp(id);
@@ -10571,17 +10629,8 @@ function renderFormatosInspGrid(){
     return;
   }
   host.innerHTML = '<div class="grid grid-insp">' + lista.map(f=>{
-    const en = enTodos ? null : INSPECCIONES.enlaces.find(e=>e.formato_id===f.id && e.contrato_id===contratoInspActualId);
-    const firmantesFmt = Array.isArray(f.firmantes) ? f.firmantes : FIRMANTES_DEFAULT_INSP;
-    const bancoSlots = firmantesFmt.filter(x=>x.origen==='banco');
-    const nombresBanco = en ? bancoSlots.map(slot=>{
-      const pid = (en.firmantes_banco||{})[slot.id] || (slot.id==='responsable' ? en.predeterminado_id : null);
-      const p = pid ? INSPECCIONES.predeterminados.find(x=>x.id===pid) : null;
-      return p ? `${slot.rol}: ${p.responsable_nombre}` : null;
-    }).filter(Boolean) : [];
-    const n = en ? INSPECCIONES.inspecciones.filter(i=>i.enlace_id===en.id).length : 0;
+    const n = INSPECCIONES.enlaces.filter(e=>e.formato_id===f.id).length;
     const act = f.activo;
-    const etiquetaFirma = bancoSlots.length>1 ? "firmas guardadas" : "firma guardada";
     return `
       <div class="lcard">
         <div class="lcard-top">
@@ -10590,35 +10639,20 @@ function renderFormatosInspGrid(){
           <span class="badge ${act?'activa':'cerrada'}"><span class="dot"></span>${act?'Activo':'Inactivo'}</span>
         </div>
         <h3>${esc(f.nombre)}</h3>
-        <div class="meta">
-          ${enTodos
-            ? `<div>${I.building}<span>Elige un contrato para gestionar su enlace</span></div>`
-            : en
-              ? `${nombresBanco.length ? `<div>${I.user}<span>${esc(nombresBanco.join(' · '))}</span></div>` : (bancoSlots.length ? '' : `<div>${I.user}<span>Sin firmantes de banco — solo firma(s) en vivo</span></div>`)}
-                 <div>${I.cal}<span>Enlace creado ${fmtDate((en.creado_en||'').slice(0,10))}</span></div>
-                 <div>${en.activo?I.check:I.lock}<span>Enlace ${en.activo?'activo':'inactivo'}</span></div>`
-              : `<div>${I.link}<span>Sin enlace en este contrato todavía</span></div>`}
-        </div>
         <div class="lcard-foot">
           <div class="attn">
             <span class="num">${n}</span>
-            <span class="lab">inspección${n===1?'':'es'}<br>registrada${n===1?'':'s'}</span>
+            <span class="lab">enlace${n===1?'':'s'} creado${n===1?'':'s'}<br>a partir de esta</span>
           </div>
           <div class="card-actions">
-            ${en
-              ? `<button class="icon-btn" title="Ver detalle" data-fa="ver" data-id="${en.id}">${I.eye}</button>
-                 <button class="icon-btn" title="Copiar enlace" data-fa="link" data-id="${en.id}">${I.link}</button>
-                 <button class="icon-btn" title="Compartir QR" data-fa="qr" data-id="${en.id}">${I.qr}</button>
-                 ${puedeEscribir()?`${bancoSlots.length?`<button class="icon-btn" title="Cambiar ${etiquetaFirma}" data-fa="firma" data-id="${en.id}">${I.firma}</button>`:''}
-                 <button class="icon-btn" title="${en.activo?'Desactivar enlace':'Activar enlace'}" data-fa="toggleEnlace" data-id="${en.id}">${en.activo?I.lock:I.check}</button>`:''}`
-              : (puedeEscribir() && !enTodos && act ? `<button class="btn btn-primary btn-sm" data-fa="asociar" data-id="${f.id}">${I.firma} ${bancoSlots.length?"Asociar "+etiquetaFirma:"Crear enlace"}</button>` : '')}
+            ${puedeEscribir() && !enTodos && act ? `<button class="btn btn-primary btn-sm" data-fa="usar" data-id="${f.id}">${I.plus} Usar este formato</button>` : ''}
           </div>
         </div>
         ${puedeEscribir()?`<div class="card-actions" style="padding-top:10px;border-top:1px solid var(--line-2);margin-top:10px">
           <button class="icon-btn" title="Editar formato" data-fa="editar" data-id="${f.id}">${I.pen}</button>
           <button class="icon-btn" title="Duplicar formato" data-fa="duplicar" data-id="${f.id}">${I.copy}</button>
           <button class="icon-btn ${act?'danger':''}" title="${act?'Desactivar formato':'Activar formato'}" data-fa="toggleFormato" data-id="${f.id}">${act?I.lock:I.check}</button>
-          <button class="icon-btn danger" title="Eliminar tarjeta (formato + enlace)" data-fa="delFormato" data-id="${f.id}">${I.trash}</button>
+          <button class="icon-btn danger" title="Eliminar formato" data-fa="delFormato" data-id="${f.id}">${I.trash}</button>
         </div>`:''}
       </div>`;
   }).join('') + '</div>';
@@ -10626,12 +10660,7 @@ function renderFormatosInspGrid(){
   host.querySelectorAll('[data-fa]').forEach(b=>{
     b.onclick = ()=>{
       const id = b.dataset.id, act = b.dataset.fa;
-      if(act==='ver') abrirDetalleEnlaceInsp(id);
-      else if(act==='link') copyText(linkInspeccion(id), "Enlace de inspección copiado");
-      else if(act==='qr') mostrarQR(linkInspeccion(id), "Enlace de inspección");
-      else if(act==='firma') cambiarFirmaEnlaceInsp(id);
-      else if(act==='toggleEnlace') toggleActivoEnlaceInsp(id);
-      else if(act==='asociar') abrirNuevoEnlaceInsp(id);
+      if(act==='usar') abrirNuevoEnlaceInsp(id);
       else if(act==='editar') location.hash = "#/inspecciones/formato/"+id;
       else if(act==='duplicar') duplicarFormatoInsp(id);
       else if(act==='toggleFormato') toggleActivoFormatoInsp(id);
@@ -10645,7 +10674,7 @@ async function toggleActivoEnlaceInsp(id){
   const { error } = await sb.from("insp_enlaces").update({ activo: !en.activo }).eq("id", id);
   if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
   await loadInspeccionesState();
-  renderFormatosInspGrid();
+  renderInspeccionesAdmin(true);
   toast(en.activo?"Enlace desactivado":"Enlace activado","ok");
 }
 
@@ -10654,7 +10683,7 @@ function eliminarFormatoInsp(id){
   openModal(`<div class="modal" style="max-width:440px">
     <div class="modal-head"><div><h2>Eliminar formato</h2><p>Esta acción no se puede deshacer.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminará la tarjeta "${esc(f?.nombre||'')}" junto con su enlace — nadie podrá seguir usando ese link para registrar inspecciones. Las inspecciones que ya se hayan registrado con este formato <b>no se pierden</b>: siguen guardadas y visibles en el Historial.</p></div>
+    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminará la plantilla "${esc(f?.nombre||'')}". Los enlaces que ya se hayan creado a partir de ella <b>no se ven afectados</b> — siguen funcionando exactamente igual, con su propio contenido independiente.</p></div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-danger" id="confDelFormatoInsp">${I.trash} Sí, eliminar</button></div></div>`);
   document.getElementById("confDelFormatoInsp").onclick = async ()=>{
@@ -10691,9 +10720,8 @@ async function duplicarFormatoInsp(id){
 
 function cambiarFirmaEnlaceInsp(enlaceId){
   const en = INSPECCIONES.enlaces.find(x=>x.id===enlaceId); if(!en) return;
-  const formato = INSPECCIONES.formatos.find(f=>f.id===en.formato_id);
-  const firmantesFmt = formato && Array.isArray(formato.firmantes) ? formato.firmantes : FIRMANTES_DEFAULT_INSP;
-  const bancoSlots = firmantesFmt.filter(x=>x.origen==='banco');
+  const firmantesEn = Array.isArray(en.firmantes) ? en.firmantes : FIRMANTES_DEFAULT_INSP;
+  const bancoSlots = firmantesEn.filter(x=>x.origen==='banco');
   const predets = INSPECCIONES.predeterminados;
   if(!bancoSlots.length){ toast("Este formato no tiene firmantes de banco","err"); return; }
   if(!predets.length){ toast('No hay firmas guardadas — créala primero en "Firmas"',"err"); return; }
@@ -10721,16 +10749,15 @@ function cambiarFirmaEnlaceInsp(enlaceId){
     await loadInspeccionesState();
     toast("Firma actualizada","ok");
     closeModal();
-    renderFormatosInspGrid();
+    renderInspeccionesAdmin(true);
   };
 }
 
 /* ---------- Detalle de un enlace: lista de inspecciones hechas a través de él ---------- */
 async function abrirDetalleEnlaceInsp(enlaceId){
   const en = INSPECCIONES.enlaces.find(x=>x.id===enlaceId);
-  const formato = en ? INSPECCIONES.formatos.find(f=>f.id===en.formato_id) : null;
   openModal(`<div class="modal lg">
-    <div class="modal-head"><div><h2>${esc(en?.nombre || formato?.nombre || 'Enlace')}</h2><p>${esc(formato?.nombre||'')}</p></div>
+    <div class="modal-head"><div><h2>${esc(en?.nombre || en?.formato_nombre || 'Enlace')}</h2><p>${esc(en?.formato_nombre||'')}</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body" id="detalleEnlaceInspBody"><div class="empty"><h3>Cargando…</h3></div></div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
@@ -10813,7 +10840,15 @@ function abrirNuevoEnlaceInsp(formatoIdFijo, tipoFiltro){
     const predeterminado_id = firmantes_banco['responsable'] || null; // compat con el enlace legado
     const nombre = document.getElementById('neNombre').value.trim() || null;
     btn.disabled = true; btn.innerHTML = "Creando…";
-    const { data, error } = await sb.from("insp_enlaces").insert({ contrato_id: contratoInspActualId, formato_id, predeterminado_id, firmantes_banco, herramienta_id, nombre }).select().single();
+    // Tomar un formato = copiarlo completo al enlace, no referenciarlo — desde aquí queda
+    // 100% independiente de la plantilla (editable sin afectarla, sobrevive si se borra).
+    const { data: full, error: errFull } = await sb.from("insp_formatos").select("nombre,tiene_fotos,estructura,firmantes,color_acento,mostrar_cumplimiento,tipo,imagen_pdf").eq("id",formato_id).maybeSingle();
+    if(errFull || !full){ btn.disabled=false; btn.innerHTML=`${I.check} Crear enlace`; toast("No se pudo cargar el formato elegido","err"); return; }
+    const { data, error } = await sb.from("insp_enlaces").insert({
+      contrato_id: contratoInspActualId, formato_id, predeterminado_id, firmantes_banco, herramienta_id, nombre,
+      formato_nombre: full.nombre, tiene_fotos: full.tiene_fotos, estructura: full.estructura, firmantes: full.firmantes,
+      color_acento: full.color_acento, mostrar_cumplimiento: full.mostrar_cumplimiento, tipo: full.tipo, imagen_pdf: full.imagen_pdf
+    }).select().single();
     if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Crear enlace`; toast("No se pudo crear: "+error.message,"err"); return; }
     await loadInspeccionesState();
     mostrarEnlaceCreadoInsp(data.id);
@@ -11490,10 +11525,9 @@ async function verInspeccion(id){
   const hora = data.creado_en ? new Date(data.creado_en).toLocaleTimeString("es-CO",{hour:'2-digit',minute:'2-digit'}) : '';
   const puedeTocar = puedoTocarInspeccionReciente(data.creado_en);
   const cump = calcularCumplimientoInsp(data.estructura, data.respuestas);
-  // Igual que en construirInspeccionPDF: "mostrar_cumplimiento" no vive en
-  // insp_inspecciones, se busca en el formato ya cacheado (INSPECCIONES.formatos).
-  const fmtVer = INSPECCIONES.formatos.find(f=>f.id===data.formato_id);
-  const mostrarCumplimientoVer = !fmtVer || fmtVer.mostrar_cumplimiento !== false;
+  // Desde [[CAMBIOS_SQL_61]] "mostrar_cumplimiento" siempre viene congelado en la
+  // propia fila (antes se buscaba en vivo en el formato cacheado).
+  const mostrarCumplimientoVer = data.mostrar_cumplimiento !== false;
   // Misma compatibilidad que construirInspeccionPDF: usa el arreglo "firmantes"
   // (CAMBIOS_SQL_56) si existe, si no arma la lista equivalente desde las
   // columnas viejas fijas (inspecciones guardadas antes de esa migración).
@@ -11805,30 +11839,12 @@ async function construirInspeccionPDF(idOrData){
     insp = idOrData;
   }
   if(!insp) return null;
-  // color_acento/mostrar_cumplimiento: el flujo público (idOrData objeto, respuesta de
-  // insp_publica_registrar) ya los trae; el flujo administrado (idOrData string,
-  // "Descargar PDF" del historial) no los trae en insp_inspecciones — se buscan en el
-  // formato ya cacheado en memoria (INSPECCIONES.formatos, mismo criterio que
-  // nombreContrato aquí abajo).
-  if(insp.color_acento == null || insp.mostrar_cumplimiento === undefined){
-    const fmt = INSPECCIONES.formatos.find(f=>f.id===insp.formato_id);
-    if(fmt){
-      if(insp.color_acento == null) insp.color_acento = fmt.color_acento;
-      if(insp.mostrar_cumplimiento === undefined) insp.mostrar_cumplimiento = fmt.mostrar_cumplimiento;
-    }
-  }
-  // imagen_pdf (foto del equipo, [[7.137]]): el flujo público ya la trae en la respuesta
-  // de insp_publica_registrar; el flujo administrado (idOrData string) no la trae en
-  // insp_inspecciones — se busca bajo demanda (NO se cachea en INSPECCIONES.formatos,
-  // que se recarga cada 20s por el auto-refresh del panel — meter base64 ahí inflaría
-  // ese tráfico constantemente).
-  if(insp.imagen_pdf === undefined){
-    insp.imagen_pdf = null;
-    if(insp.formato_id){
-      const { data:fmtImg } = await sb.from("insp_formatos").select("imagen_pdf").eq("id", insp.formato_id).maybeSingle();
-      if(fmtImg) insp.imagen_pdf = fmtImg.imagen_pdf;
-    }
-  }
+  // color_acento/mostrar_cumplimiento/imagen_pdf: desde [[CAMBIOS_SQL_61]] siempre se
+  // congelan en insp_inspecciones (antes solo viajaban en la respuesta jsonb de la RPC
+  // pública, con un fallback en vivo contra la plantilla — ya no hace falta, esto es
+  // solo defensa para filas legado que quedaron sin backfillear).
+  if(insp.color_acento == null) insp.color_acento = '#14215a';
+  if(insp.mostrar_cumplimiento == null) insp.mostrar_cumplimiento = true;
   const nombreContrato = insp.contrato_nombre != null ? insp.contrato_nombre : ((INSPECCIONES.contratos.find(c=>c.id===insp.contrato_id)||{}).nombre || "");
 
   const { jsPDF } = window.jspdf;
@@ -12230,6 +12246,7 @@ async function cargarBitacora(){
    el panel de Supabase (Authentication → Users) — aquí solo se asigna
    rol/módulos/contratos una vez el login ya existe (ver CAMBIOS_SQL_7.sql).
    ============================================================ */
+let cfgSubtabActiva = null; // recuerda la pestaña elegida (ajustes/instrucciones) entre refrescos
 async function renderConfiguracion(silent){
   const scrollY = window.scrollY;
   if(!silent) bloquear("Cargando usuarios…");
@@ -12254,43 +12271,84 @@ async function renderConfiguracion(silent){
     </tr>`;
   }).join('');
 
+  const tabsCfgDisponibles = ['ajustes','instrucciones'];
+  const tabCfgActiva = tabsCfgDisponibles.includes(cfgSubtabActiva) ? cfgSubtabActiva : 'ajustes';
+
   document.getElementById("app").innerHTML = `
     ${topbar('configuracion')}
     <div class="wrap">
       <div class="page-head">
-        <div><h1>Configuración</h1><p>Usuarios y permisos de acceso a cada módulo (Asistencia, Documentos, EPP y Dotación) y a los contratos dentro de EPP y Dotación.</p></div>
+        <div><h1>Configuración</h1><p>Usuarios y permisos de acceso a cada módulo (Asistencia, Documentos, EPP, Dotación e Inspecciones) y a los contratos dentro de cada uno.</p></div>
       </div>
-      <div class="resp-firma" style="margin-bottom:20px">
-        <div class="rf-info">
-          <div class="rf-k">Dar de alta a alguien nuevo</div>
-          <div class="rf-v" style="font-size:13px;font-weight:600">Créale la cuenta (correo y contraseña) en Supabase → Authentication → Users. Aparecerá aquí BLOQUEADA por defecto, sin ningún módulo — no ve nada hasta que le marques módulos abajo en "Permisos". Nunca queda con acceso total por accidente.</div>
+      <div class="panel-section">
+        <div class="subtab-wrap">
+          <div class="subtab-list">
+            <button type="button" class="subtab-item ${tabCfgActiva==='ajustes'?'active':''}" data-subtab-cfg="ajustes"><span class="st-ic">${I.check}</span>Ajustes generales</button>
+            <button type="button" class="subtab-item ${tabCfgActiva==='instrucciones'?'active':''}" data-subtab-cfg="instrucciones"><span class="st-ic">${I.doc}</span>Instrucciones</button>
+          </div>
+          <div class="subtab-content">
+            <div class="subtab-pane ${tabCfgActiva==='ajustes'?'active':''}" data-pane-cfg="ajustes">
+              <div class="sec-bar"><h2>Ajustes generales</h2></div>
+              <div style="margin-bottom:20px;padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px">
+                <p class="muted-sm" style="margin-bottom:10px">Si marcas alguna, no se podrá guardar una entrega de ese módulo sin foto del trabajador (aplica también al enlace público de Dotación).</p>
+                <label class="chk"><input type="checkbox" id="cfgFotoEpp" ${APP_CONFIG.eppFotoObligatoria?'checked':''}> Foto obligatoria en <b>EPP</b></label>
+                <label class="chk"><input type="checkbox" id="cfgFotoDtl" ${APP_CONFIG.dotacionFotoObligatoria?'checked':''}> Foto obligatoria en <b>Dotación</b></label>
+                <button class="btn btn-primary btn-sm" id="btnGuardarAjustes" style="margin-top:10px">${I.check} Guardar</button>
+              </div>
+              <div class="sec-bar"><h2>Usuarios</h2><span class="muted-sm">${perfiles.length} registrado(s)</span></div>
+              ${perfiles.length
+                ? `<div class="table-wrap"><table class="dt"><thead><tr><th>Usuario</th><th>Rol</th><th>Estado</th><th>Permisos</th></tr></thead><tbody>${filas}</tbody></table></div>`
+                : `<div class="empty"><div class="ic">${I.user}</div><h3>Sin usuarios todavía</h3><p>Correrá automáticamente cuando alguien inicie sesión, o al correr CAMBIOS_SQL_7.sql si ya tienes usuarios creados.</p></div>`}
+            </div>
+            <div class="subtab-pane ${tabCfgActiva==='instrucciones'?'active':''}" data-pane-cfg="instrucciones">
+              <div class="resp-firma" style="margin-bottom:20px">
+                <div class="rf-info">
+                  <div class="rf-k">Dar de alta a alguien nuevo</div>
+                  <div class="rf-v" style="font-size:13px;font-weight:600">Créale la cuenta (correo y contraseña) en Supabase → Authentication → Users. Aparecerá aquí BLOQUEADA por defecto, sin ningún módulo — no ve nada hasta que le marques módulos abajo en "Permisos". Nunca queda con acceso total por accidente.</div>
+                </div>
+              </div>
+              <div class="sec-bar"><h2>Cómo funcionan los roles</h2></div>
+              <div style="margin-bottom:20px;padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
+                <p style="margin-bottom:8px"><b>Administrador</b> — acceso total a todo, sin restricciones, en los 5 módulos.</p>
+                <p style="margin-bottom:8px"><b>Editor en Asistencia y Documentos y Firmas</b> — crea, y solo edita/elimina lo que él mismo creó; nunca puede tocar una lista cerrada o un documento finalizado, así sea suyo.</p>
+                <p style="margin-bottom:8px"><b>Editor en EPP y Dotación</b> — ve todo el directorio y todas las entregas; puede registrar entregas nuevas libremente; puede editar o eliminar <b>las entregas que él mismo registró, sin límite de tiempo</b> — pero nunca las que registró un compañero, eso solo lo puede tocar un administrador. Cada edición o eliminación queda registrada con el detalle exacto de qué cambió en Auditoría. <b>No puede agregar, editar ni eliminar trabajadores</b> del directorio (tampoco por carga masiva de Excel) — el directorio de trabajadores es solo de administrador. <b>Tampoco administra el catálogo de ítems de EPP</b> (editar/activar/desactivar/eliminar/carga masiva) — eso es solo de administrador, salvo que se le dé el permiso de "agregar al catálogo" (ver más abajo).</p>
+                <p style="margin-bottom:8px"><b>Editor en Inspecciones</b> — puede crear/editar/duplicar formatos (plantillas), tomarlos para activarlos en un contrato, y administrar el catálogo de herramientas del contrato.</p>
+                <p style="margin-bottom:8px"><b>Visualizador</b> — en cualquier módulo, solo puede ver lo que sus módulos/contratos le permitan; nunca crea, edita ni elimina nada.</p>
+                <p style="margin-bottom:8px"><b>"Entregas de hoy" (junto al buscador, en EPP y Dotación)</b> — Administrador y Editor. <b>"Todos"</b> (selección masiva) — solo Administrador. Visualizador solo ve "Mostrar inactivos".</p>
+                <p style="margin:0"><b>Auditoría</b> — visible solo para Administrador. No es un módulo que se pueda conceder a un Editor o Visualizador; nadie más la ve, sin importar qué permisos tenga.</p>
+              </div>
+              <div style="margin-bottom:20px;padding:14px 16px;background:var(--danger-soft);border:1px solid #f6cdd4;border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
+                <p style="margin:0"><b style="color:var(--danger)">⚠ Aviso — entregas remotas (enlace/QR):</b> las entregas que un trabajador registra solo por el enlace o código QR (sin que un supervisor haya iniciado sesión) no quedan asociadas a ningún editor como "creador". Por eso, con la regla de arriba, <b>ningún editor puede editar ni eliminar una entrega remota</b> — solo un administrador puede hacerlo, sin importar cuánto tiempo haya pasado.</p>
+              </div>
+              <div class="sec-bar"><h2>Inspecciones: "Formatos" vs. "Inspecciones"/"Inspección preoperacional"</h2></div>
+              <div style="margin-bottom:20px;padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
+                <p style="margin-bottom:8px"><b>"Formatos"</b> es una biblioteca de plantillas — checklist, colores, firmantes — sin contrato ni responsable asociado. Ahí solo se crean/editan/duplican/activan/eliminan plantillas.</p>
+                <p style="margin-bottom:8px">Al ir a <b>"Inspecciones"</b> o <b>"Inspección preoperacional"</b> y tomar una plantilla ("Usar este formato"), se crea un <b>enlace independiente</b>: desde ese momento tiene su propia copia del contenido, editable ahí mismo (botón "Editar" de esa tarjeta) sin afectar ni ser afectado por la plantilla original. Una misma plantilla se puede tomar varias veces — una copia nueva por cada toma (ej. una por cada herramienta física).</p>
+                <p style="margin:0">Por eso <b>borrar una plantilla en "Formatos" nunca borra los enlaces</b> que ya se crearon a partir de ella — siguen funcionando exactamente igual.</p>
+              </div>
+              <div class="sec-bar"><h2>Inspecciones: catálogo de herramientas y hoja de vida</h2></div>
+              <div style="margin-bottom:20px;padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
+                <p style="margin-bottom:8px">Cada contrato tiene su propio catálogo de herramientas/equipos (botón "Herramientas y equipos"). Al crear un enlace en "Inspecciones"/"Inspección preoperacional" se le puede asociar una herramienta específica — así cada QR queda ligado a un equipo en particular.</p>
+                <p style="margin:0"><b>"Hoja de vida"</b> muestra, para la herramienta que elijas, todo lo que se le ha registrado (inspecciones y preoperacionales juntos, de más reciente a más antigua).</p>
+              </div>
+              <div class="sec-bar"><h2>EPP: permiso "puede agregar al catálogo"</h2></div>
+              <div style="margin-bottom:20px;padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
+                <p style="margin-bottom:8px">El catálogo de ítems de EPP (guantes, botas, casco…) es de administrador. Se le puede dar a un editor puntual el permiso de <b>agregar</b> ítems nuevos — nunca editar, activar/desactivar, eliminar ni cargar por Excel, eso sigue siendo solo de administrador.</p>
+                <p style="margin:0">Este permiso es <b>por contrato específico</b>: se activa desde "Permisos" de cada usuario, junto al contrato de EPP correspondiente — puede estar prendido en un contrato y apagado en otro, aunque el usuario tenga acceso a ambos.</p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="sec-bar"><h2>Cómo funcionan los roles</h2></div>
-      <div style="margin-bottom:20px;padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
-        <p style="margin-bottom:8px"><b>Administrador</b> — acceso total a todo, sin restricciones, en los 4 módulos.</p>
-        <p style="margin-bottom:8px"><b>Editor en Asistencia y Documentos y Firmas</b> — crea, y solo edita/elimina lo que él mismo creó; nunca puede tocar una lista cerrada o un documento finalizado, así sea suyo.</p>
-        <p style="margin-bottom:8px"><b>Editor en EPP y Dotación</b> — ve todo el directorio y todas las entregas; puede registrar entregas nuevas libremente; puede editar o eliminar <b>las entregas que él mismo registró, sin límite de tiempo</b> — pero nunca las que registró un compañero, eso solo lo puede tocar un administrador. Cada edición o eliminación queda registrada con el detalle exacto de qué cambió en Auditoría. <b>No puede agregar, editar ni eliminar trabajadores</b> del directorio (tampoco por carga masiva de Excel) — el directorio de trabajadores es solo de administrador. <b>Tampoco ve ni toca el catálogo de ítems de EPP</b> (agregar/editar/eliminar ítems del catálogo) — eso también es solo de administrador; el botón "Catálogo de ítems" no le aparece.</p>
-        <p style="margin-bottom:8px"><b>Visualizador</b> — en cualquier módulo, solo puede ver lo que sus módulos/contratos le permitan; nunca crea, edita ni elimina nada.</p>
-        <p style="margin-bottom:8px"><b>"Entregas de hoy" (junto al buscador, en EPP y Dotación)</b> — Administrador y Editor. <b>"Todos"</b> (selección masiva) — solo Administrador. Visualizador solo ve "Mostrar inactivos".</p>
-        <p style="margin:0"><b>Auditoría</b> — visible solo para Administrador. No es un módulo que se pueda conceder a un Editor o Visualizador; nadie más la ve, sin importar qué permisos tenga.</p>
-      </div>
-      <div style="margin-bottom:20px;padding:14px 16px;background:var(--danger-soft);border:1px solid #f6cdd4;border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
-        <p style="margin:0"><b style="color:var(--danger)">⚠ Aviso — entregas remotas (enlace/QR):</b> las entregas que un trabajador registra solo por el enlace o código QR (sin que un supervisor haya iniciado sesión) no quedan asociadas a ningún editor como "creador". Por eso, con la regla de arriba, <b>ningún editor puede editar ni eliminar una entrega remota</b> — solo un administrador puede hacerlo, sin importar cuánto tiempo haya pasado.</p>
-      </div>
-      <div class="sec-bar"><h2>Ajustes generales</h2></div>
-      <div style="margin-bottom:20px;padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px">
-        <p class="muted-sm" style="margin-bottom:10px">Si marcas alguna, no se podrá guardar una entrega de ese módulo sin foto del trabajador (aplica también al enlace público de Dotación).</p>
-        <label class="chk"><input type="checkbox" id="cfgFotoEpp" ${APP_CONFIG.eppFotoObligatoria?'checked':''}> Foto obligatoria en <b>EPP</b></label>
-        <label class="chk"><input type="checkbox" id="cfgFotoDtl" ${APP_CONFIG.dotacionFotoObligatoria?'checked':''}> Foto obligatoria en <b>Dotación</b></label>
-        <button class="btn btn-primary btn-sm" id="btnGuardarAjustes" style="margin-top:10px">${I.check} Guardar</button>
-      </div>
-      <div class="sec-bar"><h2>Usuarios</h2><span class="muted-sm">${perfiles.length} registrado(s)</span></div>
-      ${perfiles.length
-        ? `<div class="table-wrap"><table class="dt"><thead><tr><th>Usuario</th><th>Rol</th><th>Estado</th><th>Permisos</th></tr></thead><tbody>${filas}</tbody></table></div>`
-        : `<div class="empty"><div class="ic">${I.user}</div><h3>Sin usuarios todavía</h3><p>Correrá automáticamente cuando alguien inicie sesión, o al correr CAMBIOS_SQL_7.sql si ya tienes usuarios creados.</p></div>`}
     </div>`;
   wireLogout();
+  document.querySelectorAll('[data-subtab-cfg]').forEach(b=>{
+    b.onclick = ()=>{
+      cfgSubtabActiva = b.dataset.subtabCfg;
+      document.querySelectorAll('[data-subtab-cfg]').forEach(x=> x.classList.toggle('active', x===b));
+      document.querySelectorAll('[data-pane-cfg]').forEach(p=> p.classList.toggle('active', p.dataset.paneCfg===b.dataset.subtabCfg));
+    };
+  });
   document.getElementById('btnGuardarAjustes').onclick = guardarAjustesGenerales;
   document.querySelectorAll('[data-perf-activo]').forEach(chk=>{
     chk.onchange = ()=> toggleActivoPerfil(chk.dataset.perfActivo, chk.checked);
@@ -12322,12 +12380,12 @@ async function toggleActivoPerfil(id, activo){
 
 async function abrirPermisosUsuario(perfilId){
   bloquear("Cargando permisos…");
-  let perfil, modulos, contratosMarcados, todosLosContratos, entidadesMarcadas, todasLasEntidades, contratosInspMarcados, todosLosContratosInsp;
+  let perfil, modulos, contratosMarcados, catalogoMarcados, todosLosContratos, entidadesMarcadas, todasLasEntidades, contratosInspMarcados, todosLosContratosInsp;
   try{
     const [{ data:p }, { data:pm }, { data:pc }, { data:cs }, { data:pe }, { data:es }, { data:pi }, { data:ci }] = await Promise.all([
       sb.from("acc_perfiles").select("id,email,nombre,es_admin,activo,rol").eq("id",perfilId).maybeSingle(),
       sb.from("acc_perfil_modulos").select("modulo").eq("perfil_id",perfilId),
-      sb.from("acc_perfil_contratos").select("contrato_id").eq("perfil_id",perfilId),
+      sb.from("acc_perfil_contratos").select("contrato_id,puede_agregar_catalogo").eq("perfil_id",perfilId),
       sb.from("dot_contratos").select("id,nombre").order("nombre",{ascending:true}),
       sb.from("acc_perfil_entidades").select("entidad_id").eq("perfil_id",perfilId),
       sb.from("dtl_entidades").select("id,nombre").order("nombre",{ascending:true}),
@@ -12335,6 +12393,7 @@ async function abrirPermisosUsuario(perfilId){
       sb.from("insp_contratos").select("id,nombre").order("nombre",{ascending:true})
     ]);
     perfil = p; modulos = (pm||[]).map(x=>x.modulo); contratosMarcados = (pc||[]).map(x=>x.contrato_id); todosLosContratos = cs||[];
+    catalogoMarcados = (pc||[]).filter(x=>x.puede_agregar_catalogo).map(x=>x.contrato_id);
     entidadesMarcadas = (pe||[]).map(x=>x.entidad_id); todasLasEntidades = es||[];
     contratosInspMarcados = (pi||[]).map(x=>x.contrato_id); todosLosContratosInsp = ci||[];
   } finally { desbloquear(); }
@@ -12360,7 +12419,13 @@ async function abrirPermisosUsuario(perfilId){
         <div id="permisosDotacion" style="margin-top:10px;padding:12px 14px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;${modulos.includes('dotacion')?'':'display:none'}">
           <div class="sec-bar" style="margin:0 0 8px"><h2 style="font-size:13px">Contratos permitidos</h2>${todosLosContratos.length?`<button type="button" class="btn btn-ghost btn-sm" id="btnPfContratoTodos">Marcar todos</button>`:''}</div>
           ${todosLosContratos.length
-            ? todosLosContratos.map(c=>`<label class="chk" style="padding:3px 0"><input type="checkbox" data-pf-contrato="${c.id}" ${contratosMarcados.includes(c.id)?'checked':''}> ${esc(c.nombre)}</label>`).join('')
+            ? todosLosContratos.map(c=>{
+                const marcado = contratosMarcados.includes(c.id);
+                return `<div style="margin:3px 0">
+                  <label class="chk" style="padding:0"><input type="checkbox" data-pf-contrato="${c.id}" ${marcado?'checked':''}> ${esc(c.nombre)}</label>
+                  <label class="chk" style="padding:0 0 0 22px;font-size:12px;color:var(--ink-2)"><input type="checkbox" data-pf-contrato-catalogo="${c.id}" ${catalogoMarcados.includes(c.id)?'checked':''} ${marcado?'':'disabled'}> Puede agregar al catálogo de ítems</label>
+                </div>`;
+              }).join('')
             : '<p class="muted-sm">Aún no hay contratos creados.</p>'}
         </div>
         <label class="chk" style="margin-top:8px"><input type="checkbox" data-pf-mod="dotacionlegal" ${modulos.includes('dotacionlegal')?'checked':''}> Dotación</label>
@@ -12434,10 +12499,21 @@ async function abrirPermisosUsuario(perfilId){
   if(chkInsp) chkInsp.onchange = (e)=>{ document.getElementById('permisosInspecciones').style.display = e.target.checked ? 'block' : 'none'; };
   /* "Marcar todos"/"Quitar todos": evita tener que darle clic contrato por contrato
      cuando alguien necesita ver, por ejemplo, TODA la Dotación de todos los contratos. */
+  // El sub-checkbox "puede agregar al catálogo" de un contrato solo tiene sentido si
+  // ese contrato está marcado — se deshabilita (y se desmarca) junto con él.
+  const sincronizarCatalogoContrato = (contratoId, marcado)=>{
+    const sub = document.querySelector(`[data-pf-contrato-catalogo="${contratoId}"]`);
+    if(!sub) return;
+    sub.disabled = !marcado;
+    if(!marcado) sub.checked = false;
+  };
+  document.querySelectorAll('[data-pf-contrato]').forEach(chk=>{
+    chk.addEventListener('change', ()=> sincronizarCatalogoContrato(chk.dataset.pfContrato, chk.checked));
+  });
   const btnPfContratoTodos = document.getElementById('btnPfContratoTodos');
   if(btnPfContratoTodos) btnPfContratoTodos.onclick = ()=>{
     const marcar = btnPfContratoTodos.textContent.trim()==='Marcar todos';
-    document.querySelectorAll('[data-pf-contrato]').forEach(chk=> chk.checked = marcar);
+    document.querySelectorAll('[data-pf-contrato]').forEach(chk=>{ chk.checked = marcar; sincronizarCatalogoContrato(chk.dataset.pfContrato, marcar); });
     btnPfContratoTodos.textContent = marcar ? 'Quitar todos' : 'Marcar todos';
     actualizarResumenAccesoUI();
   };
@@ -12466,6 +12542,7 @@ async function guardarPermisosUsuario(perfilId){
   const esAdmin = document.getElementById('pfAdmin').checked;
   const modulosMarcados = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-mod]:checked')).map(el=>el.dataset.pfMod);
   const contratosMarcados = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-contrato]:checked')).map(el=>el.dataset.pfContrato);
+  const catalogoMarcados = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-contrato-catalogo]:checked')).map(el=>el.dataset.pfContratoCatalogo);
   const entidadesMarcadas = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-entidad]:checked')).map(el=>el.dataset.pfEntidad);
   const contratosInspMarcados = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-contratoinsp]:checked')).map(el=>el.dataset.pfContratoinsp);
   const rolSeleccionado = document.querySelector('input[name="pfRol"]:checked');
@@ -12488,7 +12565,7 @@ async function guardarPermisosUsuario(perfilId){
     }
     await sb.from("acc_perfil_contratos").delete().eq("perfil_id", perfilId);
     if(contratosMarcados.length){
-      const { error:e3 } = await sb.from("acc_perfil_contratos").insert(contratosMarcados.map(c=>({perfil_id:perfilId, contrato_id:c})));
+      const { error:e3 } = await sb.from("acc_perfil_contratos").insert(contratosMarcados.map(c=>({perfil_id:perfilId, contrato_id:c, puede_agregar_catalogo: catalogoMarcados.includes(c)})));
       if(e3){ toast("Se guardó parcialmente, error en contratos: "+e3.message,"err"); }
     }
     await sb.from("acc_perfil_entidades").delete().eq("perfil_id", perfilId);
