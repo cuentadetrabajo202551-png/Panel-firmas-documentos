@@ -863,13 +863,22 @@ function tieneContratoInsp(id){ return MIPERFIL.esAdmin || MIPERFIL.contratosIns
 /* ¿Puede crear/editar/eliminar en general? admin o editor; visualizador nunca escribe (refuerzo visual — la RLS es la protección real) */
 function puedeEscribir(){ return MIPERFIL.esAdmin || MIPERFIL.rol==='editor'; }
 /* ¿Puede tocar (editar/eliminar) algo creado por uidCreador? admin siempre; editor solo lo suyo; visualizador nunca.
-   También gatea editar/eliminar entregas de EPP y Dotación (dot_entregas/dtl_entregas, sus
-   ítems, y las escaneadas) — hasta CAMBIOS_SQL_54 eso además exigía estar dentro de las 24h
-   siguientes a creado_en (puedoTocarReciente, ya eliminada); CAMBIOS_SQL_55 quitó SOLO el
-   límite de tiempo, a pedido explícito del usuario — un editor sigue sin poder tocar lo que
-   registró un compañero, eso no cambió. La auditoría se hizo más detallada (acc_diff_texto)
-   para poder dar esta libertad de tiempo con confianza. */
+   Gatea editar/eliminar en Asistencia y Documentos, y (junto con puedoTocarEntrega de abajo)
+   en EPP/Dotación — hasta CAMBIOS_SQL_54 eso además exigía estar dentro de las 24h siguientes
+   a creado_en (puedoTocarReciente, ya eliminada); CAMBIOS_SQL_55 quitó SOLO el límite de
+   tiempo, a pedido explícito del usuario — un editor sigue sin poder tocar lo que registró un
+   compañero, eso no cambió. La auditoría se hizo más detallada (acc_diff_texto) para poder
+   dar esta libertad de tiempo con confianza. */
 function puedoTocar(uidCreador){ return MIPERFIL.esAdmin || (MIPERFIL.rol==='editor' && uidCreador===MIPERFIL.uid); }
+/* Solo para entregas de EPP/Dotación (dot_entregas/dtl_entregas, sus ítems, y las escaneadas):
+   además de lo de arriba, un editor SÍ puede tocar una entrega remota (registrada por el
+   enlace público/QR, sin sesión — uidCreador queda null) — CAMBIOS_SQL_62, a pedido del
+   usuario ("si le mando el enlace a un trabajador de mi contrato, debo poder corregirlo yo
+   mismo"). El contrato/entidad al que pertenece ya se filtró aparte (solo llega a ver la
+   ficha de un trabajador de un contrato al que tiene acceso), y la RLS del servidor exige
+   ese mismo acceso de nuevo — este helper solo espeja esa regla para mostrar/ocultar los
+   botones, la barrera real sigue siendo la RLS. */
+function puedoTocarEntrega(uidCreador){ return puedoTocar(uidCreador) || (!uidCreador && puedeEscribir()); }
 /* Igual, pero además exige que no esté cerrado/finalizado (admin sí puede aunque esté cerrado) */
 function puedoTocarCerrable(uidCreador, cerrado){ return MIPERFIL.esAdmin || (MIPERFIL.rol==='editor' && uidCreador===MIPERFIL.uid && !cerrado); }
 function nombreDe(uid){ return uid ? (PERFILES_NOMBRE[uid] || "—") : "—"; }
@@ -5609,15 +5618,44 @@ function renderCatalogoLista(){
       <span class="muted-sm" style="width:70px">${esc(c.unidad||'—')}</span>
       ${puedeAdministrar
         ? `<label class="chk" style="padding:0"><input type="checkbox" data-cat-activo="${c.id}" ${c.activo?'checked':''}> activo</label>
+           <button class="icon-btn" title="Editar" data-cat-editar="${c.id}">${I.pen}</button>
            <button class="icon-btn danger" title="Eliminar" data-cat-del="${c.id}">${I.trash}</button>`
         : `<span class="muted-sm" style="width:60px">${c.activo?'Activo':'Inactivo'}</span>`}
     </div>`).join('') : '<div class="muted-sm" style="padding:14px 0">Sin ítems todavía.</div>';
   host.querySelectorAll('[data-cat-activo]').forEach(chk=>{
     chk.onchange = ()=> toggleItemCatalogo(chk.dataset.catActivo, chk.checked);
   });
+  host.querySelectorAll('[data-cat-editar]').forEach(b=>{
+    b.onclick = ()=> editarItemCatalogo(b.dataset.catEditar);
+  });
   host.querySelectorAll('[data-cat-del]').forEach(b=>{
     b.onclick = ()=> eliminarItemCatalogo(b.dataset.catDel);
   });
+}
+
+function editarItemCatalogo(id){
+  const c = DOTACION.catalogo.find(x=>x.id===id);
+  if(!c) return;
+  openSubModal(`<div class="modal" style="max-width:420px">
+    <div class="modal-head"><div><h2>Editar ítem</h2><p>No afecta las entregas ya registradas — esas conservan el nombre con el que se guardaron.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Nombre del ítem</label><input id="editCatNombre" value="${esc(c.nombre)}" placeholder="Nombre del ítem"></div>
+      <div class="field"><label>Unidad <span class="opt">(opcional)</span></label><input id="editCatUnidad" value="${esc(c.unidad||'')}" placeholder="par, unidad…"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="confEditCat">${I.check} Guardar</button></div></div>`, ()=>abrirCatalogoModal());
+  document.getElementById("confEditCat").onclick = async ()=>{
+    const nombre = document.getElementById('editCatNombre').value.trim();
+    const unidad = document.getElementById('editCatUnidad').value.trim() || null;
+    if(!nombre){ toast("Escribe el nombre del ítem","err"); return; }
+    const btn=document.getElementById("confEditCat"); btn.disabled=true; btn.innerHTML="Guardando…";
+    const { error } = await sb.from("dot_catalogo").update({ nombre, unidad }).eq("id", id);
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
+    await loadDotacionState();
+    toast("Ítem actualizado","ok");
+    closeModal();
+  };
 }
 
 async function guardarItemCatalogo(){
@@ -6205,9 +6243,9 @@ async function renderFichaTrabajador(id){
         : esc(e.responsable_nombre||'—');
       const accionesCol = esEscaneada
         ? `<div style="display:flex;gap:6px"><button class="icon-btn" title="Ver archivo" onclick="verAdjuntoEntrega('${e.id}','dot_entregas')">${I.eye}</button>
-           ${puedoTocar(e.creado_por)?`<button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntregaEscaneada('${e.id}','${t.id}','dot_entregas')">${I.pen}</button>
+           ${puedoTocarEntrega(e.creado_por)?`<button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntregaEscaneada('${e.id}','${t.id}','dot_entregas')">${I.pen}</button>
            <button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntrega('${e.id}','${t.id}')">${I.trash}</button>`:''}</div>`
-        : (puedoTocar(e.creado_por)?`<div style="display:flex;gap:6px"><button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntrega('${e.id}','${t.id}')">${I.pen}</button>
+        : (puedoTocarEntrega(e.creado_por)?`<div style="display:flex;gap:6px"><button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntrega('${e.id}','${t.id}')">${I.pen}</button>
         <button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntrega('${e.id}','${t.id}')">${I.trash}</button></div>`:'');
       return `<tr>
         <td>${fmtDate(e.fecha)}${horaEnt?`<div class="muted-sm">${horaEnt}</div>`:''}${auditLinea}</td>
@@ -8796,9 +8834,9 @@ async function renderFichaTrabajadorDtl(id){
         : esc(e.responsable_nombre||(e.via==='remoto'?'(entrega remota)':'—'));
       const accionesCol = esEscaneada
         ? `<div style="display:flex;gap:6px"><button class="icon-btn" title="Ver archivo" onclick="verAdjuntoEntrega('${e.id}','dtl_entregas')">${I.eye}</button>
-           ${puedoTocar(e.creado_por)?`<button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntregaEscaneada('${e.id}','${t.id}','dtl_entregas')">${I.pen}</button>
+           ${puedoTocarEntrega(e.creado_por)?`<button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntregaEscaneada('${e.id}','${t.id}','dtl_entregas')">${I.pen}</button>
            <button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntregaDtl('${e.id}','${t.id}')">${I.trash}</button>`:''}</div>`
-        : (puedoTocar(e.creado_por)?`<div style="display:flex;gap:6px"><button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntregaDtl('${e.id}','${t.id}')">${I.pen}</button>
+        : (puedoTocarEntrega(e.creado_por)?`<div style="display:flex;gap:6px"><button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntregaDtl('${e.id}','${t.id}')">${I.pen}</button>
         <button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntregaDtl('${e.id}','${t.id}')">${I.trash}</button></div>`:'');
       return `<tr>
         <td>${fmtDate(e.fecha)}${horaEnt?`<div class="muted-sm">${horaEnt}</div>`:''}${auditLinea}</td>
@@ -10528,7 +10566,7 @@ async function renderInspeccionesAdmin(silent){
 function renderEnlacesInspPorTipo(tipo, hostId){
   const host = document.getElementById(hostId); if(!host) return;
   const enlaces = enlacesDelContrato().filter(e=> e.tipo === tipo);
-  const botonNuevo = puedeEscribir() ? `<button class="btn btn-ghost btn-sm" data-nuevo-enlace-tipo="${tipo}" style="margin-top:10px">${I.plus} Nuevo enlace</button>` : '';
+  const botonNuevo = puedeEscribir() ? `<button class="btn btn-ghost btn-sm" data-nuevo-enlace-tipo="${tipo}" style="margin-top:10px">${I.plus} Crear formulario</button>` : '';
   if(!enlaces.length){
     host.innerHTML = `<div class="empty" style="padding:24px 20px"><div class="ic">${I.link}</div><h3>Sin enlaces todavía</h3><p>${tipo==='preoperacional'?'Crea uno para que un trabajador registre el preoperacional de una herramienta.':'Crea uno para que se registren inspecciones de una herramienta o equipo.'}</p></div>${botonNuevo}`;
   } else {
@@ -10580,7 +10618,7 @@ function renderEnlacesInspPorTipo(tipo, hostId){
     };
   });
   const bn = host.querySelector('[data-nuevo-enlace-tipo]');
-  if(bn) bn.onclick = ()=> abrirNuevoEnlaceInsp(null, bn.dataset.nuevoEnlaceTipo);
+  if(bn) bn.onclick = ()=> abrirNuevoEnlaceInsp(bn.dataset.nuevoEnlaceTipo);
 }
 
 async function verHojaDeVidaInsp(herramientaId){
@@ -10622,7 +10660,6 @@ async function verHojaDeVidaInsp(herramientaId){
 
 function renderFormatosInspGrid(){
   const host = document.getElementById('formatosInspGrid'); if(!host) return;
-  const enTodos = contratoInspActualId==='todos';
   const lista = INSPECCIONES.formatos;
   if(!lista.length){
     host.innerHTML = `<div class="empty" style="padding:30px 20px"><div class="ic">${I.doc}</div><h3>Sin formatos todavía</h3><p>Crea uno con "Crear formato" para empezar.</p></div>`;
@@ -10642,10 +10679,7 @@ function renderFormatosInspGrid(){
         <div class="lcard-foot">
           <div class="attn">
             <span class="num">${n}</span>
-            <span class="lab">enlace${n===1?'':'s'} creado${n===1?'':'s'}<br>a partir de esta</span>
-          </div>
-          <div class="card-actions">
-            ${puedeEscribir() && !enTodos && act ? `<button class="btn btn-primary btn-sm" data-fa="usar" data-id="${f.id}">${I.plus} Usar este formato</button>` : ''}
+            <span class="lab">formulario${n===1?'':'s'} creado${n===1?'':'s'}<br>a partir de esta</span>
           </div>
         </div>
         ${puedeEscribir()?`<div class="card-actions" style="padding-top:10px;border-top:1px solid var(--line-2);margin-top:10px">
@@ -10660,8 +10694,7 @@ function renderFormatosInspGrid(){
   host.querySelectorAll('[data-fa]').forEach(b=>{
     b.onclick = ()=>{
       const id = b.dataset.id, act = b.dataset.fa;
-      if(act==='usar') abrirNuevoEnlaceInsp(id);
-      else if(act==='editar') location.hash = "#/inspecciones/formato/"+id;
+      if(act==='editar') location.hash = "#/inspecciones/formato/"+id;
       else if(act==='duplicar') duplicarFormatoInsp(id);
       else if(act==='toggleFormato') toggleActivoFormatoInsp(id);
       else if(act==='delFormato') eliminarFormatoInsp(id);
@@ -10790,66 +10823,46 @@ async function abrirDetalleEnlaceInsp(enlaceId){
   </table></div>`;
 }
 
-/* ---------- Nuevo enlace: formato + firmas de banco por cada firmante "banco" + etiqueta ---------- */
-/* formatoIdFijo: siempre viene de la tarjeta de un formato específico (botón "Asociar
-   firma(s)"), así que nunca se deja elegir formato — solo las firmas de banco + etiqueta.
-   El formato puede tener 0, 1 o varios firmantes "banco" (ver CAMBIOS_SQL_56) — se pide
-   una plantilla del banco del contrato por cada uno; si no tiene ninguno, el enlace se
-   crea directo sin pedir nada de firmas. */
-function abrirNuevoEnlaceInsp(formatoIdFijo, tipoFiltro){
+/* ---------- Crear formulario: se elige una plantilla de "Formatos" (filtrada por tipo)
+   y se copia completa a un enlace nuevo — nada de firmas acá. Quién firma se resuelve
+   DESPUÉS, editando el formulario ya creado (agregar/quitar firmantes) y, para los de
+   firma guardada, con "Cambiar firma(s) guardada(s)" en su tarjeta — así crear un
+   formulario es un solo paso: elegir la plantilla. */
+function abrirNuevoEnlaceInsp(tipoFiltro){
   if(contratoInspActualId==='todos'){ toast("Elige un contrato específico primero","err"); return; }
-  const formatosBase = INSPECCIONES.formatos.filter(f=>f.activo);
-  const formatos = (formatoIdFijo || !tipoFiltro) ? formatosBase : formatosBase.filter(f=>f.tipo===tipoFiltro);
-  const predets = INSPECCIONES.predeterminados;
+  const formatos = INSPECCIONES.formatos.filter(f=>f.activo && (!tipoFiltro || f.tipo===tipoFiltro));
   const herramientas = INSPECCIONES.herramientas.filter(h=>h.activo);
-  if(!formatos.length){ toast('No hay formatos activos — créalo primero desde "Formatos"',"err"); return; }
-  const formatoFijo = formatoIdFijo ? formatos.find(f=>f.id===formatoIdFijo) : null;
-  const firmantesFmt = formatoFijo ? (Array.isArray(formatoFijo.firmantes)?formatoFijo.firmantes:FIRMANTES_DEFAULT_INSP) : FIRMANTES_DEFAULT_INSP;
-  const bancoSlots = firmantesFmt.filter(x=>x.origen==='banco');
-  const faltaBanco = bancoSlots.length>0 && !predets.length;
+  if(!formatos.length){ toast('No hay formatos activos de este tipo — créalo primero desde "Formatos"',"err"); return; }
   openModal(`<div class="modal" style="max-width:480px">
-    <div class="modal-head"><div><h2>Nuevo enlace de inspección</h2><p>Los inspectores usarán este enlace para registrar sus inspecciones.</p></div>
+    <div class="modal-head"><div><h2>Crear formulario</h2><p>Elige la plantilla de "Formatos" que quieres usar — queda una copia independiente, lista para compartir.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
-      ${formatoFijo
-        ? `<div class="field"><label>Formato</label><input value="${esc(formatoFijo.nombre)}" readonly></div>`
-        : `<div class="field"><label>Formato *</label><select id="neFormato">${formatos.map(f=>`<option value="${f.id}">${esc(f.nombre)}</option>`).join('')}</select></div>`}
+      <div class="field"><label>Formato *</label><select id="neFormato">${formatos.map(f=>`<option value="${f.id}">${esc(f.nombre)}</option>`).join('')}</select></div>
       ${herramientas.length ? `<div class="field"><label>Herramienta/equipo <span class="opt">(opcional)</span></label>
         <select id="neHerramienta"><option value="">— Sin herramienta específica —</option>${herramientas.map(h=>`<option value="${h.id}">${esc(h.nombre)}</option>`).join('')}</select></div>` : ''}
-      ${!bancoSlots.length
-        ? `<p class="muted-sm">Este formato no tiene firmantes de banco — no hace falta elegir ninguna firma guardada.</p>`
-        : !predets.length
-          ? `<p class="muted-sm">Todavía no has guardado ninguna firma en este contrato. <a href="#" id="neIrFirmas">Créala primero en "Firmas"</a>.</p>`
-          : bancoSlots.map(slot=>`<div class="field"><label>Firma de "${esc(slot.rol)}" *</label>
-              <select data-ne-banco="${esc(slot.id)}">${predets.map(p=>`<option value="${p.id}">${esc(p.nombre)} — ${esc(p.responsable_nombre)}</option>`).join('')}</select></div>`).join('')}
       <div class="field"><label>Etiqueta <span class="opt">(opcional)</span></label><input id="neNombre" placeholder="Ej. Turno mañana"></div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      ${!faltaBanco?`<button class="btn btn-primary" id="btnGuardarEnlaceInsp">${I.check} Crear enlace</button>`:''}
+      <button class="btn btn-primary" id="btnGuardarEnlaceInsp">${I.check} Crear formulario</button>
     </div></div>`);
-  const irFirmas = document.getElementById('neIrFirmas');
-  if(irFirmas) irFirmas.onclick = (e)=>{ e.preventDefault(); abrirPredeterminadosInsp(); };
   const btn = document.getElementById('btnGuardarEnlaceInsp');
-  if(btn) btn.onclick = async ()=>{
-    const formato_id = formatoFijo ? formatoFijo.id : document.getElementById('neFormato').value;
+  btn.onclick = async ()=>{
+    const formato_id = document.getElementById('neFormato').value;
     const selHerr = document.getElementById('neHerramienta');
     const herramienta_id = (selHerr && selHerr.value) || null;
-    const firmantes_banco = {};
-    document.querySelectorAll('[data-ne-banco]').forEach(sel=>{ firmantes_banco[sel.dataset.neBanco] = sel.value; });
-    const predeterminado_id = firmantes_banco['responsable'] || null; // compat con el enlace legado
     const nombre = document.getElementById('neNombre').value.trim() || null;
     btn.disabled = true; btn.innerHTML = "Creando…";
     // Tomar un formato = copiarlo completo al enlace, no referenciarlo — desde aquí queda
     // 100% independiente de la plantilla (editable sin afectarla, sobrevive si se borra).
     const { data: full, error: errFull } = await sb.from("insp_formatos").select("nombre,tiene_fotos,estructura,firmantes,color_acento,mostrar_cumplimiento,tipo,imagen_pdf").eq("id",formato_id).maybeSingle();
-    if(errFull || !full){ btn.disabled=false; btn.innerHTML=`${I.check} Crear enlace`; toast("No se pudo cargar el formato elegido","err"); return; }
+    if(errFull || !full){ btn.disabled=false; btn.innerHTML=`${I.check} Crear formulario`; toast("No se pudo cargar el formato elegido","err"); return; }
     const { data, error } = await sb.from("insp_enlaces").insert({
-      contrato_id: contratoInspActualId, formato_id, predeterminado_id, firmantes_banco, herramienta_id, nombre,
+      contrato_id: contratoInspActualId, formato_id, predeterminado_id: null, firmantes_banco: {}, herramienta_id, nombre,
       formato_nombre: full.nombre, tiene_fotos: full.tiene_fotos, estructura: full.estructura, firmantes: full.firmantes,
       color_acento: full.color_acento, mostrar_cumplimiento: full.mostrar_cumplimiento, tipo: full.tipo, imagen_pdf: full.imagen_pdf
     }).select().single();
-    if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Crear enlace`; toast("No se pudo crear: "+error.message,"err"); return; }
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Crear formulario`; toast("No se pudo crear: "+error.message,"err"); return; }
     await loadInspeccionesState();
     mostrarEnlaceCreadoInsp(data.id);
   };
@@ -10884,7 +10897,7 @@ function cambiarHerramientaEnlaceInsp(enlaceId){
 function mostrarEnlaceCreadoInsp(enlaceId){
   const url = linkInspeccion(enlaceId);
   openModal(`<div class="modal" style="max-width:440px">
-    <div class="modal-head"><div><h2>¡Enlace creado!</h2><p>Compártelo con los inspectores.</p></div>
+    <div class="modal-head"><div><h2>¡Formulario creado!</h2><p>Compártelo con los inspectores. Antes, entra a "Editar" en su tarjeta para agregar quiénes firman.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
       <div class="field"><input readonly value="${esc(url)}" onclick="this.select()"></div>
@@ -10894,7 +10907,7 @@ function mostrarEnlaceCreadoInsp(enlaceId){
       <button class="btn btn-ghost" id="btnQrEnlaceCreado">${I.qr} QR</button>
       <button class="btn btn-primary" id="btnCopiarEnlaceCreado">${I.link} Copiar enlace</button>
     </div></div>`);
-  document.getElementById('btnCerrarEnlaceCreado').onclick = ()=>{ closeModal(); renderFormatosInspGrid(); };
+  document.getElementById('btnCerrarEnlaceCreado').onclick = ()=>{ closeModal(); renderInspeccionesAdmin(true); };
   document.getElementById('btnCopiarEnlaceCreado').onclick = ()=> copyText(url, "Enlace copiado");
   document.getElementById('btnQrEnlaceCreado').onclick = ()=> mostrarQR(url, "Enlace de inspección");
 }
@@ -12317,8 +12330,8 @@ async function renderConfiguracion(silent){
                 <p style="margin-bottom:8px"><b>"Entregas de hoy" (junto al buscador, en EPP y Dotación)</b> — Administrador y Editor. <b>"Todos"</b> (selección masiva) — solo Administrador. Visualizador solo ve "Mostrar inactivos".</p>
                 <p style="margin:0"><b>Auditoría</b> — visible solo para Administrador. No es un módulo que se pueda conceder a un Editor o Visualizador; nadie más la ve, sin importar qué permisos tenga.</p>
               </div>
-              <div style="margin-bottom:20px;padding:14px 16px;background:var(--danger-soft);border:1px solid #f6cdd4;border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
-                <p style="margin:0"><b style="color:var(--danger)">⚠ Aviso — entregas remotas (enlace/QR):</b> las entregas que un trabajador registra solo por el enlace o código QR (sin que un supervisor haya iniciado sesión) no quedan asociadas a ningún editor como "creador". Por eso, con la regla de arriba, <b>ningún editor puede editar ni eliminar una entrega remota</b> — solo un administrador puede hacerlo, sin importar cuánto tiempo haya pasado.</p>
+              <div style="margin-bottom:20px;padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
+                <p style="margin:0"><b>Entregas remotas (enlace/QR):</b> las que un trabajador registra solo por el enlace o código QR (sin que un supervisor haya iniciado sesión) no quedan asociadas a ningún editor como "creador". Por eso son la única excepción a la regla de arriba: <b>cualquier editor con acceso a ese contrato/entidad puede editarlas o eliminarlas</b> (no hace falta ser administrador) — así el supervisor que comparte el enlace con su trabajador puede corregirlo después si hace falta. Un editor sigue sin poder tocar una entrega que registró un compañero desde el panel (con sesión iniciada) — esa sí sigue siendo intocable para él.</p>
               </div>
               <div class="sec-bar"><h2>Inspecciones: "Formatos" vs. "Inspecciones"/"Inspección preoperacional"</h2></div>
               <div style="margin-bottom:20px;padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
