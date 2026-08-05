@@ -456,9 +456,9 @@ table.dt tr:hover td{background:#fafbfe}
 .dt .acc-mini{display:flex;gap:5px;flex-wrap:nowrap;align-items:center}
 .muted-sm{color:var(--ink-3);font-size:12.5px}
 .grid-insp{grid-template-columns:repeat(auto-fill,minmax(400px,1fr))}
-.grid-insp .card-actions{flex-wrap:wrap;row-gap:7px}
-.grid-insp .card-actions .icon-btn{width:32px;height:32px;border-radius:8px}
-.grid-insp .card-actions .icon-btn svg{width:16px;height:16px}
+.grid-insp .card-actions{flex-wrap:nowrap;gap:5px}
+.grid-insp .card-actions .icon-btn{width:30px;height:30px;border-radius:8px;flex:none}
+.grid-insp .card-actions .icon-btn svg{width:15px;height:15px}
 
 /* ---------- Public form ---------- */
 .pub-wrap{max-width:660px;margin:0 auto;padding:30px 20px 80px}
@@ -9697,18 +9697,21 @@ let contratoInspActualId = localStorage.getItem('insp_contrato_actual') || null;
 let inspSubtabActiva = null; // recuerda la pestaña elegida (preop/insp/hv/formatos) entre refrescos silenciosos
 
 async function loadInspeccionesState(){
-  const [co, fo, en, ins] = await Promise.all([
+  const [co, fo, en, ins, pd] = await Promise.all([
     sb.from("insp_contratos").select("id,nombre,activo,creado_en").order("creado_en",{ascending:true}),
     sb.from("insp_formatos").select("id,nombre,activo,tiene_fotos,firmantes,color_acento,mostrar_cumplimiento,tipo").order("nombre",{ascending:true}),
     sb.from("insp_enlaces").select("id,contrato_id,formato_id,predeterminado_id,firmantes_banco,herramienta_id,nombre,formato_nombre,tiene_fotos,firmantes,color_acento,mostrar_cumplimiento,tipo,activo,creado_en").order("creado_en",{ascending:true}),
-    cargarTodasFilas(()=> sb.from("insp_inspecciones").select("id,enlace_id,contrato_id,formato_nombre,creado_en,creado_por,inspector_nombre").order("creado_en",{ascending:false}).order("id",{ascending:true}))
+    cargarTodasFilas(()=> sb.from("insp_inspecciones").select("id,enlace_id,contrato_id,formato_nombre,creado_en,creado_por,inspector_nombre").order("creado_en",{ascending:false}).order("id",{ascending:true})),
+    // Banco de firmas GLOBAL (igual que "Formatos") — no por contrato, ver [[CAMBIOS_SQL_63]].
+    sb.from("insp_predeterminados").select("id,nombre,responsable_nombre,responsable_cargo,firma").order("nombre",{ascending:true})
   ]);
-  const err = co.error || fo.error || en.error || ins.error;
+  const err = co.error || fo.error || en.error || ins.error || pd.error;
   if(err){ console.warn(err); toast("Error cargando Inspecciones: "+err.message,"err"); }
   INSPECCIONES.contratos = co.data || [];
   INSPECCIONES.formatos = fo.data || [];
   INSPECCIONES.enlaces = en.data || [];
   INSPECCIONES.inspecciones = ins.data || [];
+  INSPECCIONES.predeterminados = pd.data || [];
   // Si el contrato guardado ya no existe (o nunca se eligió uno), cae al primero activo, o al primero que haya
   const existe = contratoInspActualId==='todos' || INSPECCIONES.contratos.some(x=>x.id===contratoInspActualId);
   if(!existe){
@@ -9716,16 +9719,8 @@ async function loadInspeccionesState(){
     contratoInspActualId = primero ? primero.id : null;
     if(contratoInspActualId) localStorage.setItem('insp_contrato_actual', contratoInspActualId);
   }
-  // Los predeterminados (firma del responsable) son POR CONTRATO — se cargan después de
-  // tener contratoInspActualId ya resuelto. En modo "todos" (o sin contrato) quedan vacíos.
-  if(contratoInspActualId && contratoInspActualId!=='todos'){
-    const { data:pd, error:epd } = await sb.from("insp_predeterminados").select("id,nombre,responsable_nombre,responsable_cargo,firma").eq("contrato_id", contratoInspActualId).order("creado_en",{ascending:true});
-    if(epd) console.warn(epd);
-    INSPECCIONES.predeterminados = pd || [];
-  } else {
-    INSPECCIONES.predeterminados = [];
-  }
-  // Herramientas/equipos del catálogo: igual que predeterminados, es POR CONTRATO.
+  // Herramientas/equipos del catálogo: esa sí sigue siendo POR CONTRATO (a diferencia de
+  // Formatos/Firmas) — cada contrato tiene sus propios equipos físicos.
   if(contratoInspActualId && contratoInspActualId!=='todos'){
     const { data:hr, error:ehr } = await sb.from("insp_herramientas").select("id,contrato_id,nombre,codigo,activo").eq("contrato_id", contratoInspActualId).order("nombre",{ascending:true});
     if(ehr) console.warn(ehr);
@@ -9882,7 +9877,7 @@ async function renderConstructorFormatoInsp(formatoId, enlaceId){
       </div>
       <div class="panel-section" style="margin-bottom:18px">
         <div class="section-label">Firmantes</div>
-        <p class="muted-sm" style="margin:0 0 10px">Quiénes firman esta inspección — de 0 a los que necesites. "Firma en vivo" la pide el enlace público cada vez; "Firma guardada" se elige de un banco de firmas del contrato al crear el enlace (para roles que nunca están presentes para firmar).</p>
+        <p class="muted-sm" style="margin:0 0 10px">Quiénes firman esta inspección — de 0 a los que necesites. "Firma en vivo" la pide el enlace público cada vez; "Firma guardada" se elige del banco de firmas (el mismo para todos los contratos) al crear el enlace (para roles que nunca están presentes para firmar).</p>
         <div id="firmantesFormatoInsp"></div>
         <button class="btn btn-ghost btn-sm" id="btnAddFirmanteInsp" style="margin-top:8px">${I.plus} Agregar firmante</button>
       </div>
@@ -10097,7 +10092,7 @@ function renderFirmantesFormatoInsp(){
       <input data-firmante-rol="${i}" value="${esc(f.rol||'')}" placeholder="Rol (ej. Inspector, Supervisor, Cliente)" style="flex:1;min-width:180px;padding:6px 8px;border:1px solid var(--line);border-radius:6px">
       <select data-firmante-origen="${i}" style="padding:6px 8px;border:1px solid var(--line);border-radius:6px">
         <option value="fresco" ${f.origen==='fresco'?'selected':''}>Firma en vivo (en el enlace)</option>
-        <option value="banco" ${f.origen==='banco'?'selected':''}>Firma guardada (banco del contrato)</option>
+        <option value="banco" ${f.origen==='banco'?'selected':''}>Firma guardada (banco de firmas)</option>
       </select>
       <button class="icon-btn danger insp-del-btn" title="Quitar firmante" data-firmante-del="${i}">${I.trash}</button>
     </div>`).join('') : '<p class="muted-sm">Sin firmantes — esta inspección se guarda sin ninguna firma.</p>';
@@ -10502,7 +10497,7 @@ async function renderInspeccionesAdmin(silent){
         <div class="action-grid">
           <button class="action-card" id="btnHistorialInsp" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.cal}</div><span class="ac-title">Historial de inspecciones</span><span class="ac-chevron">›</span></button>
           ${puedeEscribir()?`<button class="action-card" id="btnCrearFormatoInsp"><div class="ac-ic">${I.plus}</div><span class="ac-title">Crear formato</span><span class="ac-chevron">›</span></button>`:''}
-          ${puedeEscribir()?`<button class="action-card" id="btnFirmasInsp" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.firma}</div><span class="ac-title">Firmas</span><span class="ac-chevron">›</span></button>`:''}
+          ${puedeEscribir()?`<button class="action-card" id="btnFirmasInsp"><div class="ac-ic">${I.firma}</div><span class="ac-title">Firmas</span><span class="ac-chevron">›</span></button>`:''}
           ${puedeEscribir()?`<button class="action-card" id="btnHerramientasInsp" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.catalogo||I.box}</div><span class="ac-title">Herramientas y equipos</span><span class="ac-chevron">›</span></button>`:''}
         </div>
       </div>
@@ -10582,7 +10577,7 @@ function renderEnlacesInspPorTipo(tipo, hostId){
   } else {
     host.innerHTML = '<div class="grid grid-insp">' + enlaces.map(en=>{
       const herr = en.herramienta_id ? INSPECCIONES.herramientas.find(h=>h.id===en.herramienta_id) : null;
-      const titulo = herr ? herr.nombre : (en.nombre || en.formato_nombre || 'Enlace');
+      const titulo = en.nombre || en.formato_nombre || 'Enlace';
       const n = INSPECCIONES.inspecciones.filter(i=>i.enlace_id===en.id).length;
       const firmantesEn = Array.isArray(en.firmantes) ? en.firmantes : FIRMANTES_DEFAULT_INSP;
       return `
@@ -10593,7 +10588,7 @@ function renderEnlacesInspPorTipo(tipo, hostId){
           </div>
           <h3>${esc(titulo)}</h3>
           <div class="meta">
-            ${herr ? `<div>${I.doc}<span>${esc(en.formato_nombre||'')}</span></div>` : ''}
+            ${herr ? `<div>${I.catalogo}<span>${esc(herr.nombre||'')}</span></div>` : ''}
             <div>${I.cal}<span>Enlace creado ${fmtDate((en.creado_en||'').slice(0,10))}</span></div>
           </div>
           <div class="lcard-foot">
@@ -10815,9 +10810,10 @@ async function duplicarFormatoInsp(id){
 
 /* Muestra TODOS los firmantes del formulario (no solo los de banco), identificados
    por el rol que el usuario les puso en el constructor — para los de "firma
-   guardada" deja elegir cuál del banco del contrato; los de "firma en vivo" solo
-   se informan (los firma quien llena el formulario, no hay nada que asignar). El
-   botón que abre esto ya no aparece si el formato no tiene NINGÚN firmante. */
+   guardada" deja elegir cuál del banco de firmas (compartido entre todos los
+   contratos, ver [[CAMBIOS_SQL_63]]); los de "firma en vivo" solo se informan (los
+   firma quien llena el formulario, no hay nada que asignar). El botón que abre
+   esto ya no aparece si el formato no tiene NINGÚN firmante. */
 function cambiarFirmaEnlaceInsp(enlaceId){
   const en = INSPECCIONES.enlaces.find(x=>x.id===enlaceId); if(!en) return;
   const firmantesEn = Array.isArray(en.firmantes) ? en.firmantes : FIRMANTES_DEFAULT_INSP;
@@ -11003,11 +10999,10 @@ function mostrarEnlaceCreadoInsp(enlaceId){
    abrirPredeterminadosModal de EPP, sin el tope PREDET_MAX (aquí se eligen de un
    <select> al crear un enlace, no de chips en un asistente). ---------- */
 async function abrirPredeterminadosInsp(){
-  if(contratoInspActualId==='todos'){ toast("Elige un contrato específico primero","err"); return; }
   bloquear("Cargando firmas…");
   try{ await loadInspeccionesState(); } finally{ desbloquear(); }
   openModal(`<div class="modal" style="max-width:560px">
-    <div class="modal-head"><div><h2>Firmas del responsable del área</h2><p>Guarda el nombre, cargo y firma de quien responde por el área, para asociarla a un enlace de inspección.</p></div>
+    <div class="modal-head"><div><h2>Firmas del responsable del área</h2><p>Guarda el nombre, cargo y firma de quien responde por el área, para asociarla a un enlace de inspección. Este banco es único para todos los contratos — lo que guardes acá lo puedes usar sin importar en cuál estés parado.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
       <button class="btn btn-primary btn-sm" id="btnNuevoPredetInsp" style="margin-bottom:14px">${I.plus} Nueva firma</button>
@@ -11099,7 +11094,7 @@ function abrirFormPredeterminadoInsp(id){
     const payload = { nombre, responsable_nombre: respNombre, responsable_cargo: respCargo, firma };
     const { error } = p
       ? await sb.from("insp_predeterminados").update(payload).eq("id", p.id)
-      : await sb.from("insp_predeterminados").insert({ ...payload, contrato_id: contratoInspActualId });
+      : await sb.from("insp_predeterminados").insert(payload);
     if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
     await loadInspeccionesState();
     toast(p?"Firma actualizada":"Firma creada","ok");
@@ -12440,6 +12435,7 @@ async function renderConfiguracion(silent){
                 <p style="margin-bottom:8px"><b>"Formatos"</b> es una biblioteca de plantillas — checklist, colores, firmantes — sin contrato ni responsable asociado. Ahí solo se crean/editan/duplican/activan/eliminan plantillas.</p>
                 <p style="margin-bottom:8px">Al ir a <b>"Inspecciones"</b> o <b>"Inspección preoperacional"</b> y tomar una plantilla ("Usar este formato"), se crea un <b>enlace independiente</b>: desde ese momento tiene su propia copia del contenido, editable ahí mismo (botón "Editar" de esa tarjeta) sin afectar ni ser afectado por la plantilla original. Una misma plantilla se puede tomar varias veces — una copia nueva por cada toma (ej. una por cada herramienta física).</p>
                 <p style="margin:0">Por eso <b>borrar una plantilla en "Formatos" nunca borra los enlaces</b> que ya se crearon a partir de ella — siguen funcionando exactamente igual.</p>
+                <p style="margin:8px 0 0">El botón <b>"Firmas"</b> (banco de firmas guardadas) funciona igual: es único para todos los contratos, no uno por contrato — una firma que crees ahí se puede usar en cualquier enlace de cualquier contrato.</p>
               </div>
               <div class="sec-bar"><h2>Inspecciones: catálogo de herramientas y hoja de vida</h2></div>
               <div style="margin-bottom:20px;padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
