@@ -459,9 +459,7 @@ table.dt tr:hover td{background:#fafbfe}
 .grid-insp .card-actions{flex-wrap:nowrap;gap:5px}
 .grid-insp .card-actions .icon-btn{width:30px;height:30px;border-radius:8px;flex:none}
 .grid-insp .card-actions .icon-btn svg{width:15px;height:15px}
-.grid-insp .lcard-foot{flex-wrap:wrap;row-gap:8px}
-.grid-insp .attn .num{font-size:18px}
-.grid-insp .attn .lab{font-size:10.5px}
+.grid-insp .attn{flex:none}
 
 /* ---------- Public form ---------- */
 .pub-wrap{max-width:660px;margin:0 auto;padding:30px 20px 80px}
@@ -10630,9 +10628,8 @@ function renderEnlacesInspPorTipo(tipo, hostId){
             <div>${I.cal}<span>Enlace creado ${fmtDate((en.creado_en||'').slice(0,10))}</span></div>
           </div>
           <div class="lcard-foot">
-            <div class="attn">
+            <div class="attn" title="${n} registro${n===1?'':'s'} guardado${n===1?'':'s'}">
               <span class="num">${n}</span>
-              <span class="lab">registro${n===1?'':'s'}<br>guardado${n===1?'':'s'}</span>
             </div>
             <div class="card-actions">
               <button class="icon-btn" title="Ver detalle" data-eit="ver" data-id="${en.id}">${I.eye}</button>
