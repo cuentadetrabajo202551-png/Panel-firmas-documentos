@@ -10322,9 +10322,14 @@ function renderEditorSeccionChecklist(s, i){
       </label>
       <label class="chk"><input type="checkbox" data-checklist-marca="${i}" ${s.conMarcaModelo?'checked':''}> Con marca/modelo por ítem</label>
       <label class="chk"><input type="checkbox" data-checklist-cantidad="${i}" ${s.conCantidad?'checked':''}> Con cantidad por ítem</label>
-      <label class="chk"><input type="checkbox" data-checklist-vencimiento="${i}" ${s.conFechaVencimiento?'checked':''}> Con fecha de vencimiento por ítem</label>
+      <label class="chk"><input type="checkbox" data-checklist-vencimiento="${i}" ${s.conFechaVencimiento?'checked':''}> Con fecha por ítem</label>
       <label class="chk"><input type="checkbox" data-checklist-obs="${i}" ${s.conObservaciones?'checked':''}> Con observaciones por ítem</label>
     </div>
+    ${s.conFechaVencimiento?`<div style="margin:-6px 0 12px">
+      <label style="font-size:13px;color:var(--ink-2)">Etiqueta de esa fecha (ej. "Fecha de vencimiento", "Fecha de último mantenimiento"):
+        <input data-checklist-vencimiento-etiqueta="${i}" value="${esc(s.fechaVenceEtiqueta||'Fecha de vencimiento')}" placeholder="Fecha de vencimiento" style="margin-left:6px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;width:280px;max-width:100%">
+      </label>
+    </div>`:''}
     ${(formatoEditorState.mostrar_cumplimiento && (s.estados||[]).length) ? `<div style="display:flex;flex-direction:column;gap:7px;margin:0 0 12px;padding:10px 12px;background:#f6f8fd;border-radius:8px">
       <span class="muted-sm" style="font-weight:700">¿Cuál estado cuenta como conforme / no conforme? (para el % de cumplimiento — márcalo tú, no se adivina)</span>
       ${s.estados.map(estado=>{
@@ -10426,7 +10431,10 @@ function wireEditoresSeccionInsp(host){
     el.onchange = (e)=>{ const i=+el.dataset.checklistCantidad; st.estructura[i].conCantidad = e.target.checked; renderInspFormBody(); };
   });
   host.querySelectorAll('[data-checklist-vencimiento]').forEach(el=>{
-    el.onchange = (e)=>{ const i=+el.dataset.checklistVencimiento; st.estructura[i].conFechaVencimiento = e.target.checked; renderInspFormBody(); };
+    el.onchange = (e)=>{ const i=+el.dataset.checklistVencimiento; st.estructura[i].conFechaVencimiento = e.target.checked; renderSeccionesFormatoInsp(); renderInspFormBody(); };
+  });
+  host.querySelectorAll('[data-checklist-vencimiento-etiqueta]').forEach(el=>{
+    el.oninput = (e)=>{ const i=+el.dataset.checklistVencimientoEtiqueta; st.estructura[i].fechaVenceEtiqueta = e.target.value; renderInspFormBody(); };
   });
   host.querySelectorAll('[data-item-texto]').forEach(el=>{
     el.oninput = (e)=>{ const [i,j]=el.dataset.itemTexto.split(':').map(Number); st.estructura[i].items[j].texto = e.target.value; renderInspFormBody(); };
@@ -10548,7 +10556,7 @@ async function renderInspeccionesAdmin(modo){
   // había elegido (inspSubtabActiva) para que un refresco silencioso (cada 20s) no lo
   // regrese siempre a la primera; solo se resetea si esa pestaña ya no aplica (ej. pasó
   // a "Todos los contratos", donde solo existe "Formatos").
-  const tabsDisponibles = enTodos ? ['formatos'] : ['preop','insp','inventario','hv','mantenimiento','formatos'];
+  const tabsDisponibles = enTodos ? ['formatos'] : ['preop','insp','mantenimiento','inventario','hv','formatos'];
   const tabInspActiva = tabsDisponibles.includes(inspSubtabActiva) ? inspSubtabActiva : tabsDisponibles[0];
 
   document.getElementById("app").innerHTML = `
@@ -10590,9 +10598,9 @@ async function renderInspeccionesAdmin(modo){
           <div class="subtab-list">
             ${!enTodos?`<button type="button" class="subtab-item ${tabInspActiva==='preop'?'active':''}" data-subtab="preop">Inspección preoperacional</button>
             <button type="button" class="subtab-item ${tabInspActiva==='insp'?'active':''}" data-subtab="insp">Inspecciones</button>
+            <button type="button" class="subtab-item ${tabInspActiva==='mantenimiento'?'active':''}" data-subtab="mantenimiento">Mantenimiento</button>
             <button type="button" class="subtab-item ${tabInspActiva==='inventario'?'active':''}" data-subtab="inventario">Inventario</button>
-            <button type="button" class="subtab-item ${tabInspActiva==='hv'?'active':''}" data-subtab="hv">Hoja de vida</button>
-            <button type="button" class="subtab-item ${tabInspActiva==='mantenimiento'?'active':''}" data-subtab="mantenimiento">Mantenimiento</button>`:''}
+            <button type="button" class="subtab-item ${tabInspActiva==='hv'?'active':''}" data-subtab="hv">Hoja de vida</button>`:''}
             <button type="button" class="subtab-item ${tabInspActiva==='formatos'?'active':''}" data-subtab="formatos">Formatos</button>
           </div>
           <div class="subtab-content">
@@ -10602,6 +10610,15 @@ async function renderInspeccionesAdmin(modo){
             </div>
             <div class="subtab-pane ${tabInspActiva==='insp'?'active':''}" data-pane="insp">
               <div id="enlacesInspInsp"></div>
+            </div>
+            <div class="subtab-pane ${tabInspActiva==='mantenimiento'?'active':''}" data-pane="mantenimiento">
+              <p class="muted-sm" style="margin:0 0 10px">Elige una herramienta para registrar o revisar sus mantenimientos — correctivos y preventivos.</p>
+              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                <select id="selMantenimientoInsp" style="flex:1;min-width:220px;max-width:360px">
+                  ${INSPECCIONES.herramientas.length ? INSPECCIONES.herramientas.map(h=>`<option value="${h.id}">${esc(h.nombre)}${h.activo?'':' (inactiva)'}</option>`).join('') : '<option value="">Sin herramientas en el catálogo todavía</option>'}
+                </select>
+                <button class="btn btn-primary btn-sm" id="btnAbrirMantenimientoInsp" ${INSPECCIONES.herramientas.length?'':'disabled'}>${I.pen} Gestionar mantenimiento</button>
+              </div>
             </div>
             <div class="subtab-pane ${tabInspActiva==='inventario'?'active':''}" data-pane="inventario">
               <div id="enlacesInspInventario"></div>
@@ -10613,15 +10630,6 @@ async function renderInspeccionesAdmin(modo){
                   ${INSPECCIONES.herramientas.length ? INSPECCIONES.herramientas.map(h=>`<option value="${h.id}">${esc(h.nombre)}${h.activo?'':' (inactiva)'}</option>`).join('') : '<option value="">Sin herramientas en el catálogo todavía</option>'}
                 </select>
                 <button class="btn btn-primary btn-sm" id="btnVerHojaVidaInsp" ${INSPECCIONES.herramientas.length?'':'disabled'}>${I.eye} Ver hoja de vida</button>
-              </div>
-            </div>
-            <div class="subtab-pane ${tabInspActiva==='mantenimiento'?'active':''}" data-pane="mantenimiento">
-              <p class="muted-sm" style="margin:0 0 10px">Elige una herramienta para registrar o revisar sus mantenimientos — correctivos y preventivos.</p>
-              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-                <select id="selMantenimientoInsp" style="flex:1;min-width:220px;max-width:360px">
-                  ${INSPECCIONES.herramientas.length ? INSPECCIONES.herramientas.map(h=>`<option value="${h.id}">${esc(h.nombre)}${h.activo?'':' (inactiva)'}</option>`).join('') : '<option value="">Sin herramientas en el catálogo todavía</option>'}
-                </select>
-                <button class="btn btn-primary btn-sm" id="btnAbrirMantenimientoInsp" ${INSPECCIONES.herramientas.length?'':'disabled'}>${I.pen} Gestionar mantenimiento</button>
               </div>
             </div>`:''}
             <div class="subtab-pane ${tabInspActiva==='formatos'?'active':''}" data-pane="formatos">
@@ -11551,10 +11559,11 @@ function abrirMantenimientosHerramientaInsp(herramientaId){
         <div><label>Responsable <span class="opt">(opcional)</span></label><input id="mantInspResponsable" placeholder="Quién lo hizo"></div>
       </div>
       <div class="field" style="margin-bottom:14px"><label>Descripción <span class="opt">(opcional)</span></label><textarea id="mantInspDescripcion" rows="2" placeholder="Qué se hizo"></textarea></div>
-      <button class="btn btn-primary btn-sm" id="btnAddMantInsp" style="margin-bottom:14px">${I.plus} Agregar</button>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:14px">
+        <button class="btn btn-primary btn-sm" id="btnAddMantInsp">${I.plus} Agregar</button>
+      </div>
       <div id="mantInspLista"></div>
     </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
   </div>`);
   document.getElementById('btnAddMantInsp').onclick = ()=> guardarMantenimientoInsp(herramientaId);
   renderMantenimientosInspLista(herramientaId);
@@ -11757,7 +11766,7 @@ function renderSeccionChecklistInsp(s){
         ${(s.conMarcaModelo || s.conCantidad || s.conFechaVencimiento)?`<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
           ${s.conMarcaModelo?`<div style="flex:1;min-width:140px"><label class="muted-sm" style="display:block;margin-bottom:3px">Marca/Modelo</label><input data-item-marca="${it.id}" value="${esc(r.marca_modelo||'')}" style="width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;box-sizing:border-box"></div>`:''}
           ${s.conCantidad?`<div style="flex:1;min-width:110px"><label class="muted-sm" style="display:block;margin-bottom:3px">Cantidad</label><input type="number" min="0" data-item-cantidad="${it.id}" value="${esc(r.cantidad??'')}" style="width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;box-sizing:border-box"></div>`:''}
-          ${s.conFechaVencimiento?`<div style="flex:1;min-width:150px"><label class="muted-sm" style="display:block;margin-bottom:3px">Fecha de vencimiento</label><input type="date" data-item-vence="${it.id}" value="${esc(r.fecha_vencimiento||'')}" style="width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;box-sizing:border-box"></div>`:''}
+          ${s.conFechaVencimiento?`<div style="flex:1;min-width:150px"><label class="muted-sm" style="display:block;margin-bottom:3px">${esc(s.fechaVenceEtiqueta||'Fecha de vencimiento')}</label><input type="date" data-item-vence="${it.id}" value="${esc(r.fecha_vencimiento||'')}" style="width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;box-sizing:border-box"></div>`:''}
         </div>`:''}
         ${s.conObservaciones?`<input data-item-obs="${it.id}" value="${esc(r.observaciones||'')}" placeholder="Observaciones (opcional)" style="width:100%;margin-top:8px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;box-sizing:border-box">`:''}
       </div>`;
@@ -12028,7 +12037,7 @@ function renderSeccionChecklistLectura(s, respuestas){
   return `<div class="panel-section" style="margin-bottom:14px">
     <div class="section-label">${esc(s.titulo||'')}</div>
     <div class="table-wrap"><table class="dt">
-      <thead><tr><th>Ítem</th><th>Estado</th>${s.conMarcaModelo?'<th>Marca/Modelo</th>':''}${s.conCantidad?'<th>Cantidad</th>':''}${s.conFechaVencimiento?'<th>Fecha de vencimiento</th>':''}${s.conObservaciones?'<th>Observaciones</th>':''}</tr></thead>
+      <thead><tr><th>Ítem</th><th>Estado</th>${s.conMarcaModelo?'<th>Marca/Modelo</th>':''}${s.conCantidad?'<th>Cantidad</th>':''}${s.conFechaVencimiento?`<th>${esc(s.fechaVenceEtiqueta||'Fecha de vencimiento')}</th>`:''}${s.conObservaciones?'<th>Observaciones</th>':''}</tr></thead>
       <tbody>${(s.items||[]).map(it=>{
         const r = respuestas[it.id]||{};
         return `<tr><td>${esc(it.texto)}</td><td>${r.estado?`<span class="chip-estado active ${claseEstadoInsp(r.estado, s.estadosTipo)}" style="cursor:default;padding:4px 10px;font-size:12px">${esc(r.estado)}</span>`:'—'}</td>${s.conMarcaModelo?`<td>${esc(r.marca_modelo||'—')}</td>`:''}${s.conCantidad?`<td>${esc(r.cantidad??'—')}</td>`:''}${s.conFechaVencimiento?`<td>${r.fecha_vencimiento?fmtDate(r.fecha_vencimiento):'—'}</td>`:''}${s.conObservaciones?`<td>${esc(r.observaciones||'—')}</td>`:''}</tr>`;
@@ -12289,7 +12298,7 @@ function dibujarSeccionChecklistPDF(doc, y, seccion, respuestas, ctx){
     let idxCab = idxExtrasInicio;
     if(conMarca){ celdas.push({txt:'MARCA/MODELO', x0:xs[idxCab], x1:xs[idxCab+1], align:'center'}); idxCab++; }
     if(conCant){ celdas.push({txt:'CANT.', x0:xs[idxCab], x1:xs[idxCab+1], align:'center'}); idxCab++; }
-    if(conVence){ celdas.push({txt:'VENCE', x0:xs[idxCab], x1:xs[idxCab+1], align:'center'}); idxCab++; }
+    if(conVence){ celdas.push({txt:(seccion.fechaVenceEtiqueta||'Vence').toUpperCase(), x0:xs[idxCab], x1:xs[idxCab+1], align:'center'}); idxCab++; }
     if(conObs){ celdas.push({txt:'OBSERVACIONES', x0:xs[idxCab], x1:xs[idxCab+1], align:'center'}); idxCab++; }
     const wrapCeldas = celdas.map(c=> doc.splitTextToSize(pdfTexto(c.txt), (c.x1-c.x0)-3));
     const maxLineas = Math.max(1, ...wrapCeldas.map(w=>w.length));
