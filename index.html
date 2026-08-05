@@ -9707,6 +9707,7 @@ function renderDtlPublicoNuevoFormulario(entidadId, nombreEntidad, catalogoUnico
 let INSPECCIONES = { contratos: [], formatos: [], predeterminados: [], herramientas: [], enlaces: [], inspecciones: [] };
 let contratoInspActualId = localStorage.getItem('insp_contrato_actual') || null;
 let inspSubtabActiva = null; // recuerda la pestaña elegida (preop/insp/hv/formatos) entre refrescos silenciosos
+let formatosInspFiltroTipo = 'todos'; // filtro de "Formatos": todos/inspeccion/preoperacional
 
 async function loadInspeccionesState(){
   const [co, fo, en, ins, pd] = await Promise.all([
@@ -10304,6 +10305,8 @@ function renderEditorSeccionChecklist(s, i){
       <label style="font-size:13px;color:var(--ink-2)">Estados (separados por coma):
         <input data-checklist-estados="${i}" value="${esc(estadosStr)}" placeholder="Cumple, No cumple, N/A" style="margin-left:6px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;width:220px">
       </label>
+      <label class="chk"><input type="checkbox" data-checklist-cantidad="${i}" ${s.conCantidad?'checked':''}> Con cantidad por ítem</label>
+      <label class="chk"><input type="checkbox" data-checklist-vencimiento="${i}" ${s.conFechaVencimiento?'checked':''}> Con fecha de vencimiento por ítem</label>
       <label class="chk"><input type="checkbox" data-checklist-obs="${i}" ${s.conObservaciones?'checked':''}> Con observaciones por ítem</label>
     </div>
     ${(formatoEditorState.mostrar_cumplimiento && (s.estados||[]).length) ? `<div style="display:flex;flex-direction:column;gap:7px;margin:0 0 12px;padding:10px 12px;background:#f6f8fd;border-radius:8px">
@@ -10399,6 +10402,12 @@ function wireEditoresSeccionInsp(host){
   });
   host.querySelectorAll('[data-checklist-obs]').forEach(el=>{
     el.onchange = (e)=>{ const i=+el.dataset.checklistObs; st.estructura[i].conObservaciones = e.target.checked; renderInspFormBody(); };
+  });
+  host.querySelectorAll('[data-checklist-cantidad]').forEach(el=>{
+    el.onchange = (e)=>{ const i=+el.dataset.checklistCantidad; st.estructura[i].conCantidad = e.target.checked; renderInspFormBody(); };
+  });
+  host.querySelectorAll('[data-checklist-vencimiento]').forEach(el=>{
+    el.onchange = (e)=>{ const i=+el.dataset.checklistVencimiento; st.estructura[i].conFechaVencimiento = e.target.checked; renderInspFormBody(); };
   });
   host.querySelectorAll('[data-item-texto]').forEach(el=>{
     el.oninput = (e)=>{ const [i,j]=el.dataset.itemTexto.split(':').map(Number); st.estructura[i].items[j].texto = e.target.value; renderInspFormBody(); };
@@ -10583,6 +10592,11 @@ async function renderInspeccionesAdmin(modo){
               </div>
             </div>`:''}
             <div class="subtab-pane ${tabInspActiva==='formatos'?'active':''}" data-pane="formatos">
+              <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
+                <button type="button" class="tipo-estado-btn ${formatosInspFiltroTipo==='todos'?'active bien':''}" data-filtro-formato="todos">Todos</button>
+                <button type="button" class="tipo-estado-btn ${formatosInspFiltroTipo==='inspeccion'?'active bien':''}" data-filtro-formato="inspeccion">Inspección</button>
+                <button type="button" class="tipo-estado-btn ${formatosInspFiltroTipo==='preoperacional'?'active bien':''}" data-filtro-formato="preoperacional">Preoperacional</button>
+              </div>
               <div id="formatosInspGrid"></div>
             </div>
           </div>
@@ -10596,6 +10610,16 @@ async function renderInspeccionesAdmin(modo){
       inspSubtabActiva = b.dataset.subtab;
       document.querySelectorAll('[data-subtab]').forEach(x=> x.classList.toggle('active', x===b));
       document.querySelectorAll('[data-pane]').forEach(p=> p.classList.toggle('active', p.dataset.pane===b.dataset.subtab));
+    };
+  });
+  document.querySelectorAll('[data-filtro-formato]').forEach(b=>{
+    b.onclick = ()=>{
+      formatosInspFiltroTipo = b.dataset.filtroFormato;
+      document.querySelectorAll('[data-filtro-formato]').forEach(x=>{
+        const activo = x===b;
+        x.classList.toggle('active', activo); x.classList.toggle('bien', activo);
+      });
+      renderFormatosInspGrid();
     };
   });
   document.getElementById("selContratoInsp").onchange = (e)=>{
@@ -10635,6 +10659,12 @@ function renderEnlacesInspPorTipo(tipo, hostId){
       const titulo = en.nombre || en.formato_nombre || 'Enlace';
       const n = INSPECCIONES.inspecciones.filter(i=>i.enlace_id===en.id).length;
       const firmantesEn = Array.isArray(en.firmantes) ? en.firmantes : FIRMANTES_DEFAULT_INSP;
+      // Estado de la(s) firma(s) de banco de este enlace — no si TIENE un firmante
+      // "fresco" (ese no necesita nada del banco), sino si tiene alguno "banco" y,
+      // si lo tiene, si ya quedó asignada una firma guardada o todavía falta.
+      const bancoSlotsCard = firmantesEn.filter(f=>f.origen==='banco');
+      const bancoAsignadosCard = bancoSlotsCard.filter(f=> (en.firmantes_banco||{})[f.id] || (f.id==='responsable' && en.predeterminado_id));
+      const estadoBancoCard = !bancoSlotsCard.length ? null : (bancoAsignadosCard.length===bancoSlotsCard.length ? 'ok' : 'falta');
       return `
         <div class="lcard">
           <div class="lcard-top">
@@ -10645,6 +10675,8 @@ function renderEnlacesInspPorTipo(tipo, hostId){
           <div class="meta">
             ${herr ? `<div>${I.catalogo}<span>${esc(herr.nombre||'')}</span></div>` : ''}
             <div>${I.cal}<span>Enlace creado ${fmtDate((en.creado_en||'').slice(0,10))}</span></div>
+            ${estadoBancoCard==='ok' ? `<div>${I.firma}<span>Firma guardada asignada</span></div>` : ''}
+            ${estadoBancoCard==='falta' ? `<div>${I.warn}<span style="color:var(--danger);font-weight:700">Falta asignar firma guardada</span></div>` : ''}
           </div>
           <div class="lcard-foot">
             <div class="attn" title="${n} registro${n===1?'':'s'} guardado${n===1?'':'s'}">
@@ -10843,9 +10875,12 @@ async function generarHojaVidaInspPDF(herramientaId){
 
 function renderFormatosInspGrid(){
   const host = document.getElementById('formatosInspGrid'); if(!host) return;
-  const lista = INSPECCIONES.formatos;
+  const listaTotal = INSPECCIONES.formatos;
+  const lista = listaTotal.filter(f=> formatosInspFiltroTipo==='todos' || f.tipo===formatosInspFiltroTipo);
   if(!lista.length){
-    host.innerHTML = `<div class="empty" style="padding:30px 20px"><div class="ic">${I.doc}</div><h3>Sin formatos todavía</h3><p>Crea uno con "Crear formato" para empezar.</p></div>`;
+    host.innerHTML = listaTotal.length
+      ? `<div class="empty" style="padding:30px 20px"><div class="ic">${I.doc}</div><h3>Sin formatos de este tipo</h3><p>Cambia el filtro de arriba, o crea uno nuevo con "Crear formato".</p></div>`
+      : `<div class="empty" style="padding:30px 20px"><div class="ic">${I.doc}</div><h3>Sin formatos todavía</h3><p>Crea uno con "Crear formato" para empezar.</p></div>`;
     return;
   }
   host.innerHTML = '<div class="grid grid-insp">' + lista.map(f=>{
@@ -11500,6 +11535,10 @@ function renderSeccionChecklistInsp(s){
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           ${(s.estados||[]).map(estado=>{ const cls = claseEstadoInsp(estado, s.estadosTipo); return `<button type="button" class="chip-estado ${r.estado===estado?'active '+cls:''}" data-item-estado="${it.id}" data-estado-val="${esc(estado)}" data-estado-cls="${cls}">${esc(estado)}</button>`; }).join('')}
         </div>
+        ${(s.conCantidad || s.conFechaVencimiento)?`<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+          ${s.conCantidad?`<div style="flex:1;min-width:110px"><label class="muted-sm" style="display:block;margin-bottom:3px">Cantidad</label><input type="number" min="0" data-item-cantidad="${it.id}" value="${esc(r.cantidad??'')}" style="width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;box-sizing:border-box"></div>`:''}
+          ${s.conFechaVencimiento?`<div style="flex:1;min-width:150px"><label class="muted-sm" style="display:block;margin-bottom:3px">Fecha de vencimiento</label><input type="date" data-item-vence="${it.id}" value="${esc(r.fecha_vencimiento||'')}" style="width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;box-sizing:border-box"></div>`:''}
+        </div>`:''}
         ${s.conObservaciones?`<input data-item-obs="${it.id}" value="${esc(r.observaciones||'')}" placeholder="Observaciones (opcional)" style="width:100%;margin-top:8px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;box-sizing:border-box">`:''}
       </div>`;
     }).join('')}
@@ -11593,6 +11632,12 @@ function wireInspFormBody(host){
   });
   host.querySelectorAll('[data-item-obs]').forEach(el=>{
     el.oninput = ()=>{ const id=el.dataset.itemObs; const r = inspeccionDraft.respuestas[id] = inspeccionDraft.respuestas[id]||{}; r.observaciones = el.value; };
+  });
+  host.querySelectorAll('[data-item-cantidad]').forEach(el=>{
+    el.oninput = ()=>{ const id=el.dataset.itemCantidad; const r = inspeccionDraft.respuestas[id] = inspeccionDraft.respuestas[id]||{}; r.cantidad = el.value; };
+  });
+  host.querySelectorAll('[data-item-vence]').forEach(el=>{
+    el.oninput = ()=>{ const id=el.dataset.itemVence; const r = inspeccionDraft.respuestas[id] = inspeccionDraft.respuestas[id]||{}; r.fecha_vencimiento = el.value; };
   });
   host.querySelectorAll('[data-tabla-celda]').forEach(el=>{
     el.oninput = ()=>{
@@ -11760,10 +11805,10 @@ function renderSeccionChecklistLectura(s, respuestas){
   return `<div class="panel-section" style="margin-bottom:14px">
     <div class="section-label">${esc(s.titulo||'')}</div>
     <div class="table-wrap"><table class="dt">
-      <thead><tr><th>Ítem</th><th>Estado</th>${s.conObservaciones?'<th>Observaciones</th>':''}</tr></thead>
+      <thead><tr><th>Ítem</th><th>Estado</th>${s.conCantidad?'<th>Cantidad</th>':''}${s.conFechaVencimiento?'<th>Fecha de vencimiento</th>':''}${s.conObservaciones?'<th>Observaciones</th>':''}</tr></thead>
       <tbody>${(s.items||[]).map(it=>{
         const r = respuestas[it.id]||{};
-        return `<tr><td>${esc(it.texto)}</td><td>${r.estado?`<span class="chip-estado active ${claseEstadoInsp(r.estado, s.estadosTipo)}" style="cursor:default;padding:4px 10px;font-size:12px">${esc(r.estado)}</span>`:'—'}</td>${s.conObservaciones?`<td>${esc(r.observaciones||'—')}</td>`:''}</tr>`;
+        return `<tr><td>${esc(it.texto)}</td><td>${r.estado?`<span class="chip-estado active ${claseEstadoInsp(r.estado, s.estadosTipo)}" style="cursor:default;padding:4px 10px;font-size:12px">${esc(r.estado)}</span>`:'—'}</td>${s.conCantidad?`<td>${esc(r.cantidad??'—')}</td>`:''}${s.conFechaVencimiento?`<td>${r.fecha_vencimiento?fmtDate(r.fecha_vencimiento):'—'}</td>`:''}${s.conObservaciones?`<td>${esc(r.observaciones||'—')}</td>`:''}</tr>`;
       }).join('')}</tbody>
     </table></div>
   </div>`;
@@ -11976,11 +12021,24 @@ function dibujarSeccionChecklistPDF(doc, y, seccion, respuestas, ctx){
   const { M, RIGHT, asegurarEspacio } = ctx;
   const estados = seccion.estados || [];
   const conObs = !!seccion.conObservaciones;
+  const conCant = !!seccion.conCantidad;
+  const conVence = !!seccion.conFechaVencimiento;
   const itemColW = 78;
-  const estadoColW = estados.length ? (RIGHT-M-itemColW-(conObs?38:0)) / estados.length : 0;
+  const cantColW = 18, venceColW = 26, obsColW = 38;
+  const extrasW = (conCant?cantColW:0) + (conVence?venceColW:0) + (conObs?obsColW:0);
+  const estadoColW = estados.length ? (RIGHT-M-itemColW-extrasW) / estados.length : 0;
+  // xs: bordes de columna, en orden ÍTEM | estado(s) | Cantidad | Vencimiento | Observaciones
+  // (mismo orden que los checkboxes del constructor) — cada bloque opcional se agrega
+  // solo si está activado, así el ancho sobrante se reparte siempre entre los estados.
   const xs = [M, M+itemColW];
   for(let i=0;i<estados.length;i++) xs.push(M+itemColW+estadoColW*(i+1));
-  if(conObs) xs.push(RIGHT);
+  let xCursor = xs[xs.length-1];
+  if(conCant){ xCursor += cantColW; xs.push(xCursor); }
+  if(conVence){ xCursor += venceColW; xs.push(xCursor); }
+  if(conObs){ xCursor += obsColW; xs.push(xCursor); }
+  // Índice en xs donde arranca la primera columna "extra" (Cantidad, si existe) — las
+  // columnas de estado ocupan xs[1] a xs[1+estados.length].
+  const idxExtrasInicio = 1 + estados.length;
 
   function tituloYCab(yy){
     doc.setFillColor(ctx.colorAcento[0],ctx.colorAcento[1],ctx.colorAcento[2]); doc.rect(M,yy,RIGHT-M,7,"F");
@@ -11995,7 +12053,10 @@ function dibujarSeccionChecklistPDF(doc, y, seccion, respuestas, ctx){
     doc.setFont("helvetica","bold"); doc.setFontSize(6.6); doc.setTextColor(40,40,60);
     doc.text("ÍTEM", M+3, yy+4.6);
     estados.forEach((e,i)=> doc.text(pdfTexto(e.toUpperCase()), (xs[i+1]+xs[i+2])/2, yy+4.6, {align:"center"}));
-    if(conObs) doc.text("OBSERVACIONES", (xs[xs.length-2]+xs[xs.length-1])/2, yy+4.6, {align:"center"});
+    let idx = idxExtrasInicio;
+    if(conCant){ doc.text("CANT.", (xs[idx]+xs[idx+1])/2, yy+4.6, {align:"center"}); idx++; }
+    if(conVence){ doc.text("VENCE", (xs[idx]+xs[idx+1])/2, yy+4.6, {align:"center"}); idx++; }
+    if(conObs){ doc.text("OBSERVACIONES", (xs[idx]+xs[idx+1])/2, yy+4.6, {align:"center"}); idx++; }
     return yy+h;
   }
 
@@ -12004,9 +12065,13 @@ function dibujarSeccionChecklistPDF(doc, y, seccion, respuestas, ctx){
 
   for(const it of (seccion.items||[])){
     const r = respuestas[it.id] || {};
+    let idx = idxExtrasInicio;
+    const cantIdx = conCant ? idx++ : null;
+    const venceIdx = conVence ? idx++ : null;
+    const obsIdx = conObs ? idx++ : null;
     doc.setFont("helvetica","normal"); doc.setFontSize(7.4);
     const wrappedItem = doc.splitTextToSize(pdfTexto(it.texto||''), itemColW-4);
-    const wrappedObs = conObs ? doc.splitTextToSize(pdfTexto(r.observaciones||''), (xs[xs.length-1]-xs[xs.length-2])-4) : [];
+    const wrappedObs = obsIdx!=null ? doc.splitTextToSize(pdfTexto(r.observaciones||''), (xs[obsIdx+1]-xs[obsIdx])-4) : [];
     const rowH = Math.max(7, Math.max(wrappedItem.length, wrappedObs.length)*3.4 + 3.5);
     if(y+rowH > ctx.FOOTER_TOP){ y = ctx.nuevaPagina(); y = tituloYCab(y); }
     doc.setDrawColor(180,188,210);
@@ -12021,7 +12086,9 @@ function dibujarSeccionChecklistPDF(doc, y, seccion, respuestas, ctx){
         doc.setFont("helvetica","normal"); doc.setFontSize(7.4);
       }
     });
-    if(conObs && wrappedObs.length){ doc.text(wrappedObs, xs[xs.length-2]+2, y+4.4); }
+    if(cantIdx!=null && r.cantidad!=null && r.cantidad!==''){ doc.text(pdfTexto(String(r.cantidad)), (xs[cantIdx]+xs[cantIdx+1])/2, y+rowH/2+1.4, {align:"center"}); }
+    if(venceIdx!=null && r.fecha_vencimiento){ doc.text(fmtDate(r.fecha_vencimiento), (xs[venceIdx]+xs[venceIdx+1])/2, y+rowH/2+1.4, {align:"center"}); }
+    if(obsIdx!=null && wrappedObs.length){ doc.text(wrappedObs, xs[obsIdx]+2, y+4.4); }
     y += rowH;
   }
   return y+4;
