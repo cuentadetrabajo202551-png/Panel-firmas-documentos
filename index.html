@@ -9745,7 +9745,7 @@ async function loadInspeccionesState(){
   // tiene su propio historial de mantenimiento.
   if(contratoInspActualId && contratoInspActualId!=='todos'){
     const { data:mt, error:emt } = await sb.from("insp_mantenimientos")
-      .select("id,contrato_id,herramienta_id,herramienta_nombre,fecha,frecuencia,tipo,descripcion,responsable_nombre,creado_en")
+      .select("id,contrato_id,herramienta_id,herramienta_nombre,fecha,frecuencia,tipo,descripcion,responsable_nombre,fotos,creado_en")
       .eq("contrato_id", contratoInspActualId).order("fecha",{ascending:false});
     if(emt) console.warn(emt);
     INSPECCIONES.mantenimientos = mt || [];
@@ -9956,6 +9956,7 @@ async function renderConstructorFormatoInsp(formatoId, enlaceId){
             <button class="btn btn-ghost btn-sm" data-add-seccion="tabla_dinamica">${I.plus} Tabla (compromisos, etc.)</button>
             <button class="btn btn-ghost btn-sm" data-add-seccion="fotos">${I.plus} Sección de fotos</button>
             <button class="btn btn-ghost btn-sm" data-add-seccion="gps">${I.pin} Ubicación GPS</button>
+            <button class="btn btn-ghost btn-sm" data-add-seccion="nota">${I.plus} Nota / leyenda</button>
           </div>
         </div>
         <div class="cons-preview">
@@ -10078,6 +10079,7 @@ async function renderConstructorFormatoInsp(formatoId, enlaceId){
         : tipo==='checklist' ? { id: nuevoIdCampoInsp(), tipo:'checklist', titulo:'Nuevo checklist', estados:['Cumple','No cumple','N/A'], conObservaciones:true, items: [] }
         : tipo==='fotos' ? { id: nuevoIdCampoInsp(), tipo:'fotos', titulo:'Registro fotográfico', max:5, requerido:false }
         : tipo==='gps' ? { id: nuevoIdCampoInsp(), tipo:'gps', titulo:'Ubicación de la inspección' }
+        : tipo==='nota' ? { id: nuevoIdCampoInsp(), tipo:'nota', titulo:'Nota', texto:'' }
         : { id: nuevoIdCampoInsp(), tipo:'tabla_dinamica', titulo:'Nueva tabla', columnas: [] };
       formatoEditorState.estructura.push(nueva);
       renderSeccionesFormatoInsp();
@@ -10183,7 +10185,7 @@ function duplicarSeccionInsp(s){
 function renderSeccionesFormatoInsp(){
   const host = document.getElementById('seccionesFormatoInsp');
   if(!host) return;
-  const etiquetaTipo = { info:'Información', checklist:'Checklist', tabla_dinamica:'Tabla', fotos:'Fotos', gps:'Ubicación GPS' };
+  const etiquetaTipo = { info:'Información', checklist:'Checklist', tabla_dinamica:'Tabla', fotos:'Fotos', gps:'Ubicación GPS', nota:'Nota / leyenda' };
   host.innerHTML = formatoEditorState.estructura.map((s,i)=>`
     <div class="sec-card t-${s.tipo}" data-sec-card="${i}">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
@@ -10193,7 +10195,7 @@ function renderSeccionesFormatoInsp(){
         <button class="icon-btn insp-del-btn" title="Duplicar sección" data-sec-dup="${i}">${I.copy}</button>
         <button class="icon-btn danger insp-del-btn" title="Eliminar sección" data-sec-del="${i}">${I.trash}</button>
       </div>
-      ${s.tipo==='info' ? renderEditorSeccionInfo(s, i) : s.tipo==='checklist' ? renderEditorSeccionChecklist(s, i) : s.tipo==='tabla_dinamica' ? renderEditorSeccionTabla(s, i) : s.tipo==='gps' ? renderEditorSeccionGps(s, i) : renderEditorSeccionFotos(s, i)}
+      ${s.tipo==='info' ? renderEditorSeccionInfo(s, i) : s.tipo==='checklist' ? renderEditorSeccionChecklist(s, i) : s.tipo==='tabla_dinamica' ? renderEditorSeccionTabla(s, i) : s.tipo==='gps' ? renderEditorSeccionGps(s, i) : s.tipo==='nota' ? renderEditorSeccionNota(s, i) : renderEditorSeccionFotos(s, i)}
     </div>`).join('') || '<p class="muted-sm">Todavía no hay secciones — agrega una abajo.</p>';
 
   host.querySelectorAll('[data-sec-titulo]').forEach(el=>{
@@ -10309,6 +10311,14 @@ function renderEditorSeccionInfo(s, i){
           <textarea data-campo-opciones="${i}:${j}" placeholder="Una opción por línea" style="flex-basis:100%;min-height:70px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;box-sizing:border-box">${esc((c.opciones||[]).join('\n'))}</textarea>` : ''}
         </div>`).join('') || '<p class="muted-sm">Sin campos — agrega uno abajo.</p>'}
       <button class="btn btn-ghost btn-sm" data-add-campo="${i}">${I.plus} Agregar campo</button>
+    </div>`;
+}
+
+function renderEditorSeccionNota(s, i){
+  return `
+    <div>
+      <p class="muted-sm" style="margin:0 0 6px">Texto fijo, solo para leer — no pide nada al inspector (ej. una leyenda: "B=Bueno, M=Malo, R=Regular").</p>
+      <textarea data-nota-texto="${i}" placeholder="Escribe aquí el texto de la nota o leyenda" rows="3" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;box-sizing:border-box">${esc(s.texto||'')}</textarea>
     </div>`;
 }
 
@@ -10435,6 +10445,9 @@ function wireEditoresSeccionInsp(host){
   });
   host.querySelectorAll('[data-checklist-vencimiento-etiqueta]').forEach(el=>{
     el.oninput = (e)=>{ const i=+el.dataset.checklistVencimientoEtiqueta; st.estructura[i].fechaVenceEtiqueta = e.target.value; renderInspFormBody(); };
+  });
+  host.querySelectorAll('[data-nota-texto]').forEach(el=>{
+    el.oninput = (e)=>{ const i=+el.dataset.notaTexto; st.estructura[i].texto = e.target.value; renderInspFormBody(); };
   });
   host.querySelectorAll('[data-item-texto]').forEach(el=>{
     el.oninput = (e)=>{ const [i,j]=el.dataset.itemTexto.split(':').map(Number); st.estructura[i].items[j].texto = e.target.value; renderInspFormBody(); };
@@ -10768,10 +10781,21 @@ function renderEnlacesInspPorTipo(tipo, hostId){
 
 async function verHojaDeVidaInsp(herramientaId){
   const h = INSPECCIONES.herramientas.find(x=>x.id===herramientaId);
+  // Acceso rápido "registrar aquí": los enlaces activos de esta herramienta (puede tener
+  // hasta 3, uno por tipo) — así, si quien la tiene enfrente prefiere hacerlo desde su
+  // propio computador en vez de escanear el QR, entra directo al mismo formulario público
+  // (el router ya lo resuelve igual con o sin sesión de admin abierta).
+  const enlacesHerr = INSPECCIONES.enlaces.filter(e=>e.herramienta_id===herramientaId && e.activo);
+  const registrarHTML = enlacesHerr.length ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+    ${enlacesHerr.map(e=>`<button type="button" class="btn btn-primary btn-sm" onclick="location.hash='${linkInspeccion(e.id)}'">${I.plus} Registrar ${esc(etiquetaTipoInsp(e.tipo).toLowerCase())}</button>`).join('')}
+  </div>` : '';
   openModal(`<div class="modal lg">
     <div class="modal-head"><div><h2>Hoja de vida — ${esc(h?.nombre||'')}</h2><p>Todo lo registrado para esta herramienta, de más reciente a más antigua.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body" id="hojaVidaInspBody"><div class="empty"><h3>Cargando…</h3></div></div>
+    <div class="modal-body">
+      ${registrarHTML}
+      <div id="hojaVidaInspBody"><div class="empty"><h3>Cargando…</h3></div></div>
+    </div>
     <div class="modal-foot" id="hojaVidaInspFoot">
       <button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
       ${puedeEscribir()?`<button class="btn btn-ghost" onclick="abrirMantenimientosHerramientaInsp('${herramientaId}')">${I.plus} Agregar mantenimiento</button>`:''}
@@ -11538,10 +11562,55 @@ function eliminarHerramientaInsp(id){
 }
 
 /* ---------- Mantenimiento por herramienta (CRUD interno, calcado de Herramientas) ---------- */
+// Fotos de un mantenimiento: hasta 2, opcionales — mismo patrón que las fotos del
+// formulario público (comprimirImagen(f,900), base64 inline, sin Storage), pero como acá
+// no hay inspeccionDraft es un arreglo de módulo aparte, compartido entre el formulario de
+// "agregar" y el de "editar" (nunca están los dos en el DOM a la vez).
+let mantFotosDraft = [];
+const MANT_FOTOS_MAX = 2;
+function fotosMantGridHTML(){
+  return mantFotosDraft.map((f,j)=>`<div style="position:relative"><img src="${f}" style="width:70px;height:70px;object-fit:cover;border-radius:8px;border:1px solid var(--line)"><button type="button" class="icon-btn danger" data-mant-foto-del="${j}" style="position:absolute;top:-6px;right:-6px;background:#fff;border-radius:999px;box-shadow:0 1px 4px rgba(0,0,0,.2)">${I.trash}</button></div>`).join('');
+}
+function wireFotosMantGrid(){
+  document.querySelectorAll('[data-mant-foto-del]').forEach(b=>{
+    b.onclick = ()=>{
+      mantFotosDraft.splice(+b.dataset.mantFotoDel,1);
+      const grid = document.getElementById('mantFotosGrid'); if(grid) grid.innerHTML = fotosMantGridHTML();
+      wireFotosMantGrid();
+      const btnAdd = document.getElementById('btnAddFotoMant'); if(btnAdd) btnAdd.disabled = mantFotosDraft.length>=MANT_FOTOS_MAX;
+    };
+  });
+}
+function wireFormularioFotosMant(){
+  const fileFoto = document.getElementById('fileFotoMant');
+  if(fileFoto) fileFoto.onchange = async ()=>{
+    const f = fileFoto.files[0]; if(!f) return;
+    if(mantFotosDraft.length>=MANT_FOTOS_MAX){ toast("Máximo "+MANT_FOTOS_MAX+" fotos","err"); return; }
+    const comprimida = await comprimirImagen(f, 900);
+    mantFotosDraft.push(comprimida);
+    fileFoto.value = '';
+    const grid = document.getElementById('mantFotosGrid'); if(grid) grid.innerHTML = fotosMantGridHTML();
+    wireFotosMantGrid();
+    const btnAdd = document.getElementById('btnAddFotoMant'); if(btnAdd) btnAdd.disabled = mantFotosDraft.length>=MANT_FOTOS_MAX;
+  };
+  const btnAddFoto = document.getElementById('btnAddFotoMant');
+  if(btnAddFoto) btnAddFoto.onclick = ()=> fileFoto.click();
+  wireFotosMantGrid();
+}
+function campoFotosMantHTML(){
+  return `<div class="field" style="margin-bottom:14px">
+    <label>Fotos <span class="opt">(opcional, máx. ${MANT_FOTOS_MAX})</span></label>
+    <div id="mantFotosGrid" style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 8px">${fotosMantGridHTML()}</div>
+    <input type="file" id="fileFotoMant" accept="image/*" capture="environment" style="display:none">
+    <button type="button" class="btn btn-ghost btn-sm" id="btnAddFotoMant" ${mantFotosDraft.length>=MANT_FOTOS_MAX?'disabled':''}>${I.plus} Agregar foto</button>
+  </div>`;
+}
+
 function abrirMantenimientosHerramientaInsp(herramientaId){
   const h = INSPECCIONES.herramientas.find(x=>x.id===herramientaId);
   if(!h){ toast("Herramienta no encontrada","err"); return; }
   const hoy = new Date().toISOString().slice(0,10);
+  mantFotosDraft = [];
   openModal(`<div class="modal lg">
     <div class="modal-head"><div><h2>Mantenimiento — ${esc(h.nombre)}</h2><p>Registra correctivos y preventivos de esta herramienta. Se ve también en su Hoja de vida.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
@@ -11559,6 +11628,7 @@ function abrirMantenimientosHerramientaInsp(herramientaId){
         <div><label>Responsable <span class="opt">(opcional)</span></label><input id="mantInspResponsable" placeholder="Quién lo hizo"></div>
       </div>
       <div class="field" style="margin-bottom:14px"><label>Descripción <span class="opt">(opcional)</span></label><textarea id="mantInspDescripcion" rows="2" placeholder="Qué se hizo"></textarea></div>
+      ${campoFotosMantHTML()}
       <div style="display:flex;justify-content:flex-end;margin-bottom:14px">
         <button class="btn btn-primary btn-sm" id="btnAddMantInsp">${I.plus} Agregar</button>
       </div>
@@ -11566,6 +11636,7 @@ function abrirMantenimientosHerramientaInsp(herramientaId){
     </div>
   </div>`);
   document.getElementById('btnAddMantInsp').onclick = ()=> guardarMantenimientoInsp(herramientaId);
+  wireFormularioFotosMant();
   renderMantenimientosInspLista(herramientaId);
 }
 
@@ -11574,13 +11645,14 @@ function renderMantenimientosInspLista(herramientaId){
   const items = INSPECCIONES.mantenimientos.filter(m=>m.herramienta_id===herramientaId).slice().sort((a,b)=> (b.fecha||'').localeCompare(a.fecha||''));
   if(!items.length){ host.innerHTML = '<div class="muted-sm" style="padding:14px 0">Sin mantenimientos registrados todavía.</div>'; return; }
   host.innerHTML = `<div class="table-wrap"><table class="dt">
-    <thead><tr><th>Fecha</th><th>Frecuencia</th><th>Tipo</th><th>Descripción</th><th>Responsable</th><th></th></tr></thead>
+    <thead><tr><th>Fecha</th><th>Frecuencia</th><th>Tipo</th><th>Descripción</th><th>Responsable</th><th>Fotos</th><th></th></tr></thead>
     <tbody>${items.map(m=>`<tr>
       <td>${fmtDate(m.fecha)}</td>
       <td>${esc(etiquetaFrecuenciaMantInsp(m.frecuencia))}</td>
       <td>${esc(etiquetaTipoMantInsp(m.tipo))}</td>
       <td>${esc(m.descripcion||'—')}</td>
       <td>${esc(m.responsable_nombre||'—')}</td>
+      <td>${(m.fotos||[]).length ? `<div style="display:flex;gap:3px">${m.fotos.map(f=>`<a href="${f}" target="_blank"><img src="${f}" style="width:28px;height:28px;object-fit:cover;border-radius:5px;border:1px solid var(--line)"></a>`).join('')}</div>` : '—'}</td>
       <td><div style="display:flex;gap:4px">
         <button class="icon-btn" title="Editar" data-mantinsp-editar="${m.id}">${I.pen}</button>
         <button class="icon-btn danger" title="Eliminar" data-mantinsp-del="${m.id}">${I.trash}</button>
@@ -11606,11 +11678,14 @@ async function guardarMantenimientoInsp(herramientaId){
   const btn = document.getElementById('btnAddMantInsp'); btn.disabled=true;
   const { error } = await sb.from("insp_mantenimientos").insert({
     contrato_id: contratoInspActualId, herramienta_id: herramientaId, herramienta_nombre: h?.nombre||'',
-    fecha, frecuencia, tipo, descripcion, responsable_nombre
+    fecha, frecuencia, tipo, descripcion, responsable_nombre, fotos: mantFotosDraft
   });
   btn.disabled=false;
   if(error){ toast("No se pudo agregar: "+error.message,"err"); return; }
   document.getElementById('mantInspDescripcion').value=''; document.getElementById('mantInspResponsable').value='';
+  mantFotosDraft = [];
+  const grid = document.getElementById('mantFotosGrid'); if(grid) grid.innerHTML = fotosMantGridHTML();
+  const btnAddFoto = document.getElementById('btnAddFotoMant'); if(btnAddFoto) btnAddFoto.disabled = false;
   await loadInspeccionesState();
   renderMantenimientosInspLista(herramientaId);
   toast("Mantenimiento agregado","ok");
@@ -11620,6 +11695,7 @@ function editarMantenimientoInsp(id, herramientaId, volver){
   const m = INSPECCIONES.mantenimientos.find(x=>x.id===id);
   if(!m) return;
   const volverFn = volver || (()=>abrirMantenimientosHerramientaInsp(herramientaId));
+  mantFotosDraft = [...(m.fotos||[])];
   openSubModal(`<div class="modal" style="max-width:460px">
     <div class="modal-head"><div><h2>Editar mantenimiento</h2></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
@@ -11640,9 +11716,11 @@ function editarMantenimientoInsp(id, herramientaId, volver){
         <div><label>Responsable <span class="opt">(opcional)</span></label><input id="editMantInspResponsable" value="${esc(m.responsable_nombre||'')}"></div>
       </div>
       <div class="field"><label>Descripción <span class="opt">(opcional)</span></label><textarea id="editMantInspDescripcion" rows="2">${esc(m.descripcion||'')}</textarea></div>
+      ${campoFotosMantHTML()}
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" id="confEditMantInsp">${I.check} Guardar</button></div></div>`, volverFn);
+  wireFormularioFotosMant();
   document.getElementById("confEditMantInsp").onclick = async ()=>{
     const fecha = document.getElementById('editMantInspFecha').value;
     const frecuencia = document.getElementById('editMantInspFrecuencia').value;
@@ -11651,7 +11729,7 @@ function editarMantenimientoInsp(id, herramientaId, volver){
     const descripcion = document.getElementById('editMantInspDescripcion').value.trim() || null;
     if(!fecha){ toast("Elige la fecha del mantenimiento","err"); return; }
     const btn=document.getElementById("confEditMantInsp"); btn.disabled=true; btn.innerHTML="Guardando…";
-    const { error } = await sb.from("insp_mantenimientos").update({ fecha, frecuencia, tipo, descripcion, responsable_nombre }).eq("id", id);
+    const { error } = await sb.from("insp_mantenimientos").update({ fecha, frecuencia, tipo, descripcion, responsable_nombre, fotos: mantFotosDraft }).eq("id", id);
     if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
     await loadInspeccionesState();
     toast("Mantenimiento actualizado","ok");
@@ -11725,6 +11803,7 @@ function renderInspFormBody(){
     if(s.tipo==='tabla_dinamica') return renderSeccionTablaInsp(s);
     if(s.tipo==='fotos') return renderSeccionFotosInsp(s);
     if(s.tipo==='gps') return renderSeccionGpsInsp(s);
+    if(s.tipo==='nota') return renderSeccionNotaInsp(s);
     return '';
   }).join('') + (!tieneSeccionFotos && inspeccionDraft.tieneFotos ? renderSeccionFotosInsp() : '');
   wireInspFormBody(host);
@@ -11750,6 +11829,13 @@ function renderSeccionInfoInsp(s){
       }
       return '';
     }).join('')}
+  </div>`;
+}
+
+function renderSeccionNotaInsp(s){
+  return `<div class="panel-section" style="margin-bottom:18px">
+    ${s.titulo?`<div class="section-label">${esc(s.titulo)}</div>`:''}
+    <p style="white-space:pre-wrap;margin:0;font-size:13.5px;color:var(--ink-2)">${esc(s.texto||'')}</p>
   </div>`;
 }
 
@@ -11831,13 +11917,14 @@ function wireFotosInspGrid(){
       const grid = document.getElementById('inspFotosGrid'); if(grid) grid.innerHTML = fotosInspGridHTML();
       wireFotosInspGrid();
       const btnAdd = document.getElementById('btnAddFotoInsp'); if(btnAdd) btnAdd.disabled = inspeccionDraft.fotos.length>=maxFotosInsp();
+      actualizarProgresoInsp();
     };
   });
 }
 
 function wireInspFormBody(host){
   host.querySelectorAll('[data-campo]').forEach(el=>{
-    el.oninput = el.onchange = (e)=>{ inspeccionDraft.respuestas[el.dataset.campo] = e.target.value; sincronizarFirmantesVinculadosInsp(); };
+    el.oninput = el.onchange = (e)=>{ inspeccionDraft.respuestas[el.dataset.campo] = e.target.value; sincronizarFirmantesVinculadosInsp(); actualizarProgresoInsp(); };
   });
   host.querySelectorAll('[data-campo-multi]').forEach(el=>{
     el.onchange = ()=>{
@@ -11846,6 +11933,7 @@ function wireInspFormBody(host){
       if(el.checked){ if(!actuales.includes(el.value)) actuales.push(el.value); }
       else { const idx = actuales.indexOf(el.value); if(idx>=0) actuales.splice(idx,1); }
       inspeccionDraft.respuestas[id] = actuales;
+      actualizarProgresoInsp();
     };
   });
   host.querySelectorAll('[data-item-estado]').forEach(b=>{
@@ -11857,6 +11945,7 @@ function wireInspFormBody(host){
         const activa = x.dataset.estadoVal===r.estado;
         x.className = 'chip-estado' + (activa ? ' active '+x.dataset.estadoCls : '');
       });
+      actualizarProgresoInsp();
     };
   });
   host.querySelectorAll('[data-item-obs]').forEach(el=>{
@@ -11906,6 +11995,7 @@ function wireInspFormBody(host){
     const grid = document.getElementById('inspFotosGrid'); if(grid) grid.innerHTML = fotosInspGridHTML();
     wireFotosInspGrid();
     const btnAdd = document.getElementById('btnAddFotoInsp'); if(btnAdd) btnAdd.disabled = inspeccionDraft.fotos.length>=max;
+    actualizarProgresoInsp();
   };
   const btnAddFoto = host.querySelector('#btnAddFotoInsp');
   if(btnAddFoto) btnAddFoto.onclick = ()=> fileFoto.click();
@@ -11919,6 +12009,7 @@ function wireInspFormBody(host){
       inspeccionDraft.respuestas[sid] = g;
       const box = document.getElementById('gpsBoxInsp_'+sid);
       if(box) box.innerHTML = `<div class="cap-ok">${I.check} Ubicación capturada (±${Math.round(g.precision||0)} m)</div>`;
+      actualizarProgresoInsp();
     };
   });
 }
@@ -11946,6 +12037,61 @@ function validarCamposRequeridosInsp(){
     }
   }
   return true;
+}
+
+/* ---------- Barra de progreso del formulario público — mismo criterio de "obligatorio"
+   que ya usa validarCamposRequeridosInsp (arriba), más las 2 secciones que ese validador no
+   cubre pero también son obligatorias hoy: fotos (si requeridoFotosInsp()) y gps (siempre
+   obligatoria, sin toggle — ver renderSeccionGpsInsp). Si un formato no tiene nada
+   obligatorio no hay nada que medir, y la barra no se muestra. ---------- */
+function calcularProgresoInsp(){
+  let completados = 0, total = 0;
+  for(const s of inspeccionDraft.estructura){
+    if(s.tipo==='info'){
+      for(const c of (s.campos||[])){
+        if(!c.requerido) continue;
+        total++;
+        const v = inspeccionDraft.respuestas[c.id];
+        const vacio = c.tipo==='seleccion_multiple' ? !(Array.isArray(v)&&v.length) : !v;
+        if(!vacio) completados++;
+      }
+    } else if(s.tipo==='checklist'){
+      for(const it of (s.items||[])){
+        total++;
+        if(inspeccionDraft.respuestas[it.id] && inspeccionDraft.respuestas[it.id].estado) completados++;
+      }
+    } else if(s.tipo==='fotos' && requeridoFotosInsp()){
+      total++;
+      if(inspeccionDraft.fotos.length>0) completados++;
+    } else if(s.tipo==='gps'){
+      total++;
+      if(inspeccionDraft.respuestas[s.id]) completados++;
+    }
+  }
+  return { completados, total };
+}
+function renderProgresoInsp(){
+  const { completados, total } = calcularProgresoInsp();
+  if(!total) return '';
+  const pct = Math.round(completados/total*100);
+  return `<div id="progresoInspWrap" style="margin-bottom:16px">
+    <div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--ink-3);margin-bottom:4px">
+      <span id="progresoInspTexto">${completados} de ${total} completados</span>
+      <span id="progresoInspPct">${pct}%</span>
+    </div>
+    <div style="height:7px;border-radius:999px;background:var(--line);overflow:hidden">
+      <div id="progresoInspBar" style="height:100%;width:${pct}%;background:var(--brand,#14215a);border-radius:999px;transition:width .25s"></div>
+    </div>
+  </div>`;
+}
+function actualizarProgresoInsp(){
+  const wrap = document.getElementById('progresoInspWrap'); if(!wrap) return;
+  const { completados, total } = calcularProgresoInsp();
+  if(!total){ wrap.style.display = 'none'; return; }
+  const pct = Math.round(completados/total*100);
+  document.getElementById('progresoInspTexto').textContent = `${completados} de ${total} completados`;
+  document.getElementById('progresoInspPct').textContent = pct+'%';
+  document.getElementById('progresoInspBar').style.width = pct+'%';
 }
 
 /* ---------- Historial de inspecciones del contrato, con filtro de mes (mismo
@@ -12070,6 +12216,7 @@ function renderInspContenidoLectura(estructura, respuestas){
     if(s.tipo==='checklist') return renderSeccionChecklistLectura(s, respuestas||{});
     if(s.tipo==='tabla_dinamica') return renderSeccionTablaLectura(s, respuestas||{});
     if(s.tipo==='gps') return renderSeccionGpsLectura(s, respuestas||{});
+    if(s.tipo==='nota') return renderSeccionNotaInsp(s);
     return '';
   }).join('');
 }
@@ -12225,6 +12372,15 @@ function hexToRgbInsp(hex){
   const n = parseInt(m[1],16);
   return [(n>>16)&255, (n>>8)&255, n&255];
 }
+// Pie de página del PDF de inspección: antes era un string fijo que asumía siempre
+// "inspector y responsable del área" — desde que los firmantes son configurables (0 a N
+// roles cualquiera, fase 3) hay que armar la frase a partir de quién firmó de verdad.
+function pieFirmaTextoInsp(firmantes){
+  const roles = (Array.isArray(firmantes)?firmantes:[]).map(f=>f&&f.rol).filter(Boolean);
+  if(!roles.length) return "Este documento constituye evidencia de la inspección registrada en el sistema.";
+  const listado = roles.length===1 ? roles[0] : roles.slice(0,-1).join(', ')+' y '+roles[roles.length-1];
+  return "Este documento constituye evidencia de la inspección, firmada digitalmente por "+listado+".";
+}
 function dibujarSeccionInfoPDF(doc, y, seccion, respuestas, ctx){
   const { M, RIGHT, asegurarEspacio } = ctx;
   y = asegurarEspacio(y, 14);
@@ -12247,6 +12403,26 @@ function dibujarSeccionInfoPDF(doc, y, seccion, respuestas, ctx){
     y += wrapped.length*4.2 + 4;
   }
   return y+2;
+}
+
+function dibujarSeccionNotaPDF(doc, y, seccion, respuestas, ctx){
+  const { M, RIGHT, asegurarEspacio } = ctx;
+  y = asegurarEspacio(y, 14);
+  if(seccion.titulo){
+    doc.setFillColor(ctx.colorAcento[0],ctx.colorAcento[1],ctx.colorAcento[2]); doc.rect(M,y,RIGHT-M,7,"F");
+    doc.setFont("helvetica","bold"); doc.setFontSize(9.5); doc.setTextColor(255,255,255);
+    doc.text(pdfTexto(seccion.titulo), M+3, y+5);
+    y += 7+3;
+  }
+  doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor(20,20,20);
+  const lineas = pdfTexto(seccion.texto||'').split('\n');
+  for(const linea of lineas){
+    const wrapped = doc.splitTextToSize(linea, RIGHT-M);
+    y = asegurarEspacio(y, wrapped.length*4.2+2);
+    doc.text(wrapped, M, y);
+    y += wrapped.length*4.2;
+  }
+  return y+4;
 }
 
 function dibujarSeccionChecklistPDF(doc, y, seccion, respuestas, ctx){
@@ -12470,7 +12646,7 @@ async function construirInspeccionPDF(idOrData){
 
   function piePagina(){
     doc.setFontSize(6.6); doc.setTextColor(140,140,160);
-    doc.text(pdfTexto("Este documento constituye evidencia de la inspección, firmada digitalmente por el inspector y el responsable del área."), PW/2, FOOTER_Y, {align:"center"});
+    doc.text(pdfTexto(pieFirmaTextoInsp(insp.firmantes)), PW/2, FOOTER_Y, {align:"center"});
     doc.text("Generado el "+fmtDateTime(new Date())+" · Don Aseo Ltda. · Pág. "+pag, PW/2, FOOTER_Y+4, {align:"center"});
   }
   function nuevaPagina(){ piePagina(); doc.addPage(); pag++; return M+2; }
@@ -12541,6 +12717,7 @@ async function construirInspeccionPDF(idOrData){
     else if(s.tipo==='checklist') y = dibujarSeccionChecklistPDF(doc, y, s, respuestas, ctx);
     else if(s.tipo==='tabla_dinamica') y = dibujarSeccionTablaPDF(doc, y, s, respuestas, ctx);
     else if(s.tipo==='gps') y = dibujarSeccionGpsPDF(doc, y, s, respuestas, ctx);
+    else if(s.tipo==='nota') y = dibujarSeccionNotaPDF(doc, y, s, respuestas, ctx);
     else if(s.tipo==='fotos'){
       if((insp.fotos||[]).length){
         y = asegurarEspacio(y, 14);
@@ -12687,6 +12864,7 @@ async function renderInspeccionPublica(enlaceId){
             <img src="${LOGO}" alt="Don Aseo Ltda.">
             <div><div class="pt1">Don Aseo Ltda.</div><div class="pt2">NIT 812.000.152-7 · ${CODIGO}</div></div>
           </div>
+          ${renderProgresoInsp()}
           <div id="inspFormBody"></div>
           ${firmantesFresco.map(f=>{
             const vinculo = campoInfoTexto(inspeccionDraft.estructura, f.campoNombre);
