@@ -315,8 +315,8 @@ input[type="date"], input[type="time"]{background:#fff;color:var(--ink)}
 .subtab-pane.active{display:block}
 @media(max-width:760px){
   .subtab-wrap{flex-direction:column}
-  .subtab-list{width:100%;flex-direction:row;flex-wrap:wrap}
-  .subtab-item{width:auto;flex:1;min-width:130px;justify-content:center}
+  .subtab-list{width:100%;flex-direction:column}
+  .subtab-item{width:100%;white-space:nowrap}
 }
 
 /* ---------- Toolbar ---------- */
@@ -712,6 +712,15 @@ table.dt tr:hover td{background:#fafbfe}
 // se respeta el tema del sistema operativo/navegador.
 (function(){
   try{
+    // Los formularios públicos de Inspecciones (#/inspeccion/<enlace>, el link/QR que
+    // se comparte con inspectores/trabajadores) SIEMPRE se ven en modo claro — nunca
+    // heredan el tema oscuro guardado ni el del sistema operativo del celular de quien
+    // lo abre. Decisión explícita del usuario: el formulario oficial debe verse igual
+    // para todos, sin importar el modo del dispositivo.
+    if(location.hash.indexOf('#/inspeccion/')===0){
+      document.documentElement.setAttribute('data-theme', 'light');
+      return;
+    }
     var t = localStorage.getItem('tema_firmas');
     if(t!=='dark' && t!=='light') t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
     document.documentElement.setAttribute('data-theme', t);
@@ -10501,10 +10510,10 @@ async function renderInspeccionesAdmin(silent){
       <div class="panel-section">
         <div class="subtab-wrap">
           <div class="subtab-list">
-            ${!enTodos?`<button type="button" class="subtab-item ${tabInspActiva==='preop'?'active':''}" data-subtab="preop"><span class="st-ic">${I.check}</span>Inspección preoperacional</button>
-            <button type="button" class="subtab-item ${tabInspActiva==='insp'?'active':''}" data-subtab="insp"><span class="st-ic">${I.check}</span>Inspecciones</button>
-            <button type="button" class="subtab-item ${tabInspActiva==='hv'?'active':''}" data-subtab="hv"><span class="st-ic">${I.eye}</span>Hoja de vida</button>`:''}
-            <button type="button" class="subtab-item ${tabInspActiva==='formatos'?'active':''}" data-subtab="formatos"><span class="st-ic">${I.doc}</span>Formatos</button>
+            ${!enTodos?`<button type="button" class="subtab-item ${tabInspActiva==='preop'?'active':''}" data-subtab="preop">Inspección preoperacional</button>
+            <button type="button" class="subtab-item ${tabInspActiva==='insp'?'active':''}" data-subtab="insp">Inspecciones</button>
+            <button type="button" class="subtab-item ${tabInspActiva==='hv'?'active':''}" data-subtab="hv">Hoja de vida</button>`:''}
+            <button type="button" class="subtab-item ${tabInspActiva==='formatos'?'active':''}" data-subtab="formatos">Formatos</button>
           </div>
           <div class="subtab-content">
             ${!enTodos?`
@@ -12127,6 +12136,10 @@ async function generarInspeccionPDF(id){
 let firmantesPadsInsp = {};
 
 async function renderInspeccionPublica(enlaceId){
+  // Regla fija: este formulario público nunca se ve en modo oscuro (ver el script
+  // de tema en el <head>) — se refuerza acá por si se llega a esta ruta navegando
+  // dentro de la misma pestaña (ese script del <head> solo corre en la carga inicial).
+  document.documentElement.setAttribute('data-theme', 'light');
   document.body.style.overflow = "";
   bloquear("Cargando…");
   let resp;
