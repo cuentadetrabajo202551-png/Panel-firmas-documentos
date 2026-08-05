@@ -1052,23 +1052,34 @@ async function conBloqueo(msg, fn){
 }
 
 /* ---------- Modal helpers ---------- */
-let _modalVolver = null;   // función a ejecutar al cerrar un sub-modal (para volver al modal anterior)
+let _modalVolver = null;   // función a ejecutar EN VEZ DE cerrar un sub-modal (abre otro modal — "volver" al anterior)
+let _modalOnClose = null;  // función a ejecutar DESPUÉS de cerrar del todo (no abre otro modal — ej. refrescar el panel de atrás)
 function openModal(html){
-  _modalVolver = null;     // abrir un modal "raíz" limpia cualquier retorno pendiente
+  _modalVolver = null;     // abrir un modal "raíz" limpia cualquier retorno/aviso pendiente
+  _modalOnClose = null;
   document.getElementById("modalHost").innerHTML = html;
   document.getElementById("overlay").classList.add("open");
   document.body.style.overflow="hidden";
 }
-/* Abre un sub-modal recordando a qué volver al cerrarlo (X o clic fuera) */
+/* Abre un sub-modal recordando a qué volver al cerrarlo (X o clic fuera) — "volver" ABRE
+   otro modal (openModal/openSubModal por dentro), nunca deja la pantalla sin modal. */
 function openSubModal(html, volver){
   openModal(html);
   _modalVolver = volver || null;
+}
+/* Abre un modal recordando algo para hacer DESPUÉS de cerrarlo del todo (X, clic afuera,
+   o un botón que solo llama a closeModal()) — a diferencia de openSubModal, "onClose" NO
+   abre otro modal, así que closeModal() sí cierra la ventana de verdad antes de llamarlo. */
+function openModalOnClose(html, onClose){
+  openModal(html);
+  _modalOnClose = onClose || null;
 }
 function closeModal(){
   if(_modalVolver){ const v=_modalVolver; _modalVolver=null; v(); return; }   // volver al modal anterior
   document.getElementById("overlay").classList.remove("open");
   document.body.style.overflow="";
   setTimeout(()=>{ document.getElementById("modalHost").innerHTML=""; },220);
+  if(_modalOnClose){ const cb=_modalOnClose; _modalOnClose=null; cb(); }
 }
 document.getElementById("overlay").addEventListener("mousedown", e=>{
   if(e.target.id==="overlay") closeModal();
@@ -11141,9 +11152,16 @@ function cambiarHerramientaEnlaceInsp(enlaceId){
   };
 }
 
+/* openModalOnClose (no openModal/openSubModal) a propósito: así el panel de atrás se
+   refresca sin importar CÓMO se cierre este modal — botón "Cerrar", la X, o clic afuera
+   — antes solo el botón "Cerrar" disparaba el refresco (con openSubModal tampoco habría
+   servido: "volver" ahí significa abrir OTRO modal, nunca cerrar del todo — se probó y
+   el modal se quedaba pegado en pantalla). Cerrar con la X o por fuera (la forma más
+   natural) dejaba el panel viejo hasta que lo alcanzaba el auto-refresco silencioso de
+   20s, dando la sensación de "tarda muchísimo". */
 function mostrarEnlaceCreadoInsp(enlaceId){
   const url = linkInspeccion(enlaceId);
-  openModal(`<div class="modal" style="max-width:440px">
+  openModalOnClose(`<div class="modal" style="max-width:440px">
     <div class="modal-head"><div><h2>¡Formulario creado!</h2><p>Compártelo con los inspectores. Antes, entra a "Editar" en su tarjeta para agregar quiénes firman.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
@@ -11153,10 +11171,10 @@ function mostrarEnlaceCreadoInsp(enlaceId){
       <button class="btn btn-ghost" id="btnCerrarEnlaceCreado">Cerrar</button>
       <button class="btn btn-ghost" id="btnQrEnlaceCreado">${I.qr} QR</button>
       <button class="btn btn-primary" id="btnCopiarEnlaceCreado">${I.link} Copiar enlace</button>
-    </div></div>`);
-  document.getElementById('btnCerrarEnlaceCreado').onclick = ()=>{ closeModal(); renderInspeccionesAdmin('norecarga'); };
+    </div></div>`, ()=> renderInspeccionesAdmin('norecarga'));
+  document.getElementById('btnCerrarEnlaceCreado').onclick = ()=> closeModal();
   document.getElementById('btnCopiarEnlaceCreado').onclick = ()=> copyText(url, "Enlace copiado");
-  document.getElementById('btnQrEnlaceCreado').onclick = ()=> mostrarQR(url, "Enlace de inspección");
+  document.getElementById('btnQrEnlaceCreado').onclick = ()=> mostrarQR(url, "Enlace de inspección", ()=> mostrarEnlaceCreadoInsp(enlaceId));
 }
 
 /* ---------- Firmas (predeterminados del responsable del área) — calco de
