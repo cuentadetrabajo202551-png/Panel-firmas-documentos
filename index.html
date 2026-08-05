@@ -459,6 +459,9 @@ table.dt tr:hover td{background:#fafbfe}
 .grid-insp .card-actions{flex-wrap:nowrap;gap:5px}
 .grid-insp .card-actions .icon-btn{width:30px;height:30px;border-radius:8px;flex:none}
 .grid-insp .card-actions .icon-btn svg{width:15px;height:15px}
+.grid-insp .lcard-foot{flex-wrap:wrap;row-gap:8px}
+.grid-insp .attn .num{font-size:18px}
+.grid-insp .attn .lab{font-size:10.5px}
 
 /* ---------- Public form ---------- */
 .pub-wrap{max-width:660px;margin:0 auto;padding:30px 20px 80px}
@@ -9821,6 +9824,25 @@ function nuevoIdCampoInsp(){ return 'c'+Math.random().toString(36).slice(2,9); }
 // área banco) para que un formato sin personalizar no cambie nada.
 const FIRMANTES_DEFAULT_INSP = [{id:'inspector',rol:'Inspector',origen:'fresco'},{id:'responsable',rol:'Responsable del área',origen:'banco'}];
 
+/* Campos de texto corto de secciones "info" — son los únicos que un firmante "en
+   vivo" puede vincular como su nombre (ver renderFirmantesFormatoInsp), para no
+   tener que volver a escribirlo al firmar abajo. */
+function camposTextoInfoInsp(estructura){
+  const out = [];
+  (estructura||[]).forEach(s=>{
+    if(s.tipo==='info'){
+      (s.campos||[]).forEach(c=>{
+        if(c.tipo==='texto') out.push({ id:c.id, etiqueta:c.etiqueta||'(sin nombre)', seccion:s.titulo||'' });
+      });
+    }
+  });
+  return out;
+}
+function campoInfoTexto(estructura, campoId){
+  if(!campoId) return null;
+  return camposTextoInfoInsp(estructura).find(c=>c.id===campoId) || null;
+}
+
 async function renderConstructorFormatoInsp(formatoId, enlaceId){
   formatoEditorId = formatoId;
   enlaceEditorId = enlaceId || null;
@@ -10087,21 +10109,33 @@ function renderFirmantesFormatoInsp(){
   const host = document.getElementById('firmantesFormatoInsp');
   if(!host) return;
   const firmantes = formatoEditorState.firmantes;
-  host.innerHTML = firmantes.length ? firmantes.map((f,i)=>`
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
+  const camposTexto = camposTextoInfoInsp(formatoEditorState.estructura);
+  host.innerHTML = firmantes.length ? firmantes.map((f,i)=>{
+    const vinculable = f.origen==='fresco' && camposTexto.length>0;
+    return `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:${vinculable?'2px':'6px'};flex-wrap:wrap">
       <input data-firmante-rol="${i}" value="${esc(f.rol||'')}" placeholder="Rol (ej. Inspector, Supervisor, Cliente)" style="flex:1;min-width:180px;padding:6px 8px;border:1px solid var(--line);border-radius:6px">
       <select data-firmante-origen="${i}" style="padding:6px 8px;border:1px solid var(--line);border-radius:6px">
         <option value="fresco" ${f.origen==='fresco'?'selected':''}>Firma en vivo (en el enlace)</option>
         <option value="banco" ${f.origen==='banco'?'selected':''}>Firma guardada (banco de firmas)</option>
       </select>
+      ${vinculable?`<select data-firmante-campo="${i}" style="padding:6px 8px;border:1px solid var(--line);border-radius:6px;min-width:220px">
+        <option value="">— Pedir el nombre al firmar (como siempre) —</option>
+        ${camposTexto.map(c=>`<option value="${esc(c.id)}" ${f.campoNombre===c.id?'selected':''}>${esc(c.seccion?c.seccion+' → ':'')}${esc(c.etiqueta)}</option>`).join('')}
+      </select>`:''}
       <button class="icon-btn danger insp-del-btn" title="Quitar firmante" data-firmante-del="${i}">${I.trash}</button>
-    </div>`).join('') : '<p class="muted-sm">Sin firmantes — esta inspección se guarda sin ninguna firma.</p>';
+    </div>
+    ${vinculable?`<p class="muted-sm" style="margin:0 0 8px">Si vinculas un campo, quien firme no tiene que volver a escribir su nombre — se toma de lo que ya llenó arriba.</p>`:''}`;
+  }).join('') : '<p class="muted-sm">Sin firmantes — esta inspección se guarda sin ninguna firma.</p>';
 
   host.querySelectorAll('[data-firmante-rol]').forEach(el=>{
     el.oninput = (e)=>{ formatoEditorState.firmantes[+el.dataset.firmanteRol].rol = e.target.value; };
   });
   host.querySelectorAll('[data-firmante-origen]').forEach(el=>{
-    el.onchange = (e)=>{ formatoEditorState.firmantes[+el.dataset.firmanteOrigen].origen = e.target.value; };
+    el.onchange = (e)=>{ formatoEditorState.firmantes[+el.dataset.firmanteOrigen].origen = e.target.value; renderFirmantesFormatoInsp(); };
+  });
+  host.querySelectorAll('[data-firmante-campo]').forEach(el=>{
+    el.onchange = (e)=>{ formatoEditorState.firmantes[+el.dataset.firmanteCampo].campoNombre = e.target.value || null; };
   });
   host.querySelectorAll('[data-firmante-del]').forEach(b=>{
     b.onclick = ()=>{ formatoEditorState.firmantes.splice(+b.dataset.firmanteDel,1); renderFirmantesFormatoInsp(); };
@@ -10153,6 +10187,10 @@ function renderSeccionesFormatoInsp(){
   wireDragSeccionesInsp(host);
   wireEditoresSeccionInsp(host);
   renderInspFormBody();
+  // Refresca la lista de campos "vinculables" en Firmantes (sección 7.147) — un
+  // campo de texto que se acaba de agregar/borrar/renombrar debe verse ahí sin
+  // que el usuario tenga que tocar algo en Firmantes para que se actualice.
+  renderFirmantesFormatoInsp();
 }
 
 /* Arrastrar para reordenar (reemplaza los botones ▲/▼) — Pointer Events en vez de la
@@ -11387,7 +11425,7 @@ function wireFotosInspGrid(){
 
 function wireInspFormBody(host){
   host.querySelectorAll('[data-campo]').forEach(el=>{
-    el.oninput = el.onchange = (e)=>{ inspeccionDraft.respuestas[el.dataset.campo] = e.target.value; };
+    el.oninput = el.onchange = (e)=>{ inspeccionDraft.respuestas[el.dataset.campo] = e.target.value; sincronizarFirmantesVinculadosInsp(); };
   });
   host.querySelectorAll('[data-campo-multi]').forEach(el=>{
     el.onchange = ()=>{
@@ -12179,10 +12217,13 @@ async function renderInspeccionPublica(enlaceId){
             <div><div class="pt1">Don Aseo Ltda.</div><div class="pt2">NIT 812.000.152-7 · ${CODIGO}</div></div>
           </div>
           <div id="inspFormBody"></div>
-          ${firmantesFresco.map(f=>`
+          ${firmantesFresco.map(f=>{
+            const vinculo = campoInfoTexto(inspeccionDraft.estructura, f.campoNombre);
+            return `
             <div class="field">
               <label>Tu nombre — ${esc(f.rol)} *</label>
-              <input data-firmante-nombre="${esc(f.id)}" placeholder="Nombres y apellidos" autocomplete="off">
+              <input data-firmante-nombre="${esc(f.id)}" placeholder="Nombres y apellidos" autocomplete="off" ${vinculo?`readonly data-firmante-nombre-vinculado="${esc(vinculo.id)}"`:''}>
+              ${vinculo?`<p class="muted-sm" style="margin-top:4px">Se toma de "${esc(vinculo.etiqueta)}" — no hace falta escribirlo de nuevo.</p>`:''}
             </div>
             <div class="field" style="margin-bottom:8px">
               <label>Firma digital — ${esc(f.rol)} *</label>
@@ -12191,18 +12232,31 @@ async function renderInspeccionPublica(enlaceId){
                 <div class="sig-placeholder" id="sigPh_${esc(f.id)}">${I.pen}<span>Firma aquí con el dedo, mouse o lápiz</span></div>
               </div>
               <div class="sig-actions"><button type="button" class="btn btn-ghost btn-sm" data-sig-clear-insp="${esc(f.id)}">${I.trash} Limpiar firma</button></div>
-            </div>`).join('')}
+            </div>`;
+          }).join('')}
           <button class="btn btn-green" id="pEnviarInsp" style="width:100%;padding:14px;margin-top:8px">${I.check} Enviar inspección</button>
         </div>
       </div>
     </div>`;
 
   renderInspFormBody();
+  sincronizarFirmantesVinculadosInsp();
   firmantesFresco.forEach(f=>{ firmantesPadsInsp[f.id] = crearFirmaPad('sigCanvas_'+f.id, 'sigBox_'+f.id, 'sigPh_'+f.id); });
   document.querySelectorAll('[data-sig-clear-insp]').forEach(b=>{
     b.onclick = ()=> firmantesPadsInsp[b.dataset.sigClearInsp]?.clear();
   });
   document.getElementById("pEnviarInsp").onclick = ()=> enviarInspeccionPublica(enlaceId);
+}
+
+/* Mantiene sincronizado el input (de solo lectura) de "Tu nombre" de un firmante en
+   vivo vinculado a un campo de información — se llama cada vez que cambia CUALQUIER
+   campo de texto (wireInspFormBody), no solo el vinculado, porque es barato y así no
+   hay que rastrear cuál firmante depende de cuál campo en cada sitio que toca
+   inspeccionDraft.respuestas. */
+function sincronizarFirmantesVinculadosInsp(){
+  document.querySelectorAll('[data-firmante-nombre-vinculado]').forEach(inp=>{
+    inp.value = inspeccionDraft.respuestas[inp.dataset.firmanteNombreVinculado] || '';
+  });
 }
 
 async function enviarInspeccionPublica(enlaceId){
@@ -12213,9 +12267,11 @@ async function enviarInspeccionPublica(enlaceId){
 
   const p_firmantes = [];
   for(const f of inspeccionDraft.firmantesFresco){
-    const input = document.querySelector(`[data-firmante-nombre="${f.id}"]`);
-    const nombre = input ? input.value.trim() : '';
-    if(!nombre){ toast(`Falta el nombre de "${f.rol}"`,"err"); return; }
+    const vinculo = campoInfoTexto(inspeccionDraft.estructura, f.campoNombre);
+    const nombre = vinculo
+      ? (inspeccionDraft.respuestas[vinculo.id]||'').trim()
+      : (document.querySelector(`[data-firmante-nombre="${f.id}"]`)?.value||'').trim();
+    if(!nombre){ toast(vinculo ? `Falta completar "${vinculo.etiqueta}" (arriba en el formulario)` : `Falta el nombre de "${f.rol}"`,"err"); return; }
     const pad = firmantesPadsInsp[f.id];
     if(!pad || pad.isEmpty()){ toast(`Falta la firma de "${f.rol}"`,"err"); return; }
     p_firmantes.push({ id: f.id, nombre, firma: pad.dataURL() });
