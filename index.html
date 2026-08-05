@@ -787,7 +787,8 @@ const I = {
   navDotacion:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.38 3.46 16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 .55.45 1 1 1h10a1 1 0 0 0 1-1V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"/></svg>',
   navInspeccion:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="12" height="16" rx="2"/><rect x="8.7" y="3.3" width="4.6" height="2.2" rx="0.8" fill="#0b1330" stroke-width="1.2"/><rect x="7.3" y="9" width="2.2" height="2.2" rx="0.4"/><path d="m7.6 10.1.4.4.9-.9"/><path d="M10.9 10.1h3.2"/><rect x="7.3" y="13" width="2.2" height="2.2" rx="0.4"/><path d="m7.6 14.1.4.4.9-.9"/><path d="M10.9 14.1h3.2"/><circle cx="17.3" cy="17.3" r="2.8"/><path d="m20.5 20.5-1.6-1.6"/></svg>',
   navAuditoria:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12.5c0 5-3.5 7.3-7.66 8.7a1 1 0 0 1-.68 0C7.5 19.8 4 17.5 4 12.5V6.2a1 1 0 0 1 1-1c1.9 0 4.3-1.1 5.95-2.6a1.1 1.1 0 0 1 1.45 0C14.05 4.1 16.5 5.2 18.4 5.2a1 1 0 0 1 1 1z"/><path d="M8 12c1.2-1.6 2.6-2.4 4-2.4s2.8.8 4 2.4c-1.2 1.6-2.6 2.4-4 2.4S9.2 13.6 8 12Z"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>',
-  dragHandle:'<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>'
+  dragHandle:'<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>',
+  tag:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.59 2H6a2 2 0 0 0-2 2v6.59a2 2 0 0 0 .59 1.41l9 9a2 2 0 0 0 2.82 0l6.59-6.59a2 2 0 0 0 0-2.82l-9-9A2 2 0 0 0 12.59 2Z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>'
 };
 
 /* ============================================================
@@ -10596,10 +10597,12 @@ function renderEnlacesInspPorTipo(tipo, hostId){
               <button class="icon-btn" title="Ver detalle" data-eit="ver" data-id="${en.id}">${I.eye}</button>
               <button class="icon-btn" title="Copiar enlace" data-eit="link" data-id="${en.id}">${I.link}</button>
               <button class="icon-btn" title="Compartir QR" data-eit="qr" data-id="${en.id}">${I.qr}</button>
-              ${puedeEscribir()?`<button class="icon-btn" title="Editar" data-eit="editar" data-id="${en.id}">${I.pen}</button>
+              ${puedeEscribir()?`<button class="icon-btn" title="Editar nombre" data-eit="nombre" data-id="${en.id}">${I.tag}</button>
+              <button class="icon-btn" title="Editar" data-eit="editar" data-id="${en.id}">${I.pen}</button>
               <button class="icon-btn" title="Cambiar herramienta" data-eit="herramienta" data-id="${en.id}">${I.catalogo}</button>
               ${bancoSlots.length?`<button class="icon-btn" title="Cambiar firma(s) guardada(s)" data-eit="firma" data-id="${en.id}">${I.firma}</button>`:''}
-              <button class="icon-btn" title="${en.activo?'Desactivar enlace':'Activar enlace'}" data-eit="toggle" data-id="${en.id}">${en.activo?I.lock:I.check}</button>`:''}
+              <button class="icon-btn" title="${en.activo?'Desactivar enlace':'Activar enlace'}" data-eit="toggle" data-id="${en.id}">${en.activo?I.lock:I.check}</button>
+              <button class="icon-btn danger" title="Eliminar enlace" data-eit="eliminar" data-id="${en.id}">${I.trash}</button>`:''}
             </div>
           </div>
         </div>`;
@@ -10611,10 +10614,12 @@ function renderEnlacesInspPorTipo(tipo, hostId){
       if(act==='ver') abrirDetalleEnlaceInsp(id);
       else if(act==='link') copyText(linkInspeccion(id), "Enlace de inspección copiado");
       else if(act==='qr') mostrarQR(linkInspeccion(id), "Enlace de inspección");
+      else if(act==='nombre') renombrarEnlaceInsp(id);
       else if(act==='editar') location.hash = "#/inspecciones/enlace/"+id+"/editar";
       else if(act==='herramienta') cambiarHerramientaEnlaceInsp(id);
       else if(act==='firma') cambiarFirmaEnlaceInsp(id);
       else if(act==='toggle') toggleActivoEnlaceInsp(id);
+      else if(act==='eliminar') eliminarEnlaceInsp(id);
     };
   });
   const bn = host.querySelector('[data-nuevo-enlace-tipo]');
@@ -10651,7 +10656,7 @@ async function verHojaDeVidaInsp(herramientaId){
           <button class="icon-btn" title="Ver detalle" onclick="verInspeccion('${x.id}')">${I.eye}</button>
           <button class="icon-btn" title="Descargar PDF" onclick="generarInspeccionPDF('${x.id}')">${I.doc}</button>
           ${puedeTocar?`<button class="icon-btn" title="Editar" onclick="abrirEditarInspeccionPorId('${x.id}')">${I.pen}</button>
-          <button class="icon-btn danger" title="Eliminar" onclick="eliminarInspeccion('${x.id}')">${I.trash}</button>`:''}
+          <button class="icon-btn danger" title="Eliminar" onclick="eliminarInspeccion('${x.id}', ()=>verHojaDeVidaInsp('${herramientaId}'))">${I.trash}</button>`:''}
         </div></td>
       </tr>`;
     }).join('')}</tbody>
@@ -10709,6 +10714,55 @@ async function toggleActivoEnlaceInsp(id){
   await loadInspeccionesState();
   renderInspeccionesAdmin(true);
   toast(en.activo?"Enlace desactivado":"Enlace activado","ok");
+}
+
+function renombrarEnlaceInsp(id){
+  const en = INSPECCIONES.enlaces.find(x=>x.id===id); if(!en) return;
+  const n = INSPECCIONES.inspecciones.filter(i=>i.enlace_id===id).length;
+  openModal(`<div class="modal" style="max-width:420px">
+    <div class="modal-head"><div><h2>Editar nombre</h2><p>Se usa en la tarjeta y en el encabezado del PDF. No afecta el nombre de la plantilla en "Formatos".${n?` Se actualizará también en ${n} registro${n===1?'':'s'} ya guardado${n===1?'':'s'} con este formulario.`:''}</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body"><div class="field"><label>Nombre *</label><input id="renEnlaceNombre" value="${esc(en.formato_nombre||'')}"></div></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardarRenEnlaceInsp">${I.check} Guardar</button></div></div>`);
+  document.getElementById('renEnlaceNombre').focus();
+  document.getElementById('btnGuardarRenEnlaceInsp').onclick = async ()=>{
+    const nombre = document.getElementById('renEnlaceNombre').value.trim();
+    if(!nombre){ toast("Ponle un nombre","err"); return; }
+    const btn = document.getElementById('btnGuardarRenEnlaceInsp'); btn.disabled=true; btn.innerHTML="Guardando…";
+    const { error } = await sb.from("insp_enlaces").update({ formato_nombre: nombre }).eq("id", id);
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
+    // El nombre es solo una etiqueta — a diferencia de estructura/firmantes/color (que sí
+    // quedan congelados por diseño, ver [[7.138]]), aquí el usuario pidió explícitamente
+    // que renombrar también actualice lo ya registrado, no solo lo nuevo.
+    const { error: errHist } = await sb.from("insp_inspecciones").update({ formato_nombre: nombre }).eq("enlace_id", id);
+    if(errHist){ toast("El enlace se renombró, pero no se pudo actualizar el histórico: "+errHist.message,"err"); }
+    await loadInspeccionesState();
+    toast("Nombre actualizado","ok");
+    closeModal();
+    renderInspeccionesAdmin(true);
+  };
+}
+
+function eliminarEnlaceInsp(id){
+  const en = INSPECCIONES.enlaces.find(x=>x.id===id); if(!en) return;
+  const n = INSPECCIONES.inspecciones.filter(i=>i.enlace_id===id).length;
+  const titulo = en.nombre || en.formato_nombre || 'Enlace';
+  openModal(`<div class="modal" style="max-width:440px">
+    <div class="modal-head"><div><h2>Eliminar enlace</h2><p>Esta acción no se puede deshacer.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminará "${esc(titulo)}". El enlace deja de funcionar — nadie podrá registrar más a través de él.${n?` Los ${n} registro${n===1?'':'s'} que ya se guardaron con él <b>no se pierden</b> — siguen intactos y visibles en el Historial y la Hoja de vida.`:''}</p></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-danger" id="confDelEnlaceInsp">${I.trash} Sí, eliminar</button></div></div>`);
+  document.getElementById("confDelEnlaceInsp").onclick = async ()=>{
+    const btn = document.getElementById("confDelEnlaceInsp"); btn.disabled=true; btn.innerHTML="Eliminando…";
+    const { error } = await sb.from("insp_enlaces").delete().eq("id", id);
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`; toast("No se pudo eliminar: "+error.message,"err"); return; }
+    await loadInspeccionesState();
+    toast("Enlace eliminado","ok");
+    closeModal();
+    renderInspeccionesAdmin(true);
+  };
 }
 
 function eliminarFormatoInsp(id){
@@ -10816,7 +10870,7 @@ async function abrirDetalleEnlaceInsp(enlaceId){
           <button class="icon-btn" title="Ver detalle" onclick="verInspeccion('${x.id}')">${I.eye}</button>
           <button class="icon-btn" title="Descargar PDF" onclick="generarInspeccionPDF('${x.id}')">${I.doc}</button>
           ${puedeTocar?`<button class="icon-btn" title="Editar" onclick="abrirEditarInspeccionPorId('${x.id}')">${I.pen}</button>
-          <button class="icon-btn danger" title="Eliminar" onclick="eliminarInspeccion('${x.id}')">${I.trash}</button>`:''}
+          <button class="icon-btn danger" title="Eliminar" onclick="eliminarInspeccion('${x.id}', ()=>abrirDetalleEnlaceInsp('${enlaceId}'))">${I.trash}</button>`:''}
         </div></td>
       </tr>`;
     }).join('')}</tbody>
@@ -10840,7 +10894,6 @@ function abrirNuevoEnlaceInsp(tipoFiltro){
       <div class="field"><label>Formato *</label><select id="neFormato">${formatos.map(f=>`<option value="${f.id}">${esc(f.nombre)}</option>`).join('')}</select></div>
       ${herramientas.length ? `<div class="field"><label>Herramienta/equipo <span class="opt">(opcional)</span></label>
         <select id="neHerramienta"><option value="">— Sin herramienta específica —</option>${herramientas.map(h=>`<option value="${h.id}">${esc(h.nombre)}</option>`).join('')}</select></div>` : ''}
-      <div class="field"><label>Etiqueta <span class="opt">(opcional)</span></label><input id="neNombre" placeholder="Ej. Turno mañana"></div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
@@ -10851,14 +10904,17 @@ function abrirNuevoEnlaceInsp(tipoFiltro){
     const formato_id = document.getElementById('neFormato').value;
     const selHerr = document.getElementById('neHerramienta');
     const herramienta_id = (selHerr && selHerr.value) || null;
-    const nombre = document.getElementById('neNombre').value.trim() || null;
     btn.disabled = true; btn.innerHTML = "Creando…";
     // Tomar un formato = copiarlo completo al enlace, no referenciarlo — desde aquí queda
     // 100% independiente de la plantilla (editable sin afectarla, sobrevive si se borra).
     const { data: full, error: errFull } = await sb.from("insp_formatos").select("nombre,tiene_fotos,estructura,firmantes,color_acento,mostrar_cumplimiento,tipo,imagen_pdf").eq("id",formato_id).maybeSingle();
     if(errFull || !full){ btn.disabled=false; btn.innerHTML=`${I.check} Crear formulario`; toast("No se pudo cargar el formato elegido","err"); return; }
+    // Sin campo de etiqueta al crear: el formulario nace con el mismo nombre que tenía
+    // la plantilla en "Formatos" (nombre queda null, y la tarjeta cae al fallback
+    // formato_nombre) — si el usuario quiere otro nombre, lo cambia después con
+    // "Editar nombre" en la tarjeta.
     const { data, error } = await sb.from("insp_enlaces").insert({
-      contrato_id: contratoInspActualId, formato_id, predeterminado_id: null, firmantes_banco: {}, herramienta_id, nombre,
+      contrato_id: contratoInspActualId, formato_id, predeterminado_id: null, firmantes_banco: {}, herramienta_id, nombre: null,
       formato_nombre: full.nombre, tiene_fotos: full.tiene_fotos, estructura: full.estructura, firmantes: full.firmantes,
       color_acento: full.color_acento, mostrar_cumplimiento: full.mostrar_cumplimiento, tipo: full.tipo, imagen_pdf: full.imagen_pdf
     }).select().single();
@@ -11410,17 +11466,17 @@ function validarCamposRequeridosInsp(){
 /* ---------- Historial de inspecciones del contrato, con filtro de mes (mismo
    patrón que abrirHistorialEntregasDot de EPP/Dotación, más simple porque aquí
    no hay directorio de trabajadores de por medio: se consulta directo) ---------- */
-async function abrirHistorialInspecciones(){
+async function abrirHistorialInspecciones(mesInicial){
   if(contratoInspActualId==='todos'){ toast("Elige un contrato específico primero","err"); return; }
   const c = contratoInspActual();
-  const mesInicial = hoyLocal().slice(0,7);
+  const mes0 = mesInicial || hoyLocal().slice(0,7);
   openModal(`<div class="modal lg">
     <div class="modal-head"><div><h2>Historial de inspecciones</h2><p>${esc(c?.nombre||'')}</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
       <div class="field" style="max-width:220px">
         <label>Mes</label>
-        <input type="month" id="historialInspMes" value="${mesInicial}">
+        <input type="month" id="historialInspMes" value="${mes0}">
       </div>
       <div id="historialInspLista" style="margin-top:12px"><div class="empty"><h3>Cargando…</h3></div></div>
     </div>
@@ -11447,19 +11503,24 @@ async function abrirHistorialInspecciones(){
         <thead><tr><th>Fecha</th><th>Formato</th><th>Inspector</th><th>Responsable</th><th></th></tr></thead>
         <tbody>${lista.map(x=>{
           const hora = x.creado_en ? new Date(x.creado_en).toLocaleTimeString("es-CO",{hour:'2-digit',minute:'2-digit'}) : '';
+          const puedeTocar = puedoTocarInspeccionReciente(x.creado_en);
           return `<tr>
             <td>${fmtDate((x.creado_en||'').slice(0,10))}${hora?`<div class="muted-sm">${hora}</div>`:''}</td>
             <td>${esc(x.formato_nombre||'—')}</td>
             <td>${esc(x.inspector_nombre||'—')}</td>
             <td>${esc(x.responsable_nombre||'—')}</td>
-            <td><button class="icon-btn" title="Ver / descargar PDF" onclick="verInspeccion('${x.id}')">${I.eye}</button></td>
+            <td><div style="display:flex;gap:4px">
+              <button class="icon-btn" title="Ver / descargar PDF" onclick="verInspeccion('${x.id}')">${I.eye}</button>
+              ${puedeTocar?`<button class="icon-btn" title="Editar" onclick="abrirEditarInspeccionPorId('${x.id}')">${I.pen}</button>
+              <button class="icon-btn danger" title="Eliminar" onclick="eliminarInspeccion('${x.id}', ()=>abrirHistorialInspecciones('${mes}'))">${I.trash}</button>`:''}
+            </div></td>
           </tr>`;
         }).join('')}</tbody>
       </table></div>`;
   }
 
   document.getElementById('historialInspMes').onchange = (e)=> cargar(e.target.value);
-  cargar(mesInicial);
+  cargar(mes0);
 }
 
 /* ---------- Ver una inspección ya guardada (solo lectura) + descargar su PDF ---------- */
@@ -11588,13 +11649,19 @@ async function verInspeccion(id){
   const bd = document.getElementById('btnEliminarInspVer'); if(bd) bd.onclick = ()=> eliminarInspeccion(data.id);
 }
 
-function eliminarInspeccion(id){
-  openModal(`<div class="modal" style="max-width:420px">
+/* "volver" es opcional: si quien llama está mostrando una lista (detalle de un
+   enlace, hoja de vida de una herramienta, historial del contrato), le pasa una
+   función que la vuelve a abrir (ya sin la fila borrada) en vez de cerrar todo
+   — mismo patrón de openSubModal usado en el resto de la app. Sin "volver" (ej.
+   desde "Ver detalle" de la inspección misma, que deja de existir) se cierra
+   todo y se refresca el panel de Inspecciones que quedó detrás. */
+function eliminarInspeccion(id, volver){
+  openSubModal(`<div class="modal" style="max-width:420px">
     <div class="modal-head"><div><h2>Eliminar inspección</h2><p>Esta acción no se puede deshacer.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminará esta inspección junto con sus fotos y firmas guardadas.</p></div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-danger" id="confDelInsp">${I.trash} Sí, eliminar</button></div></div>`);
+      <button class="btn btn-danger" id="confDelInsp">${I.trash} Sí, eliminar</button></div></div>`, volver);
   document.getElementById('confDelInsp').onclick = async ()=>{
     const btn = document.getElementById('confDelInsp'); btn.disabled=true; btn.innerHTML="Eliminando…";
     const { error } = await sb.from("insp_inspecciones").delete().eq("id", id);
@@ -11602,7 +11669,7 @@ function eliminarInspeccion(id){
     await loadInspeccionesState();
     toast("Inspección eliminada","ok");
     closeModal();
-    renderFormatosInspGrid();
+    if(!volver) renderInspeccionesAdmin(true);
   };
 }
 
