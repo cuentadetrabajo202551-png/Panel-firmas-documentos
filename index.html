@@ -9704,7 +9704,7 @@ function renderDtlPublicoNuevoFormulario(entidadId, nombreEntidad, catalogoUnico
    celular por un inspector logueado, con firma del inspector y del
    responsable del área — por contrato, mismo patrón que EPP/Dotación.
    ============================================================ */
-let INSPECCIONES = { contratos: [], formatos: [], predeterminados: [], herramientas: [], enlaces: [], inspecciones: [] };
+let INSPECCIONES = { contratos: [], formatos: [], predeterminados: [], herramientas: [], mantenimientos: [], enlaces: [], inspecciones: [] };
 let contratoInspActualId = localStorage.getItem('insp_contrato_actual') || null;
 let inspSubtabActiva = null; // recuerda la pestaña elegida (preop/insp/hv/formatos) entre refrescos silenciosos
 let formatosInspFiltroTipo = 'todos'; // filtro de "Formatos": todos/inspeccion/preoperacional
@@ -9740,6 +9740,17 @@ async function loadInspeccionesState(){
     INSPECCIONES.herramientas = hr || [];
   } else {
     INSPECCIONES.herramientas = [];
+  }
+  // Mantenimientos: mismo criterio que Herramientas — por contrato, cada equipo físico
+  // tiene su propio historial de mantenimiento.
+  if(contratoInspActualId && contratoInspActualId!=='todos'){
+    const { data:mt, error:emt } = await sb.from("insp_mantenimientos")
+      .select("id,contrato_id,herramienta_id,herramienta_nombre,fecha,frecuencia,tipo,descripcion,responsable_nombre,creado_en")
+      .eq("contrato_id", contratoInspActualId).order("fecha",{ascending:false});
+    if(emt) console.warn(emt);
+    INSPECCIONES.mantenimientos = mt || [];
+  } else {
+    INSPECCIONES.mantenimientos = [];
   }
 }
 function contratoInspActual(){ return INSPECCIONES.contratos.find(x=>x.id===contratoInspActualId) || null; }
@@ -9829,6 +9840,9 @@ let enlaceEditorId = null; // si no es null, el constructor edita un insp_enlace
 let formatoEditorState = null; // { nombre, activo, tiene_fotos, estructura:[...] }
 
 function nuevoIdCampoInsp(){ return 'c'+Math.random().toString(36).slice(2,9); }
+function etiquetaTipoInsp(tipo){ return tipo==='preoperacional' ? 'Preoperacional' : tipo==='inventario' ? 'Inventario' : 'Inspección'; }
+function etiquetaFrecuenciaMantInsp(f){ return {mensual:'Mensual', semestral:'Semestral', anual:'Anual'}[f] || f || '—'; }
+function etiquetaTipoMantInsp(t){ return {correctivo:'Correctivo', preventivo:'Preventivo'}[t] || t || '—'; }
 // Mismo default que la columna insp_formatos.firmantes en Supabase (CAMBIOS_SQL_56) —
 // reproduce EXACTO el comportamiento de siempre (Inspector fresco + Responsable del
 // área banco) para que un formato sin personalizar no cambie nada.
@@ -9869,7 +9883,7 @@ async function renderConstructorFormatoInsp(formatoId, enlaceId){
       firmantes: Array.isArray(data.firmantes) ? JSON.parse(JSON.stringify(data.firmantes)) : JSON.parse(JSON.stringify(FIRMANTES_DEFAULT_INSP)),
       color_acento: data.color_acento || '#14215a',
       mostrar_cumplimiento: data.mostrar_cumplimiento !== false,
-      tipo: data.tipo === 'preoperacional' ? 'preoperacional' : 'inspeccion',
+      tipo: ['preoperacional','inventario'].includes(data.tipo) ? data.tipo : 'inspeccion',
       imagen_pdf: data.imagen_pdf || null
     };
     // Compatibilidad con formatos/enlaces guardados antes de que "fotos" fuera una
@@ -9902,9 +9916,10 @@ async function renderConstructorFormatoInsp(formatoId, enlaceId){
         <input class="nombre" id="fiNombre" placeholder="Nombre del formato (ej. Inspección operativa y SST)" value="${esc(formatoEditorState.nombre)}">
         <div style="display:flex;gap:6px;margin-top:10px">
           ${enlaceEditorId
-            ? `<span class="tipo-estado-btn active bien" style="cursor:default">${formatoEditorState.tipo==='preoperacional'?'Preoperacional':'Inspección'}</span>`
+            ? `<span class="tipo-estado-btn active bien" style="cursor:default">${etiquetaTipoInsp(formatoEditorState.tipo)}</span>`
             : `<button type="button" class="tipo-estado-btn ${formatoEditorState.tipo==='inspeccion'?'active bien':''}" data-fi-tipo="inspeccion">Inspección</button>
-          <button type="button" class="tipo-estado-btn ${formatoEditorState.tipo==='preoperacional'?'active bien':''}" data-fi-tipo="preoperacional">Preoperacional</button>`}
+          <button type="button" class="tipo-estado-btn ${formatoEditorState.tipo==='preoperacional'?'active bien':''}" data-fi-tipo="preoperacional">Preoperacional</button>
+          <button type="button" class="tipo-estado-btn ${formatoEditorState.tipo==='inventario'?'active bien':''}" data-fi-tipo="inventario">Inventario</button>`}
         </div>
       </div>
       <div class="panel-section" style="margin-bottom:18px">
@@ -10305,6 +10320,7 @@ function renderEditorSeccionChecklist(s, i){
       <label style="font-size:13px;color:var(--ink-2)">Estados (separados por coma):
         <input data-checklist-estados="${i}" value="${esc(estadosStr)}" placeholder="Cumple, No cumple, N/A" style="margin-left:6px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;width:220px">
       </label>
+      <label class="chk"><input type="checkbox" data-checklist-marca="${i}" ${s.conMarcaModelo?'checked':''}> Con marca/modelo por ítem</label>
       <label class="chk"><input type="checkbox" data-checklist-cantidad="${i}" ${s.conCantidad?'checked':''}> Con cantidad por ítem</label>
       <label class="chk"><input type="checkbox" data-checklist-vencimiento="${i}" ${s.conFechaVencimiento?'checked':''}> Con fecha de vencimiento por ítem</label>
       <label class="chk"><input type="checkbox" data-checklist-obs="${i}" ${s.conObservaciones?'checked':''}> Con observaciones por ítem</label>
@@ -10402,6 +10418,9 @@ function wireEditoresSeccionInsp(host){
   });
   host.querySelectorAll('[data-checklist-obs]').forEach(el=>{
     el.onchange = (e)=>{ const i=+el.dataset.checklistObs; st.estructura[i].conObservaciones = e.target.checked; renderInspFormBody(); };
+  });
+  host.querySelectorAll('[data-checklist-marca]').forEach(el=>{
+    el.onchange = (e)=>{ const i=+el.dataset.checklistMarca; st.estructura[i].conMarcaModelo = e.target.checked; renderInspFormBody(); };
   });
   host.querySelectorAll('[data-checklist-cantidad]').forEach(el=>{
     el.onchange = (e)=>{ const i=+el.dataset.checklistCantidad; st.estructura[i].conCantidad = e.target.checked; renderInspFormBody(); };
@@ -10529,7 +10548,7 @@ async function renderInspeccionesAdmin(modo){
   // había elegido (inspSubtabActiva) para que un refresco silencioso (cada 20s) no lo
   // regrese siempre a la primera; solo se resetea si esa pestaña ya no aplica (ej. pasó
   // a "Todos los contratos", donde solo existe "Formatos").
-  const tabsDisponibles = enTodos ? ['formatos'] : ['preop','insp','hv','formatos'];
+  const tabsDisponibles = enTodos ? ['formatos'] : ['preop','insp','inventario','hv','mantenimiento','formatos'];
   const tabInspActiva = tabsDisponibles.includes(inspSubtabActiva) ? inspSubtabActiva : tabsDisponibles[0];
 
   document.getElementById("app").innerHTML = `
@@ -10571,7 +10590,9 @@ async function renderInspeccionesAdmin(modo){
           <div class="subtab-list">
             ${!enTodos?`<button type="button" class="subtab-item ${tabInspActiva==='preop'?'active':''}" data-subtab="preop">Inspección preoperacional</button>
             <button type="button" class="subtab-item ${tabInspActiva==='insp'?'active':''}" data-subtab="insp">Inspecciones</button>
-            <button type="button" class="subtab-item ${tabInspActiva==='hv'?'active':''}" data-subtab="hv">Hoja de vida</button>`:''}
+            <button type="button" class="subtab-item ${tabInspActiva==='inventario'?'active':''}" data-subtab="inventario">Inventario</button>
+            <button type="button" class="subtab-item ${tabInspActiva==='hv'?'active':''}" data-subtab="hv">Hoja de vida</button>
+            <button type="button" class="subtab-item ${tabInspActiva==='mantenimiento'?'active':''}" data-subtab="mantenimiento">Mantenimiento</button>`:''}
             <button type="button" class="subtab-item ${tabInspActiva==='formatos'?'active':''}" data-subtab="formatos">Formatos</button>
           </div>
           <div class="subtab-content">
@@ -10582,6 +10603,9 @@ async function renderInspeccionesAdmin(modo){
             <div class="subtab-pane ${tabInspActiva==='insp'?'active':''}" data-pane="insp">
               <div id="enlacesInspInsp"></div>
             </div>
+            <div class="subtab-pane ${tabInspActiva==='inventario'?'active':''}" data-pane="inventario">
+              <div id="enlacesInspInventario"></div>
+            </div>
             <div class="subtab-pane ${tabInspActiva==='hv'?'active':''}" data-pane="hv">
               <p class="muted-sm" style="margin:0 0 10px">Elige una herramienta para ver todo lo que se le ha inspeccionado — mensuales y preoperacionales, en orden cronológico.</p>
               <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
@@ -10590,12 +10614,22 @@ async function renderInspeccionesAdmin(modo){
                 </select>
                 <button class="btn btn-primary btn-sm" id="btnVerHojaVidaInsp" ${INSPECCIONES.herramientas.length?'':'disabled'}>${I.eye} Ver hoja de vida</button>
               </div>
+            </div>
+            <div class="subtab-pane ${tabInspActiva==='mantenimiento'?'active':''}" data-pane="mantenimiento">
+              <p class="muted-sm" style="margin:0 0 10px">Elige una herramienta para registrar o revisar sus mantenimientos — correctivos y preventivos.</p>
+              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                <select id="selMantenimientoInsp" style="flex:1;min-width:220px;max-width:360px">
+                  ${INSPECCIONES.herramientas.length ? INSPECCIONES.herramientas.map(h=>`<option value="${h.id}">${esc(h.nombre)}${h.activo?'':' (inactiva)'}</option>`).join('') : '<option value="">Sin herramientas en el catálogo todavía</option>'}
+                </select>
+                <button class="btn btn-primary btn-sm" id="btnAbrirMantenimientoInsp" ${INSPECCIONES.herramientas.length?'':'disabled'}>${I.pen} Gestionar mantenimiento</button>
+              </div>
             </div>`:''}
             <div class="subtab-pane ${tabInspActiva==='formatos'?'active':''}" data-pane="formatos">
               <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
                 <button type="button" class="tipo-estado-btn ${formatosInspFiltroTipo==='todos'?'active bien':''}" data-filtro-formato="todos">Todos</button>
                 <button type="button" class="tipo-estado-btn ${formatosInspFiltroTipo==='inspeccion'?'active bien':''}" data-filtro-formato="inspeccion">Inspección</button>
                 <button type="button" class="tipo-estado-btn ${formatosInspFiltroTipo==='preoperacional'?'active bien':''}" data-filtro-formato="preoperacional">Preoperacional</button>
+                <button type="button" class="tipo-estado-btn ${formatosInspFiltroTipo==='inventario'?'active bien':''}" data-filtro-formato="inventario">Inventario</button>
               </div>
               <div id="formatosInspGrid"></div>
             </div>
@@ -10637,9 +10671,15 @@ async function renderInspeccionesAdmin(modo){
     const id = document.getElementById('selHojaVidaInsp').value;
     if(id) verHojaDeVidaInsp(id);
   };
+  const bmant = document.getElementById("btnAbrirMantenimientoInsp");
+  if(bmant) bmant.onclick = ()=>{
+    const id = document.getElementById('selMantenimientoInsp').value;
+    if(id) abrirMantenimientosHerramientaInsp(id);
+  };
   if(!enTodos){
     renderEnlacesInspPorTipo('preoperacional', 'enlacesInspPreop');
     renderEnlacesInspPorTipo('inspeccion', 'enlacesInspInsp');
+    renderEnlacesInspPorTipo('inventario', 'enlacesInspInventario');
   }
   renderFormatosInspGrid();
   if(modo) window.scrollTo(0, scrollY);
@@ -10652,7 +10692,10 @@ function renderEnlacesInspPorTipo(tipo, hostId){
   const enlaces = enlacesDelContrato().filter(e=> e.tipo === tipo);
   const botonNuevo = puedeEscribir() ? `<button class="btn btn-ghost btn-sm" data-nuevo-enlace-tipo="${tipo}" style="margin-top:10px">${I.plus} Crear formulario</button>` : '';
   if(!enlaces.length){
-    host.innerHTML = `<div class="empty" style="padding:24px 20px"><div class="ic">${I.link}</div><h3>Sin enlaces todavía</h3><p>${tipo==='preoperacional'?'Crea uno para que un trabajador registre el preoperacional de una herramienta.':'Crea uno para que se registren inspecciones de una herramienta o equipo.'}</p></div>${botonNuevo}`;
+    const copiaVacia = tipo==='preoperacional' ? 'Crea uno para que un trabajador registre el preoperacional de una herramienta.'
+      : tipo==='inventario' ? 'Crea uno para registrar la revisión periódica de inventario de maquinaria/herramienta.'
+      : 'Crea uno para que se registren inspecciones de una herramienta o equipo.';
+    host.innerHTML = `<div class="empty" style="padding:24px 20px"><div class="ic">${I.link}</div><h3>Sin enlaces todavía</h3><p>${copiaVacia}</p></div>${botonNuevo}`;
   } else {
     host.innerHTML = '<div class="grid grid-insp">' + enlaces.map(en=>{
       const herr = en.herramienta_id ? INSPECCIONES.herramientas.find(h=>h.id===en.herramienta_id) : null;
@@ -10721,35 +10764,63 @@ async function verHojaDeVidaInsp(herramientaId){
     <div class="modal-head"><div><h2>Hoja de vida — ${esc(h?.nombre||'')}</h2><p>Todo lo registrado para esta herramienta, de más reciente a más antigua.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body" id="hojaVidaInspBody"><div class="empty"><h3>Cargando…</h3></div></div>
-    <div class="modal-foot" id="hojaVidaInspFoot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
+    <div class="modal-foot" id="hojaVidaInspFoot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
+      ${puedeEscribir()?`<button class="btn btn-ghost" onclick="abrirMantenimientosHerramientaInsp('${herramientaId}')">${I.plus} Agregar mantenimiento</button>`:''}
+    </div>
   </div>`);
   const host = document.getElementById('hojaVidaInspBody');
-  const { data, error } = await sb.from("insp_inspecciones")
-    .select("id,formato_nombre,inspector_nombre,creado_en,ip_address,dispositivo_ua")
-    .eq("herramienta_id", herramientaId).order("creado_en",{ascending:false});
-  if(error){ host.innerHTML = `<div class="empty"><h3>No se pudo cargar</h3><p>${esc(error.message)}</p></div>`; return; }
-  const lista = data || [];
-  if(!lista.length){ host.innerHTML = `<div class="empty"><div class="ic">${I.box}</div><h3>Sin registros todavía</h3><p>Cuando se registre una inspección o preoperacional de esta herramienta, aparecerá aquí.</p></div>`; return; }
+  // Kárdex fusionado: mismo listado de siempre (insp_inspecciones) + el historial de
+  // insp_mantenimientos de esta herramienta, normalizados a una fecha comparable y
+  // ordenados juntos — así se ve todo lo que le ha pasado a la herramienta en un solo lugar.
+  const [{ data: di, error: ei }, { data: dm, error: em }] = await Promise.all([
+    sb.from("insp_inspecciones").select("id,formato_nombre,inspector_nombre,creado_en,ip_address,dispositivo_ua").eq("herramienta_id", herramientaId).order("creado_en",{ascending:false}),
+    sb.from("insp_mantenimientos").select("id,fecha,frecuencia,tipo,descripcion,responsable_nombre,creado_en").eq("herramienta_id", herramientaId).order("fecha",{ascending:false})
+  ]);
+  if(ei || em){ host.innerHTML = `<div class="empty"><h3>No se pudo cargar</h3><p>${esc((ei||em).message)}</p></div>`; return; }
+  const eventosInsp = (di||[]).map(x=>({ origen:'inspeccion', fecha:(x.creado_en||'').slice(0,10), ...x }));
+  const eventosMant = (dm||[]).map(x=>({ origen:'mantenimiento', fecha:x.fecha, ...x }));
+  const lista = [...eventosInsp, ...eventosMant].sort((a,b)=> (b.fecha||'').localeCompare(a.fecha||''));
+  if(!lista.length){ host.innerHTML = `<div class="empty"><div class="ic">${I.box}</div><h3>Sin registros todavía</h3><p>Cuando se registre una inspección, preoperacional o mantenimiento de esta herramienta, aparecerá aquí.</p></div>`; return; }
   host.innerHTML = `<div class="table-wrap"><table class="dt">
-    <thead><tr><th>Fecha</th><th>Formato</th><th>Registrado por</th><th></th></tr></thead>
+    <thead><tr><th>Fecha</th><th>Tipo</th><th>Detalle</th><th>Registrado por</th><th></th></tr></thead>
     <tbody>${lista.map(x=>{
-      const hora = x.creado_en ? new Date(x.creado_en).toLocaleTimeString("es-CO",{hour:'2-digit',minute:'2-digit'}) : '';
-      const auditLinea = (x.ip_address||x.dispositivo_ua)
-        ? `<div class="muted-sm">${x.ip_address?'IP '+esc(x.ip_address):''}${x.ip_address&&x.dispositivo_ua?' · ':''}${x.dispositivo_ua?esc(resumenDispositivoUA(x.dispositivo_ua)):''}</div>` : '';
-      const puedeTocar = puedoTocarInspeccionReciente(x.creado_en);
+      if(x.origen==='inspeccion'){
+        const hora = x.creado_en ? new Date(x.creado_en).toLocaleTimeString("es-CO",{hour:'2-digit',minute:'2-digit'}) : '';
+        const auditLinea = (x.ip_address||x.dispositivo_ua)
+          ? `<div class="muted-sm">${x.ip_address?'IP '+esc(x.ip_address):''}${x.ip_address&&x.dispositivo_ua?' · ':''}${x.dispositivo_ua?esc(resumenDispositivoUA(x.dispositivo_ua)):''}</div>` : '';
+        const puedeTocar = puedoTocarInspeccionReciente(x.creado_en);
+        return `<tr>
+          <td>${fmtDate(x.fecha)}${hora?`<div class="muted-sm">${hora}</div>`:''}${auditLinea}</td>
+          <td>Inspección</td>
+          <td>${esc(x.formato_nombre||'—')}</td>
+          <td>${esc(x.inspector_nombre||'—')}</td>
+          <td><div style="display:flex;gap:4px">
+            <button class="icon-btn" title="Ver detalle" onclick="verInspeccion('${x.id}')">${I.eye}</button>
+            <button class="icon-btn" title="Descargar PDF" onclick="generarInspeccionPDF('${x.id}')">${I.doc}</button>
+            ${puedeTocar?`<button class="icon-btn" title="Editar" onclick="abrirEditarInspeccionPorId('${x.id}')">${I.pen}</button>
+            <button class="icon-btn danger" title="Eliminar" onclick="eliminarInspeccion('${x.id}', ()=>verHojaDeVidaInsp('${herramientaId}'))">${I.trash}</button>`:''}
+          </div></td>
+        </tr>`;
+      }
       return `<tr>
-        <td>${fmtDate((x.creado_en||'').slice(0,10))}${hora?`<div class="muted-sm">${hora}</div>`:''}${auditLinea}</td>
-        <td>${esc(x.formato_nombre||'—')}</td>
-        <td>${esc(x.inspector_nombre||'—')}</td>
+        <td>${fmtDate(x.fecha)}</td>
+        <td>Mantenimiento<div class="muted-sm">${esc(etiquetaTipoMantInsp(x.tipo))} · ${esc(etiquetaFrecuenciaMantInsp(x.frecuencia))}</div></td>
+        <td>${esc(x.descripcion||'—')}</td>
+        <td>${esc(x.responsable_nombre||'—')}</td>
         <td><div style="display:flex;gap:4px">
-          <button class="icon-btn" title="Ver detalle" onclick="verInspeccion('${x.id}')">${I.eye}</button>
-          <button class="icon-btn" title="Descargar PDF" onclick="generarInspeccionPDF('${x.id}')">${I.doc}</button>
-          ${puedeTocar?`<button class="icon-btn" title="Editar" onclick="abrirEditarInspeccionPorId('${x.id}')">${I.pen}</button>
-          <button class="icon-btn danger" title="Eliminar" onclick="eliminarInspeccion('${x.id}', ()=>verHojaDeVidaInsp('${herramientaId}'))">${I.trash}</button>`:''}
+          <button class="icon-btn" title="Editar" data-hvmant-editar="${x.id}">${I.pen}</button>
+          <button class="icon-btn danger" title="Eliminar" data-hvmant-del="${x.id}">${I.trash}</button>
         </div></td>
       </tr>`;
     }).join('')}</tbody>
   </table></div>`;
+  host.querySelectorAll('[data-hvmant-editar]').forEach(b=>{
+    b.onclick = ()=> editarMantenimientoInsp(b.dataset.hvmantEditar, herramientaId, ()=>verHojaDeVidaInsp(herramientaId));
+  });
+  host.querySelectorAll('[data-hvmant-del]').forEach(b=>{
+    b.onclick = ()=> eliminarMantenimientoInsp(b.dataset.hvmantDel, herramientaId, ()=>verHojaDeVidaInsp(herramientaId));
+  });
   const foot = document.getElementById('hojaVidaInspFoot');
   if(foot) foot.insertAdjacentHTML('beforeend', `<button class="btn btn-primary" onclick="generarHojaVidaInspPDF('${herramientaId}')">${I.doc} Descargar PDF</button>`);
 }
@@ -10762,11 +10833,20 @@ async function verHojaDeVidaInsp(herramientaId){
 async function construirHojaVidaInspPDF(herramientaId){
   const h = INSPECCIONES.herramientas.find(x=>x.id===herramientaId);
   if(!h) return null;
-  const { data, error } = await sb.from("insp_inspecciones")
-    .select("formato_nombre,inspector_nombre,creado_en,ip_address,dispositivo_ua")
-    .eq("herramienta_id", herramientaId).order("creado_en",{ascending:false});
-  if(error) throw new Error(error.message);
-  const lista = data || [];
+  // Mismo kárdex fusionado que verHojaDeVidaInsp: inspecciones + mantenimientos,
+  // normalizados a una fecha comparable y ordenados juntos.
+  const [{ data: di, error: ei }, { data: dm, error: em }] = await Promise.all([
+    sb.from("insp_inspecciones").select("formato_nombre,inspector_nombre,creado_en,ip_address,dispositivo_ua").eq("herramienta_id", herramientaId).order("creado_en",{ascending:false}),
+    sb.from("insp_mantenimientos").select("fecha,frecuencia,tipo,descripcion,responsable_nombre,creado_en").eq("herramienta_id", herramientaId).order("fecha",{ascending:false})
+  ]);
+  if(ei || em) throw new Error((ei||em).message);
+  const eventosInsp = (di||[]).map(x=>({ origen:'inspeccion', fecha:(x.creado_en||'').slice(0,10),
+    formato_nombre: x.formato_nombre, inspector_nombre: x.inspector_nombre, creado_en: x.creado_en,
+    ip_address: x.ip_address, dispositivo_ua: x.dispositivo_ua }));
+  const eventosMant = (dm||[]).map(x=>({ origen:'mantenimiento', fecha: x.fecha,
+    formato_nombre: etiquetaTipoMantInsp(x.tipo)+' — '+(x.descripcion||'Sin descripción')+' ('+etiquetaFrecuenciaMantInsp(x.frecuencia)+')',
+    inspector_nombre: x.responsable_nombre, creado_en: null, ip_address: null, dispositivo_ua: null }));
+  const lista = [...eventosInsp, ...eventosMant].sort((a,b)=> (b.fecha||'').localeCompare(a.fecha||''));
   if(!lista.length) return null;
   const nombreContrato = (INSPECCIONES.contratos.find(c=>c.id===h.contrato_id)||{}).nombre || "";
 
@@ -10811,14 +10891,14 @@ async function construirHojaVidaInspPDF(herramientaId){
     doc.rect(M,y,RIGHT-M,hh);
     doc.setFont("helvetica","bold"); doc.setFontSize(7); doc.setTextColor(40,40,60);
     const ct=(a,b,txt)=>doc.text(txt,(a+b)/2,y+5.2,{align:"center"});
-    ct(x0,x1,"FECHA"); ct(x1,x2,"FORMATO"); ct(x2,x3,"REGISTRADO POR");
+    ct(x0,x1,"FECHA"); ct(x1,x2,"FORMATO / ACTIVIDAD"); ct(x2,x3,"REGISTRADO POR");
     return y+hh;
   }
 
   const FOOTER_Y = 290, FOOTER_TOP = 278;
   function piePagina(pag){
     doc.setFontSize(6.6); doc.setTextColor(140,140,160);
-    doc.text("Hoja de vida generada a partir de las inspecciones y preoperacionales registrados en el sistema.", PW/2, FOOTER_Y, {align:"center"});
+    doc.text("Hoja de vida generada a partir de las inspecciones, preoperacionales y mantenimientos registrados en el sistema.", PW/2, FOOTER_Y, {align:"center"});
     doc.text("Generado el "+fmtDateTime(new Date())+" · Don Aseo Ltda. · Pág. "+pag, PW/2, FOOTER_Y+4, {align:"center"});
   }
 
@@ -10840,7 +10920,7 @@ async function construirHojaVidaInspPDF(herramientaId){
     [x0,x1,x2,x3].forEach(x=>doc.line(x,y,x,y+rowH));
     doc.line(M,y+rowH,RIGHT,y+rowH);
     doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(20,20,20);
-    doc.text(fmtDate((x.creado_en||'').slice(0,10)), (x0+x1)/2, y+rowH/2-2, {align:"center"});
+    doc.text(fmtDate(x.fecha), (x0+x1)/2, y+rowH/2-2, {align:"center"});
     let yAudit = y+rowH/2+2.5;
     if(hora){ doc.setFontSize(6.5); doc.setTextColor(120,120,140); doc.text(hora, (x0+x1)/2, yAudit, {align:"center"}); yAudit += 3; }
     if(tieneAuditoria){
@@ -10889,7 +10969,7 @@ function renderFormatosInspGrid(){
     return `
       <div class="lcard">
         <div class="lcard-top">
-          <span class="tipo">${f.tipo==='preoperacional'?'Preoperacional':'Inspección'}</span>
+          <span class="tipo">${etiquetaTipoInsp(f.tipo)}</span>
           <span class="tipo">${f.tiene_fotos?'Con fotos':'Sin fotos'}</span>
           <span class="badge ${act?'activa':'cerrada'}"><span class="dot"></span>${act?'Activo':'Inactivo'}</span>
         </div>
@@ -11449,6 +11529,145 @@ function eliminarHerramientaInsp(id){
   };
 }
 
+/* ---------- Mantenimiento por herramienta (CRUD interno, calcado de Herramientas) ---------- */
+function abrirMantenimientosHerramientaInsp(herramientaId){
+  const h = INSPECCIONES.herramientas.find(x=>x.id===herramientaId);
+  if(!h){ toast("Herramienta no encontrada","err"); return; }
+  const hoy = new Date().toISOString().slice(0,10);
+  openModal(`<div class="modal lg">
+    <div class="modal-head"><div><h2>Mantenimiento — ${esc(h.nombre)}</h2><p>Registra correctivos y preventivos de esta herramienta. Se ve también en su Hoja de vida.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="field row2" style="margin-bottom:10px">
+        <div><label>Fecha</label><input type="date" id="mantInspFecha" value="${hoy}"></div>
+        <div><label>Frecuencia</label><select id="mantInspFrecuencia">
+          <option value="mensual">Mensual</option><option value="semestral">Semestral</option><option value="anual">Anual</option>
+        </select></div>
+      </div>
+      <div class="field row2" style="margin-bottom:10px">
+        <div><label>Tipo</label><select id="mantInspTipo">
+          <option value="correctivo">Correctivo</option><option value="preventivo">Preventivo</option>
+        </select></div>
+        <div><label>Responsable <span class="opt">(opcional)</span></label><input id="mantInspResponsable" placeholder="Quién lo hizo"></div>
+      </div>
+      <div class="field" style="margin-bottom:14px"><label>Descripción <span class="opt">(opcional)</span></label><textarea id="mantInspDescripcion" rows="2" placeholder="Qué se hizo"></textarea></div>
+      <button class="btn btn-primary btn-sm" id="btnAddMantInsp" style="margin-bottom:14px">${I.plus} Agregar</button>
+      <div id="mantInspLista"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
+  </div>`);
+  document.getElementById('btnAddMantInsp').onclick = ()=> guardarMantenimientoInsp(herramientaId);
+  renderMantenimientosInspLista(herramientaId);
+}
+
+function renderMantenimientosInspLista(herramientaId){
+  const host = document.getElementById('mantInspLista'); if(!host) return;
+  const items = INSPECCIONES.mantenimientos.filter(m=>m.herramienta_id===herramientaId).slice().sort((a,b)=> (b.fecha||'').localeCompare(a.fecha||''));
+  if(!items.length){ host.innerHTML = '<div class="muted-sm" style="padding:14px 0">Sin mantenimientos registrados todavía.</div>'; return; }
+  host.innerHTML = `<div class="table-wrap"><table class="dt">
+    <thead><tr><th>Fecha</th><th>Frecuencia</th><th>Tipo</th><th>Descripción</th><th>Responsable</th><th></th></tr></thead>
+    <tbody>${items.map(m=>`<tr>
+      <td>${fmtDate(m.fecha)}</td>
+      <td>${esc(etiquetaFrecuenciaMantInsp(m.frecuencia))}</td>
+      <td>${esc(etiquetaTipoMantInsp(m.tipo))}</td>
+      <td>${esc(m.descripcion||'—')}</td>
+      <td>${esc(m.responsable_nombre||'—')}</td>
+      <td><div style="display:flex;gap:4px">
+        <button class="icon-btn" title="Editar" data-mantinsp-editar="${m.id}">${I.pen}</button>
+        <button class="icon-btn danger" title="Eliminar" data-mantinsp-del="${m.id}">${I.trash}</button>
+      </div></td>
+    </tr>`).join('')}</tbody>
+  </table></div>`;
+  host.querySelectorAll('[data-mantinsp-editar]').forEach(b=>{
+    b.onclick = ()=> editarMantenimientoInsp(b.dataset.mantinspEditar, herramientaId);
+  });
+  host.querySelectorAll('[data-mantinsp-del]').forEach(b=>{
+    b.onclick = ()=> eliminarMantenimientoInsp(b.dataset.mantinspDel, herramientaId);
+  });
+}
+
+async function guardarMantenimientoInsp(herramientaId){
+  const fecha = document.getElementById('mantInspFecha').value;
+  const frecuencia = document.getElementById('mantInspFrecuencia').value;
+  const tipo = document.getElementById('mantInspTipo').value;
+  const responsable_nombre = document.getElementById('mantInspResponsable').value.trim() || null;
+  const descripcion = document.getElementById('mantInspDescripcion').value.trim() || null;
+  if(!fecha){ toast("Elige la fecha del mantenimiento","err"); return; }
+  const h = INSPECCIONES.herramientas.find(x=>x.id===herramientaId);
+  const btn = document.getElementById('btnAddMantInsp'); btn.disabled=true;
+  const { error } = await sb.from("insp_mantenimientos").insert({
+    contrato_id: contratoInspActualId, herramienta_id: herramientaId, herramienta_nombre: h?.nombre||'',
+    fecha, frecuencia, tipo, descripcion, responsable_nombre
+  });
+  btn.disabled=false;
+  if(error){ toast("No se pudo agregar: "+error.message,"err"); return; }
+  document.getElementById('mantInspDescripcion').value=''; document.getElementById('mantInspResponsable').value='';
+  await loadInspeccionesState();
+  renderMantenimientosInspLista(herramientaId);
+  toast("Mantenimiento agregado","ok");
+}
+
+function editarMantenimientoInsp(id, herramientaId, volver){
+  const m = INSPECCIONES.mantenimientos.find(x=>x.id===id);
+  if(!m) return;
+  const volverFn = volver || (()=>abrirMantenimientosHerramientaInsp(herramientaId));
+  openSubModal(`<div class="modal" style="max-width:460px">
+    <div class="modal-head"><div><h2>Editar mantenimiento</h2></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="field row2" style="margin-bottom:10px">
+        <div><label>Fecha</label><input type="date" id="editMantInspFecha" value="${esc(m.fecha)}"></div>
+        <div><label>Frecuencia</label><select id="editMantInspFrecuencia">
+          <option value="mensual" ${m.frecuencia==='mensual'?'selected':''}>Mensual</option>
+          <option value="semestral" ${m.frecuencia==='semestral'?'selected':''}>Semestral</option>
+          <option value="anual" ${m.frecuencia==='anual'?'selected':''}>Anual</option>
+        </select></div>
+      </div>
+      <div class="field row2" style="margin-bottom:10px">
+        <div><label>Tipo</label><select id="editMantInspTipo">
+          <option value="correctivo" ${m.tipo==='correctivo'?'selected':''}>Correctivo</option>
+          <option value="preventivo" ${m.tipo==='preventivo'?'selected':''}>Preventivo</option>
+        </select></div>
+        <div><label>Responsable <span class="opt">(opcional)</span></label><input id="editMantInspResponsable" value="${esc(m.responsable_nombre||'')}"></div>
+      </div>
+      <div class="field"><label>Descripción <span class="opt">(opcional)</span></label><textarea id="editMantInspDescripcion" rows="2">${esc(m.descripcion||'')}</textarea></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="confEditMantInsp">${I.check} Guardar</button></div></div>`, volverFn);
+  document.getElementById("confEditMantInsp").onclick = async ()=>{
+    const fecha = document.getElementById('editMantInspFecha').value;
+    const frecuencia = document.getElementById('editMantInspFrecuencia').value;
+    const tipo = document.getElementById('editMantInspTipo').value;
+    const responsable_nombre = document.getElementById('editMantInspResponsable').value.trim() || null;
+    const descripcion = document.getElementById('editMantInspDescripcion').value.trim() || null;
+    if(!fecha){ toast("Elige la fecha del mantenimiento","err"); return; }
+    const btn=document.getElementById("confEditMantInsp"); btn.disabled=true; btn.innerHTML="Guardando…";
+    const { error } = await sb.from("insp_mantenimientos").update({ fecha, frecuencia, tipo, descripcion, responsable_nombre }).eq("id", id);
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
+    await loadInspeccionesState();
+    toast("Mantenimiento actualizado","ok");
+    closeModal();
+  };
+}
+
+function eliminarMantenimientoInsp(id, herramientaId, volver){
+  const volverFn = volver || (()=>abrirMantenimientosHerramientaInsp(herramientaId));
+  openSubModal(`<div class="modal" style="max-width:420px">
+    <div class="modal-head"><div><h2>Eliminar mantenimiento</h2></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">¿Eliminar este registro de mantenimiento? Esta acción no se puede deshacer.</p></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-danger" id="confDelMantInsp">${I.trash} Sí, eliminar</button></div></div>`, volverFn);
+  document.getElementById("confDelMantInsp").onclick = async ()=>{
+    const btn=document.getElementById("confDelMantInsp"); btn.disabled=true; btn.innerHTML="Eliminando…";
+    const { error } = await sb.from("insp_mantenimientos").delete().eq("id", id);
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`; toast("No se pudo eliminar: "+error.message,"err"); return; }
+    await loadInspeccionesState();
+    toast("Mantenimiento eliminado","ok");
+    closeModal();
+  };
+}
+
 /* ---------- Asistente de 3 pasos: nueva inspección ---------- */
 let inspeccionDraft = null;
 function claseEstadoInsp(estado, estadosTipo){
@@ -11535,7 +11754,8 @@ function renderSeccionChecklistInsp(s){
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           ${(s.estados||[]).map(estado=>{ const cls = claseEstadoInsp(estado, s.estadosTipo); return `<button type="button" class="chip-estado ${r.estado===estado?'active '+cls:''}" data-item-estado="${it.id}" data-estado-val="${esc(estado)}" data-estado-cls="${cls}">${esc(estado)}</button>`; }).join('')}
         </div>
-        ${(s.conCantidad || s.conFechaVencimiento)?`<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        ${(s.conMarcaModelo || s.conCantidad || s.conFechaVencimiento)?`<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+          ${s.conMarcaModelo?`<div style="flex:1;min-width:140px"><label class="muted-sm" style="display:block;margin-bottom:3px">Marca/Modelo</label><input data-item-marca="${it.id}" value="${esc(r.marca_modelo||'')}" style="width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;box-sizing:border-box"></div>`:''}
           ${s.conCantidad?`<div style="flex:1;min-width:110px"><label class="muted-sm" style="display:block;margin-bottom:3px">Cantidad</label><input type="number" min="0" data-item-cantidad="${it.id}" value="${esc(r.cantidad??'')}" style="width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;box-sizing:border-box"></div>`:''}
           ${s.conFechaVencimiento?`<div style="flex:1;min-width:150px"><label class="muted-sm" style="display:block;margin-bottom:3px">Fecha de vencimiento</label><input type="date" data-item-vence="${it.id}" value="${esc(r.fecha_vencimiento||'')}" style="width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;box-sizing:border-box"></div>`:''}
         </div>`:''}
@@ -11632,6 +11852,9 @@ function wireInspFormBody(host){
   });
   host.querySelectorAll('[data-item-obs]').forEach(el=>{
     el.oninput = ()=>{ const id=el.dataset.itemObs; const r = inspeccionDraft.respuestas[id] = inspeccionDraft.respuestas[id]||{}; r.observaciones = el.value; };
+  });
+  host.querySelectorAll('[data-item-marca]').forEach(el=>{
+    el.oninput = ()=>{ const id=el.dataset.itemMarca; const r = inspeccionDraft.respuestas[id] = inspeccionDraft.respuestas[id]||{}; r.marca_modelo = el.value; };
   });
   host.querySelectorAll('[data-item-cantidad]').forEach(el=>{
     el.oninput = ()=>{ const id=el.dataset.itemCantidad; const r = inspeccionDraft.respuestas[id] = inspeccionDraft.respuestas[id]||{}; r.cantidad = el.value; };
@@ -11805,10 +12028,10 @@ function renderSeccionChecklistLectura(s, respuestas){
   return `<div class="panel-section" style="margin-bottom:14px">
     <div class="section-label">${esc(s.titulo||'')}</div>
     <div class="table-wrap"><table class="dt">
-      <thead><tr><th>Ítem</th><th>Estado</th>${s.conCantidad?'<th>Cantidad</th>':''}${s.conFechaVencimiento?'<th>Fecha de vencimiento</th>':''}${s.conObservaciones?'<th>Observaciones</th>':''}</tr></thead>
+      <thead><tr><th>Ítem</th><th>Estado</th>${s.conMarcaModelo?'<th>Marca/Modelo</th>':''}${s.conCantidad?'<th>Cantidad</th>':''}${s.conFechaVencimiento?'<th>Fecha de vencimiento</th>':''}${s.conObservaciones?'<th>Observaciones</th>':''}</tr></thead>
       <tbody>${(s.items||[]).map(it=>{
         const r = respuestas[it.id]||{};
-        return `<tr><td>${esc(it.texto)}</td><td>${r.estado?`<span class="chip-estado active ${claseEstadoInsp(r.estado, s.estadosTipo)}" style="cursor:default;padding:4px 10px;font-size:12px">${esc(r.estado)}</span>`:'—'}</td>${s.conCantidad?`<td>${esc(r.cantidad??'—')}</td>`:''}${s.conFechaVencimiento?`<td>${r.fecha_vencimiento?fmtDate(r.fecha_vencimiento):'—'}</td>`:''}${s.conObservaciones?`<td>${esc(r.observaciones||'—')}</td>`:''}</tr>`;
+        return `<tr><td>${esc(it.texto)}</td><td>${r.estado?`<span class="chip-estado active ${claseEstadoInsp(r.estado, s.estadosTipo)}" style="cursor:default;padding:4px 10px;font-size:12px">${esc(r.estado)}</span>`:'—'}</td>${s.conMarcaModelo?`<td>${esc(r.marca_modelo||'—')}</td>`:''}${s.conCantidad?`<td>${esc(r.cantidad??'—')}</td>`:''}${s.conFechaVencimiento?`<td>${r.fecha_vencimiento?fmtDate(r.fecha_vencimiento):'—'}</td>`:''}${s.conObservaciones?`<td>${esc(r.observaciones||'—')}</td>`:''}</tr>`;
       }).join('')}</tbody>
     </table></div>
   </div>`;
@@ -12021,11 +12244,22 @@ function dibujarSeccionChecklistPDF(doc, y, seccion, respuestas, ctx){
   const { M, RIGHT, asegurarEspacio } = ctx;
   const estados = seccion.estados || [];
   const conObs = !!seccion.conObservaciones;
+  const conMarca = !!seccion.conMarcaModelo;
   const conCant = !!seccion.conCantidad;
   const conVence = !!seccion.conFechaVencimiento;
-  const itemColW = 78;
-  const cantColW = 18, venceColW = 26, obsColW = 38;
-  const extrasW = (conCant?cantColW:0) + (conVence?venceColW:0) + (conObs?obsColW:0);
+  const marcaColW = 30, cantColW = 18, venceColW = 26, obsColW = 38;
+  const extrasW = (conMarca?marcaColW:0) + (conCant?cantColW:0) + (conVence?venceColW:0) + (conObs?obsColW:0);
+  // El ancho del ítem cede espacio a los estados cuando varias columnas extra están
+  // activadas a la vez (cantidad+vencimiento+observaciones) — si no, con 3 estados
+  // (ej. "Cumple"/"No cumple"/"N/A") cada columna quedaba demasiado angosta y el
+  // encabezado se salía encimándose con el de la columna vecina.
+  const estadoColMin = 22;
+  let itemColW = 78;
+  if(estados.length){
+    const disponible = RIGHT-M-extrasW;
+    const necesarioParaEstados = estadoColMin*estados.length;
+    if(disponible-itemColW < necesarioParaEstados) itemColW = Math.max(45, disponible-necesarioParaEstados);
+  }
   const estadoColW = estados.length ? (RIGHT-M-itemColW-extrasW) / estados.length : 0;
   // xs: bordes de columna, en orden ÍTEM | estado(s) | Cantidad | Vencimiento | Observaciones
   // (mismo orden que los checkboxes del constructor) — cada bloque opcional se agrega
@@ -12033,6 +12267,7 @@ function dibujarSeccionChecklistPDF(doc, y, seccion, respuestas, ctx){
   const xs = [M, M+itemColW];
   for(let i=0;i<estados.length;i++) xs.push(M+itemColW+estadoColW*(i+1));
   let xCursor = xs[xs.length-1];
+  if(conMarca){ xCursor += marcaColW; xs.push(xCursor); }
   if(conCant){ xCursor += cantColW; xs.push(xCursor); }
   if(conVence){ xCursor += venceColW; xs.push(xCursor); }
   if(conObs){ xCursor += obsColW; xs.push(xCursor); }
@@ -12045,18 +12280,31 @@ function dibujarSeccionChecklistPDF(doc, y, seccion, respuestas, ctx){
     doc.setFont("helvetica","bold"); doc.setFontSize(9.5); doc.setTextColor(255,255,255);
     doc.text(pdfTexto(seccion.titulo||""), M+3, yy+5);
     yy += 7;
-    const h=7;
+    // Encabezados con ajuste de línea propio (splitTextToSize): si una columna quedó
+    // angosta y su texto no cabe en una línea (ej. "NO CUMPLE" en 22mm), pasa a una 2ª
+    // línea dentro de su propia columna en vez de desbordarse sobre la vecina.
+    doc.setFont("helvetica","bold"); doc.setFontSize(6.6);
+    const celdas = [{txt:'ÍTEM', x0:xs[0], x1:xs[1], align:'left'}];
+    estados.forEach((e,i)=> celdas.push({txt:(e||'').toUpperCase(), x0:xs[i+1], x1:xs[i+2], align:'center'}));
+    let idxCab = idxExtrasInicio;
+    if(conMarca){ celdas.push({txt:'MARCA/MODELO', x0:xs[idxCab], x1:xs[idxCab+1], align:'center'}); idxCab++; }
+    if(conCant){ celdas.push({txt:'CANT.', x0:xs[idxCab], x1:xs[idxCab+1], align:'center'}); idxCab++; }
+    if(conVence){ celdas.push({txt:'VENCE', x0:xs[idxCab], x1:xs[idxCab+1], align:'center'}); idxCab++; }
+    if(conObs){ celdas.push({txt:'OBSERVACIONES', x0:xs[idxCab], x1:xs[idxCab+1], align:'center'}); idxCab++; }
+    const wrapCeldas = celdas.map(c=> doc.splitTextToSize(pdfTexto(c.txt), (c.x1-c.x0)-3));
+    const maxLineas = Math.max(1, ...wrapCeldas.map(w=>w.length));
+    const h = Math.max(7, maxLineas*3.1+3.6);
     doc.setFillColor(238,241,248); doc.rect(M,yy,RIGHT-M,h,"F");
     doc.setDrawColor(150,160,190);
     xs.forEach(x=>doc.line(x,yy,x,yy+h));
     doc.rect(M,yy,RIGHT-M,h);
-    doc.setFont("helvetica","bold"); doc.setFontSize(6.6); doc.setTextColor(40,40,60);
-    doc.text("ÍTEM", M+3, yy+4.6);
-    estados.forEach((e,i)=> doc.text(pdfTexto(e.toUpperCase()), (xs[i+1]+xs[i+2])/2, yy+4.6, {align:"center"}));
-    let idx = idxExtrasInicio;
-    if(conCant){ doc.text("CANT.", (xs[idx]+xs[idx+1])/2, yy+4.6, {align:"center"}); idx++; }
-    if(conVence){ doc.text("VENCE", (xs[idx]+xs[idx+1])/2, yy+4.6, {align:"center"}); idx++; }
-    if(conObs){ doc.text("OBSERVACIONES", (xs[idx]+xs[idx+1])/2, yy+4.6, {align:"center"}); idx++; }
+    doc.setTextColor(40,40,60);
+    celdas.forEach((c,i)=>{
+      const lineas = wrapCeldas[i];
+      const startY = yy + (h-(lineas.length-1)*3.1)/2 + 1.6;
+      if(c.align==='left') doc.text(lineas, c.x0+3, startY);
+      else doc.text(lineas, (c.x0+c.x1)/2, startY, {align:"center"});
+    });
     return yy+h;
   }
 
@@ -12066,13 +12314,15 @@ function dibujarSeccionChecklistPDF(doc, y, seccion, respuestas, ctx){
   for(const it of (seccion.items||[])){
     const r = respuestas[it.id] || {};
     let idx = idxExtrasInicio;
+    const marcaIdx = conMarca ? idx++ : null;
     const cantIdx = conCant ? idx++ : null;
     const venceIdx = conVence ? idx++ : null;
     const obsIdx = conObs ? idx++ : null;
     doc.setFont("helvetica","normal"); doc.setFontSize(7.4);
     const wrappedItem = doc.splitTextToSize(pdfTexto(it.texto||''), itemColW-4);
+    const wrappedMarca = marcaIdx!=null ? doc.splitTextToSize(pdfTexto(r.marca_modelo||''), (xs[marcaIdx+1]-xs[marcaIdx])-4) : [];
     const wrappedObs = obsIdx!=null ? doc.splitTextToSize(pdfTexto(r.observaciones||''), (xs[obsIdx+1]-xs[obsIdx])-4) : [];
-    const rowH = Math.max(7, Math.max(wrappedItem.length, wrappedObs.length)*3.4 + 3.5);
+    const rowH = Math.max(7, Math.max(wrappedItem.length, wrappedMarca.length, wrappedObs.length)*3.4 + 3.5);
     if(y+rowH > ctx.FOOTER_TOP){ y = ctx.nuevaPagina(); y = tituloYCab(y); }
     doc.setDrawColor(180,188,210);
     xs.forEach(x=>doc.line(x,y,x,y+rowH));
@@ -12086,6 +12336,7 @@ function dibujarSeccionChecklistPDF(doc, y, seccion, respuestas, ctx){
         doc.setFont("helvetica","normal"); doc.setFontSize(7.4);
       }
     });
+    if(marcaIdx!=null && wrappedMarca.length){ doc.text(wrappedMarca, xs[marcaIdx]+2, y+4.4); }
     if(cantIdx!=null && r.cantidad!=null && r.cantidad!==''){ doc.text(pdfTexto(String(r.cantidad)), (xs[cantIdx]+xs[cantIdx+1])/2, y+rowH/2+1.4, {align:"center"}); }
     if(venceIdx!=null && r.fecha_vencimiento){ doc.text(fmtDate(r.fecha_vencimiento), (xs[venceIdx]+xs[venceIdx+1])/2, y+rowH/2+1.4, {align:"center"}); }
     if(obsIdx!=null && wrappedObs.length){ doc.text(wrappedObs, xs[obsIdx]+2, y+4.4); }
