@@ -10408,7 +10408,7 @@ async function guardarFormatoInsp(){
     if(error){ if(btn){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar cambios`; } toast("No se pudo guardar: "+error.message,"err"); return; }
     const enActual = INSPECCIONES.enlaces.find(e=>e.id===enlaceEditorId);
     const tieneBancoSinAsignar = formatoEditorState.firmantes.some(f=>f.origen==='banco' && !((enActual?.firmantes_banco||{})[f.id] || (f.id==='responsable' && enActual?.predeterminado_id)));
-    toast("Cambios guardados"+(tieneBancoSinAsignar?" — configura la firma guardada que falte desde \"Cambiar firma(s) guardada(s)\"":""),"ok");
+    toast("Cambios guardados"+(tieneBancoSinAsignar?" — configura la firma guardada que falte desde \"Firmantes\"":""),"ok");
     location.hash = "#/inspecciones";
     return;
   }
@@ -10545,7 +10545,7 @@ async function renderInspeccionesAdmin(silent){
     renderInspeccionesAdmin();
   };
   const bgc = document.getElementById("btnGestionContratosInsp"); if(bgc) bgc.onclick = abrirGestionContratosInsp;
-  const bhi = document.getElementById("btnHistorialInsp"); if(bhi) bhi.onclick = abrirHistorialInspecciones;
+  const bhi = document.getElementById("btnHistorialInsp"); if(bhi) bhi.onclick = ()=> abrirHistorialInspecciones();
   const bcf = document.getElementById("btnCrearFormatoInsp"); if(bcf) bcf.onclick = ()=>{ location.hash = "#/inspecciones/formato/nueva"; };
   const bfirmas = document.getElementById("btnFirmasInsp"); if(bfirmas) bfirmas.onclick = abrirPredeterminadosInsp;
   const bherr = document.getElementById("btnHerramientasInsp"); if(bherr) bherr.onclick = abrirHerramientasInsp;
@@ -10576,7 +10576,6 @@ function renderEnlacesInspPorTipo(tipo, hostId){
       const titulo = herr ? herr.nombre : (en.nombre || en.formato_nombre || 'Enlace');
       const n = INSPECCIONES.inspecciones.filter(i=>i.enlace_id===en.id).length;
       const firmantesEn = Array.isArray(en.firmantes) ? en.firmantes : FIRMANTES_DEFAULT_INSP;
-      const bancoSlots = firmantesEn.filter(x=>x.origen==='banco');
       return `
         <div class="lcard">
           <div class="lcard-top">
@@ -10600,7 +10599,7 @@ function renderEnlacesInspPorTipo(tipo, hostId){
               ${puedeEscribir()?`<button class="icon-btn" title="Editar nombre" data-eit="nombre" data-id="${en.id}">${I.tag}</button>
               <button class="icon-btn" title="Editar" data-eit="editar" data-id="${en.id}">${I.pen}</button>
               <button class="icon-btn" title="Cambiar herramienta" data-eit="herramienta" data-id="${en.id}">${I.catalogo}</button>
-              ${bancoSlots.length?`<button class="icon-btn" title="Cambiar firma(s) guardada(s)" data-eit="firma" data-id="${en.id}">${I.firma}</button>`:''}
+              ${firmantesEn.length?`<button class="icon-btn" title="Firmantes" data-eit="firma" data-id="${en.id}">${I.firma}</button>`:''}
               <button class="icon-btn" title="${en.activo?'Desactivar enlace':'Activar enlace'}" data-eit="toggle" data-id="${en.id}">${en.activo?I.lock:I.check}</button>
               <button class="icon-btn danger" title="Eliminar enlace" data-eit="eliminar" data-id="${en.id}">${I.trash}</button>`:''}
             </div>
@@ -10805,34 +10804,48 @@ async function duplicarFormatoInsp(id){
   toast("Formato duplicado — asígnale su propio enlace cuando quieras","ok");
 }
 
+/* Muestra TODOS los firmantes del formulario (no solo los de banco), identificados
+   por el rol que el usuario les puso en el constructor — para los de "firma
+   guardada" deja elegir cuál del banco del contrato; los de "firma en vivo" solo
+   se informan (los firma quien llena el formulario, no hay nada que asignar). El
+   botón que abre esto ya no aparece si el formato no tiene NINGÚN firmante. */
 function cambiarFirmaEnlaceInsp(enlaceId){
   const en = INSPECCIONES.enlaces.find(x=>x.id===enlaceId); if(!en) return;
   const firmantesEn = Array.isArray(en.firmantes) ? en.firmantes : FIRMANTES_DEFAULT_INSP;
+  if(!firmantesEn.length){ toast("Este formulario no tiene firmantes configurados","err"); return; }
   const bancoSlots = firmantesEn.filter(x=>x.origen==='banco');
   const predets = INSPECCIONES.predeterminados;
-  if(!bancoSlots.length){ toast("Este formato no tiene firmantes de banco","err"); return; }
-  if(!predets.length){ toast('No hay firmas guardadas — créala primero en "Firmas"',"err"); return; }
-  openModal(`<div class="modal" style="max-width:440px">
-    <div class="modal-head"><div><h2>Cambiar ${bancoSlots.length>1?'firmas guardadas':'firma guardada'}</h2><p>Se usará en las próximas inspecciones registradas con este enlace.</p></div>
+  const hayQueAsignar = bancoSlots.length && predets.length;
+  openModal(`<div class="modal" style="max-width:460px">
+    <div class="modal-head"><div><h2>Firmantes de este formulario</h2><p>Quién firma cada campo, según los roles que le pusiste en el formato.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
-      ${bancoSlots.map(slot=>{
-        const actual = (en.firmantes_banco||{})[slot.id] || (slot.id==='responsable' ? en.predeterminado_id : null);
-        return `<div class="field"><label>Firma de "${esc(slot.rol)}" *</label>
-          <select data-cf-banco="${esc(slot.id)}">${predets.map(p=>`<option value="${p.id}" ${p.id===actual?'selected':''}>${esc(p.nombre)} — ${esc(p.responsable_nombre)}</option>`).join('')}</select></div>`;
+      ${firmantesEn.map(slot=>{
+        if(slot.origen==='banco'){
+          const actual = (en.firmantes_banco||{})[slot.id] || (slot.id==='responsable' ? en.predeterminado_id : null);
+          if(!predets.length){
+            return `<div class="field"><label>${esc(slot.rol)} <span class="tipo">Firma guardada</span></label>
+              <p class="muted-sm" style="margin:4px 0 0">Aún no tienes firmas guardadas — créala primero en "Firmas".</p></div>`;
+          }
+          return `<div class="field"><label>${esc(slot.rol)} <span class="tipo">Firma guardada</span></label>
+            <select data-cf-banco="${esc(slot.id)}">${predets.map(p=>`<option value="${p.id}" ${p.id===actual?'selected':''}>${esc(p.nombre)} — ${esc(p.responsable_nombre)}</option>`).join('')}</select></div>`;
+        }
+        return `<div class="field"><label>${esc(slot.rol)} <span class="tipo">Firma en vivo</span></label>
+          <p class="muted-sm" style="margin:4px 0 0">La firma quien llena el formulario — no requiere asignación.</p></div>`;
       }).join('')}
     </div>
     <div class="modal-foot">
-      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" id="btnGuardarFirmaEnlace">${I.check} Guardar</button>
+      <button class="btn btn-ghost" onclick="closeModal()">${hayQueAsignar?'Cancelar':'Cerrar'}</button>
+      ${hayQueAsignar?`<button class="btn btn-primary" id="btnGuardarFirmaEnlace">${I.check} Guardar</button>`:''}
     </div></div>`);
-  document.getElementById('btnGuardarFirmaEnlace').onclick = async ()=>{
+  const btnG = document.getElementById('btnGuardarFirmaEnlace');
+  if(btnG) btnG.onclick = async ()=>{
     const firmantes_banco = { ...(en.firmantes_banco||{}) };
     document.querySelectorAll('[data-cf-banco]').forEach(sel=>{ firmantes_banco[sel.dataset.cfBanco] = sel.value; });
     const predeterminado_id = firmantes_banco['responsable'] || en.predeterminado_id || null;
-    const btn = document.getElementById('btnGuardarFirmaEnlace'); btn.disabled=true; btn.innerHTML="Guardando…";
+    btnG.disabled=true; btnG.innerHTML="Guardando…";
     const { error } = await sb.from("insp_enlaces").update({ firmantes_banco, predeterminado_id }).eq("id", enlaceId);
-    if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
+    if(error){ btnG.disabled=false; btnG.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
     await loadInspeccionesState();
     toast("Firma actualizada","ok");
     closeModal();
@@ -10880,7 +10893,7 @@ async function abrirDetalleEnlaceInsp(enlaceId){
 /* ---------- Crear formulario: se elige una plantilla de "Formatos" (filtrada por tipo)
    y se copia completa a un enlace nuevo — nada de firmas acá. Quién firma se resuelve
    DESPUÉS, editando el formulario ya creado (agregar/quitar firmantes) y, para los de
-   firma guardada, con "Cambiar firma(s) guardada(s)" en su tarjeta — así crear un
+   firma guardada, con "Firmantes" en su tarjeta — así crear un
    formulario es un solo paso: elegir la plantilla. */
 function abrirNuevoEnlaceInsp(tipoFiltro){
   if(contratoInspActualId==='todos'){ toast("Elige un contrato específico primero","err"); return; }
@@ -10905,22 +10918,31 @@ function abrirNuevoEnlaceInsp(tipoFiltro){
     const selHerr = document.getElementById('neHerramienta');
     const herramienta_id = (selHerr && selHerr.value) || null;
     btn.disabled = true; btn.innerHTML = "Creando…";
-    // Tomar un formato = copiarlo completo al enlace, no referenciarlo — desde aquí queda
-    // 100% independiente de la plantilla (editable sin afectarla, sobrevive si se borra).
-    const { data: full, error: errFull } = await sb.from("insp_formatos").select("nombre,tiene_fotos,estructura,firmantes,color_acento,mostrar_cumplimiento,tipo,imagen_pdf").eq("id",formato_id).maybeSingle();
-    if(errFull || !full){ btn.disabled=false; btn.innerHTML=`${I.check} Crear formulario`; toast("No se pudo cargar el formato elegido","err"); return; }
-    // Sin campo de etiqueta al crear: el formulario nace con el mismo nombre que tenía
-    // la plantilla en "Formatos" (nombre queda null, y la tarjeta cae al fallback
-    // formato_nombre) — si el usuario quiere otro nombre, lo cambia después con
-    // "Editar nombre" en la tarjeta.
-    const { data, error } = await sb.from("insp_enlaces").insert({
-      contrato_id: contratoInspActualId, formato_id, predeterminado_id: null, firmantes_banco: {}, herramienta_id, nombre: null,
-      formato_nombre: full.nombre, tiene_fotos: full.tiene_fotos, estructura: full.estructura, firmantes: full.firmantes,
-      color_acento: full.color_acento, mostrar_cumplimiento: full.mostrar_cumplimiento, tipo: full.tipo, imagen_pdf: full.imagen_pdf
-    }).select().single();
-    if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Crear formulario`; toast("No se pudo crear: "+error.message,"err"); return; }
-    await loadInspeccionesState();
-    mostrarEnlaceCreadoInsp(data.id);
+    // Bloqueo de pantalla a prueba de clic (sección 8.1) mientras se copia el formato y se
+    // crea el enlace — son 2 idas y vueltas al servidor, sin esto el usuario podía cerrar
+    // el modal o volver a hacer clic durante ese hueco.
+    bloquear("Creando formulario…");
+    try{
+      // Tomar un formato = copiarlo completo al enlace, no referenciarlo — desde aquí queda
+      // 100% independiente de la plantilla (editable sin afectarla, sobrevive si se borra).
+      const { data: full, error: errFull } = await sb.from("insp_formatos").select("nombre,tiene_fotos,estructura,firmantes,color_acento,mostrar_cumplimiento,tipo,imagen_pdf").eq("id",formato_id).maybeSingle();
+      if(errFull || !full){ toast("No se pudo cargar el formato elegido","err"); return; }
+      // Sin campo de etiqueta al crear: el formulario nace con el mismo nombre que tenía
+      // la plantilla en "Formatos" (nombre queda null, y la tarjeta cae al fallback
+      // formato_nombre) — si el usuario quiere otro nombre, lo cambia después con
+      // "Editar nombre" en la tarjeta.
+      const { data, error } = await sb.from("insp_enlaces").insert({
+        contrato_id: contratoInspActualId, formato_id, predeterminado_id: null, firmantes_banco: {}, herramienta_id, nombre: null,
+        formato_nombre: full.nombre, tiene_fotos: full.tiene_fotos, estructura: full.estructura, firmantes: full.firmantes,
+        color_acento: full.color_acento, mostrar_cumplimiento: full.mostrar_cumplimiento, tipo: full.tipo, imagen_pdf: full.imagen_pdf
+      }).select().single();
+      if(error){ toast("No se pudo crear: "+error.message,"err"); return; }
+      await loadInspeccionesState();
+      mostrarEnlaceCreadoInsp(data.id);
+    } finally {
+      desbloquear();
+      btn.disabled = false; btn.innerHTML = `${I.check} Crear formulario`;
+    }
   };
 }
 
