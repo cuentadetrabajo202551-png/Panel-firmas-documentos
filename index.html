@@ -10465,9 +10465,17 @@ async function guardarFormatoInsp(){
 }
 
 /* ---------- Panel principal ---------- */
-async function renderInspeccionesAdmin(silent){
+async function renderInspeccionesAdmin(modo){
+  // modo: undefined/false → bloqueo visible + recarga (navegación normal a la sección);
+  // true → recarga silenciosa (auto-refresco cada 20s, o tras guardar algo);
+  // 'norecarga' → repinta con lo que YA está en INSPECCIONES.* sin ir a Supabase — para
+  // cuando se sabe que el estado quedó fresco un instante antes (ej. justo después de
+  // crear un enlace, loadInspeccionesState() ya se corrió una vez; volver a pedirlo todo
+  // al cerrar el modal de confirmación era una segunda recarga completa redundante, y con
+  // el historial de inspecciones creciendo se sentía como 10s de "nada pasa" sin aviso).
   const scrollY = window.scrollY;
-  if(silent){ await loadInspeccionesState(); }
+  if(modo==='norecarga'){ /* usa el estado ya cargado, sin fetch */ }
+  else if(modo){ await loadInspeccionesState(); }
   else { bloquear("Cargando Inspecciones…"); try{ await loadInspeccionesState(); } finally{ desbloquear(); } }
 
   if(!INSPECCIONES.contratos.length){
@@ -10599,8 +10607,8 @@ async function renderInspeccionesAdmin(silent){
     renderEnlacesInspPorTipo('inspeccion', 'enlacesInspInsp');
   }
   renderFormatosInspGrid();
-  if(silent) window.scrollTo(0, scrollY);
-  if(!silent){ if(_inspTimer) clearInterval(_inspTimer); _inspTimer = setInterval(_tickInsp, 20000); }
+  if(modo) window.scrollTo(0, scrollY);
+  if(!modo){ if(_inspTimer) clearInterval(_inspTimer); _inspTimer = setInterval(_tickInsp, 20000); }
 }
 
 /* ---------- Grillas de enlaces por tipo (preoperacional/inspección), y hoja de vida ---------- */
@@ -10871,7 +10879,7 @@ async function toggleActivoEnlaceInsp(id){
   const { error } = await sb.from("insp_enlaces").update({ activo: !en.activo }).eq("id", id);
   if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
   await loadInspeccionesState();
-  renderInspeccionesAdmin(true);
+  renderInspeccionesAdmin('norecarga');
   toast(en.activo?"Enlace desactivado":"Enlace activado","ok");
 }
 
@@ -10899,7 +10907,7 @@ function renombrarEnlaceInsp(id){
     await loadInspeccionesState();
     toast("Nombre actualizado","ok");
     closeModal();
-    renderInspeccionesAdmin(true);
+    renderInspeccionesAdmin('norecarga');
   };
 }
 
@@ -10920,7 +10928,7 @@ function eliminarEnlaceInsp(id){
     await loadInspeccionesState();
     toast("Enlace eliminado","ok");
     closeModal();
-    renderInspeccionesAdmin(true);
+    renderInspeccionesAdmin('norecarga');
   };
 }
 
@@ -11010,7 +11018,7 @@ function cambiarFirmaEnlaceInsp(enlaceId){
     await loadInspeccionesState();
     toast("Firma actualizada","ok");
     closeModal();
-    renderInspeccionesAdmin(true);
+    renderInspeccionesAdmin('norecarga');
   };
 }
 
@@ -11129,7 +11137,7 @@ function cambiarHerramientaEnlaceInsp(enlaceId){
     await loadInspeccionesState();
     toast("Herramienta actualizada","ok");
     closeModal();
-    renderInspeccionesAdmin(true);
+    renderInspeccionesAdmin('norecarga');
   };
 }
 
@@ -11146,7 +11154,7 @@ function mostrarEnlaceCreadoInsp(enlaceId){
       <button class="btn btn-ghost" id="btnQrEnlaceCreado">${I.qr} QR</button>
       <button class="btn btn-primary" id="btnCopiarEnlaceCreado">${I.link} Copiar enlace</button>
     </div></div>`);
-  document.getElementById('btnCerrarEnlaceCreado').onclick = ()=>{ closeModal(); renderInspeccionesAdmin(true); };
+  document.getElementById('btnCerrarEnlaceCreado').onclick = ()=>{ closeModal(); renderInspeccionesAdmin('norecarga'); };
   document.getElementById('btnCopiarEnlaceCreado').onclick = ()=> copyText(url, "Enlace copiado");
   document.getElementById('btnQrEnlaceCreado').onclick = ()=> mostrarQR(url, "Enlace de inspección");
 }
@@ -11851,7 +11859,7 @@ function eliminarInspeccion(id, volver){
     await loadInspeccionesState();
     toast("Inspección eliminada","ok");
     closeModal();
-    if(!volver) renderInspeccionesAdmin(true);
+    if(!volver) renderInspeccionesAdmin('norecarga');
   };
 }
 
