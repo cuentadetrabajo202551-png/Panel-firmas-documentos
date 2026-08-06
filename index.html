@@ -460,6 +460,9 @@ table.dt tr:hover td{background:#fafbfe}
 .grid-insp .card-actions .icon-btn{width:30px;height:30px;border-radius:8px;flex:none}
 .grid-insp .card-actions .icon-btn svg{width:15px;height:15px}
 .grid-insp .attn{flex:none}
+.herr-foto{margin:-20px -20px 0 -20px;height:160px;background-size:cover;background-position:center;border-radius:var(--radius) var(--radius) 0 0}
+.herr-foto-vacia{display:flex;align-items:center;justify-content:center;background:var(--brand-soft);color:var(--brand)}
+.herr-foto-vacia svg{width:44px;height:44px}
 
 /* ---------- Public form ---------- */
 .pub-wrap{max-width:660px;margin:0 auto;padding:30px 20px 80px}
@@ -2493,10 +2496,21 @@ async function loadDocsState(){
   DOCSTATE.firmantes  = f.data || [];
 }
 
+// Los 5 refrescos silenciosos de abajo reemplazan TODO el HTML del panel — si hay un
+// <select> nativo con foco (el usuario tiene su desplegable de "Contrato activo" abierto,
+// por ejemplo), reemplazar ese nodo lo cierra de golpe sin que el usuario lo haya
+// cerrado. No hay forma de "reabrir" un <select> nativo por código, así que la única
+// solución real es NO tocar el DOM mientras eso está pasando — el refresco se salta este
+// ciclo y lo vuelve a intentar 20s después (nunca detiene el timer).
+function hayDropdownAbierto(){
+  const el = document.activeElement;
+  return !!(el && el.tagName === 'SELECT');
+}
 let _docsTimer = null;
 function _tickDocs(){
   if(location.hash!=="#/docs"){ if(_docsTimer){ clearInterval(_docsTimer); _docsTimer=null; } return; }
   if(document.hidden) return;              // no refrescar en segundo plano
+  if(hayDropdownAbierto()) return;
   renderDocsAdmin(true);                   // refresco silencioso (sin reloj de arena)
 }
 /* Mismo patrón que _tickDocs, replicado para los otros 3 módulos (Asistencia,
@@ -2506,24 +2520,28 @@ let _asisTimer = null;
 function _tickAsis(){
   if(!(location.hash===""||location.hash==="#"||location.hash==="#/")){ if(_asisTimer){ clearInterval(_asisTimer); _asisTimer=null; } return; }
   if(document.hidden) return;
+  if(hayDropdownAbierto()) return;
   loadState().then(()=> renderAdmin(true));
 }
 let _dotTimer = null;
 function _tickDot(){
   if(location.hash!=="#/dotacion"){ if(_dotTimer){ clearInterval(_dotTimer); _dotTimer=null; } return; }
   if(document.hidden) return;
+  if(hayDropdownAbierto()) return;
   renderDotacionAdmin(true);
 }
 let _dtlTimer = null;
 function _tickDtl(){
   if(location.hash!=="#/dotacionlegal"){ if(_dtlTimer){ clearInterval(_dtlTimer); _dtlTimer=null; } return; }
   if(document.hidden) return;
+  if(hayDropdownAbierto()) return;
   renderDtlAdmin(true);
 }
 let _inspTimer = null;
 function _tickInsp(){
   if(location.hash!=="#/inspecciones"){ if(_inspTimer){ clearInterval(_inspTimer); _inspTimer=null; } return; }
   if(document.hidden) return;
+  if(hayDropdownAbierto()) return;
   renderInspeccionesAdmin(true);
 }
 
@@ -9735,7 +9753,7 @@ async function loadInspeccionesState(){
   // Herramientas/equipos del catálogo: esa sí sigue siendo POR CONTRATO (a diferencia de
   // Formatos/Firmas) — cada contrato tiene sus propios equipos físicos.
   if(contratoInspActualId && contratoInspActualId!=='todos'){
-    const { data:hr, error:ehr } = await sb.from("insp_herramientas").select("id,contrato_id,nombre,codigo,activo").eq("contrato_id", contratoInspActualId).order("nombre",{ascending:true});
+    const { data:hr, error:ehr } = await sb.from("insp_herramientas").select("id,contrato_id,nombre,codigo,activo,fabricante,modelo,fecha_adquisicion,puesta_en_servicio,ubicacion,seccion,caracteristicas_tecnicas,funciones,epp_requerido,medidas_preventivas,riesgos,foto").eq("contrato_id", contratoInspActualId).order("nombre",{ascending:true});
     if(ehr) console.warn(ehr);
     INSPECCIONES.herramientas = hr || [];
   } else {
@@ -9836,6 +9854,7 @@ function abrirFormContratoInsp(id, alGuardar, comoRaiz){
 
 /* ---------- Constructor de formatos: secciones info / checklist / tabla_dinamica ---------- */
 let formatoEditorId = null;
+let _fotosMaxDebounce = null; // ver wireEditoresSeccionInsp — evita re-render síncrono en cada paso del spinner de "máximo de fotos"
 let enlaceEditorId = null; // si no es null, el constructor edita un insp_enlaces (activo en uso), no un insp_formatos (plantilla)
 let formatoEditorState = null; // { nombre, activo, tiene_fotos, estructura:[...] }
 
@@ -10142,6 +10161,7 @@ function renderFirmantesFormatoInsp(){
     return `
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:${vinculable?'2px':'6px'};flex-wrap:wrap">
       <input data-firmante-rol="${i}" value="${esc(f.rol||'')}" placeholder="Rol (ej. Inspector, Supervisor, Cliente)" style="flex:1;min-width:180px;padding:6px 8px;border:1px solid var(--line);border-radius:6px">
+      ${f.origen==='fresco'?`<input data-firmante-cargo="${i}" value="${esc(f.cargo||'')}" placeholder="Cargo (opcional, sale bajo la firma)" style="flex:1;min-width:180px;padding:6px 8px;border:1px solid var(--line);border-radius:6px">`:''}
       <select data-firmante-origen="${i}" style="padding:6px 8px;border:1px solid var(--line);border-radius:6px">
         <option value="fresco" ${f.origen==='fresco'?'selected':''}>Firma en vivo (en el enlace)</option>
         <option value="banco" ${f.origen==='banco'?'selected':''}>Firma guardada (banco de firmas)</option>
@@ -10157,6 +10177,9 @@ function renderFirmantesFormatoInsp(){
 
   host.querySelectorAll('[data-firmante-rol]').forEach(el=>{
     el.oninput = (e)=>{ formatoEditorState.firmantes[+el.dataset.firmanteRol].rol = e.target.value; };
+  });
+  host.querySelectorAll('[data-firmante-cargo]').forEach(el=>{
+    el.oninput = (e)=>{ formatoEditorState.firmantes[+el.dataset.firmanteCargo].cargo = e.target.value || null; };
   });
   host.querySelectorAll('[data-firmante-origen]').forEach(el=>{
     el.onchange = (e)=>{ formatoEditorState.firmantes[+el.dataset.firmanteOrigen].origen = e.target.value; renderFirmantesFormatoInsp(); };
@@ -10388,10 +10411,29 @@ function wireEditoresSeccionInsp(host){
   const st = formatoEditorState;
   // --- fotos ---
   host.querySelectorAll('[data-fotos-max]').forEach(el=>{
-    el.onchange = (e)=>{
+    // Las flechitas nativas del <input type=number>, si se dejan presionadas, disparan
+    // "input"/"change" en ráfaga acelerada — como antes cada disparo hacía un
+    // renderInspFormBody() SÍNCRONO (reconstruye toda la vista previa), el hilo principal
+    // se atascaba procesando esa cola y, al liberarse, la disparaba de golpe: se sentía
+    // como que el número "se pegaba" y luego subía/bajaba solo, muy rápido. Ahora
+    // "oninput" solo guarda el estado (barato) y pide la vista previa con debounce —
+    // nunca reescribe el .value mientras el usuario sigue interactuando, para no
+    // interferir con el manejo nativo del spinner; "onblur" hace el ajuste final (clamp
+    // + corregir lo que se ve) una sola vez, al terminar.
+    el.oninput = (e)=>{
+      const i = +el.dataset.fotosMax;
+      const raw = parseInt(e.target.value,10);
+      if(isNaN(raw)) return;
+      st.estructura[i].max = Math.max(1, Math.min(30, raw));
+      clearTimeout(_fotosMaxDebounce);
+      _fotosMaxDebounce = setTimeout(renderInspFormBody, 200);
+    };
+    el.onblur = (e)=>{
       const i = +el.dataset.fotosMax;
       const v = Math.max(1, Math.min(30, parseInt(e.target.value,10)||5));
-      st.estructura[i].max = v; e.target.value = v;
+      st.estructura[i].max = v;
+      if(String(v) !== e.target.value) e.target.value = v;
+      clearTimeout(_fotosMaxDebounce);
       renderInspFormBody();
     };
   });
@@ -10569,7 +10611,7 @@ async function renderInspeccionesAdmin(modo){
   // había elegido (inspSubtabActiva) para que un refresco silencioso (cada 20s) no lo
   // regrese siempre a la primera; solo se resetea si esa pestaña ya no aplica (ej. pasó
   // a "Todos los contratos", donde solo existe "Formatos").
-  const tabsDisponibles = enTodos ? ['formatos'] : ['preop','insp','mantenimiento','inventario','hv','formatos'];
+  const tabsDisponibles = enTodos ? ['formatos'] : ['preop','insp','mantenimiento','inventario','hv','formatos','herramientas'];
   const tabInspActiva = tabsDisponibles.includes(inspSubtabActiva) ? inspSubtabActiva : tabsDisponibles[0];
 
   document.getElementById("app").innerHTML = `
@@ -10602,7 +10644,6 @@ async function renderInspeccionesAdmin(modo){
           <button class="action-card" id="btnHistorialInsp" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.cal}</div><span class="ac-title">Historial de inspecciones</span><span class="ac-chevron">›</span></button>
           ${puedeEscribir()?`<button class="action-card" id="btnCrearFormatoInsp"><div class="ac-ic">${I.plus}</div><span class="ac-title">Crear formato</span><span class="ac-chevron">›</span></button>`:''}
           ${puedeEscribir()?`<button class="action-card" id="btnFirmasInsp"><div class="ac-ic">${I.firma}</div><span class="ac-title">Firmas</span><span class="ac-chevron">›</span></button>`:''}
-          ${puedeEscribir()?`<button class="action-card" id="btnHerramientasInsp" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.catalogo||I.box}</div><span class="ac-title">Herramientas y equipos</span><span class="ac-chevron">›</span></button>`:''}
         </div>
       </div>
 
@@ -10613,7 +10654,8 @@ async function renderInspeccionesAdmin(modo){
             <button type="button" class="subtab-item ${tabInspActiva==='insp'?'active':''}" data-subtab="insp">Inspecciones</button>
             <button type="button" class="subtab-item ${tabInspActiva==='mantenimiento'?'active':''}" data-subtab="mantenimiento">Mantenimiento</button>
             <button type="button" class="subtab-item ${tabInspActiva==='inventario'?'active':''}" data-subtab="inventario">Inventario</button>
-            <button type="button" class="subtab-item ${tabInspActiva==='hv'?'active':''}" data-subtab="hv">Hoja de vida</button>`:''}
+            <button type="button" class="subtab-item ${tabInspActiva==='hv'?'active':''}" data-subtab="hv">Hoja de vida</button>
+            <button type="button" class="subtab-item ${tabInspActiva==='herramientas'?'active':''}" data-subtab="herramientas">Herramientas y equipos</button>`:''}
             <button type="button" class="subtab-item ${tabInspActiva==='formatos'?'active':''}" data-subtab="formatos">Formatos</button>
           </div>
           <div class="subtab-content">
@@ -10644,6 +10686,10 @@ async function renderInspeccionesAdmin(modo){
                 </select>
                 <button class="btn btn-primary btn-sm" id="btnVerHojaVidaInsp" ${INSPECCIONES.herramientas.length?'':'disabled'}>${I.eye} Ver hoja de vida</button>
               </div>
+            </div>
+            <div class="subtab-pane ${tabInspActiva==='herramientas'?'active':''}" data-pane="herramientas">
+              ${puedeEscribir()?`<button class="btn btn-ghost btn-sm" id="btnNuevaHerramientaInsp" style="margin-bottom:14px">${I.plus} Nueva herramienta</button>`:''}
+              <div id="herramientasInspGrid"></div>
             </div>`:''}
             <div class="subtab-pane ${tabInspActiva==='formatos'?'active':''}" data-pane="formatos">
               <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
@@ -10686,7 +10732,6 @@ async function renderInspeccionesAdmin(modo){
   const bhi = document.getElementById("btnHistorialInsp"); if(bhi) bhi.onclick = ()=> abrirHistorialInspecciones();
   const bcf = document.getElementById("btnCrearFormatoInsp"); if(bcf) bcf.onclick = ()=>{ location.hash = "#/inspecciones/formato/nueva"; };
   const bfirmas = document.getElementById("btnFirmasInsp"); if(bfirmas) bfirmas.onclick = abrirPredeterminadosInsp;
-  const bherr = document.getElementById("btnHerramientasInsp"); if(bherr) bherr.onclick = abrirHerramientasInsp;
   const bvhv = document.getElementById("btnVerHojaVidaInsp");
   if(bvhv) bvhv.onclick = ()=>{
     const id = document.getElementById('selHojaVidaInsp').value;
@@ -10697,10 +10742,12 @@ async function renderInspeccionesAdmin(modo){
     const id = document.getElementById('selMantenimientoInsp').value;
     if(id) abrirMantenimientosHerramientaInsp(id);
   };
+  const bnh = document.getElementById("btnNuevaHerramientaInsp"); if(bnh) bnh.onclick = ()=> abrirFormHerramientaInsp(null);
   if(!enTodos){
     renderEnlacesInspPorTipo('preoperacional', 'enlacesInspPreop');
     renderEnlacesInspPorTipo('inspeccion', 'enlacesInspInsp');
     renderEnlacesInspPorTipo('inventario', 'enlacesInspInventario');
+    renderHerramientasInspGrid();
   }
   renderFormatosInspGrid();
   if(modo) window.scrollTo(0, scrollY);
@@ -10765,7 +10812,7 @@ function renderEnlacesInspPorTipo(tipo, hostId){
   host.querySelectorAll('[data-eit]').forEach(b=>{
     b.onclick = ()=>{
       const id = b.dataset.id, act = b.dataset.eit;
-      if(act==='registrar') location.hash = "#/inspeccion/"+id;
+      if(act==='registrar') window.open(linkInspeccion(id), '_blank');
       else if(act==='ver') abrirDetalleEnlaceInsp(id);
       else if(act==='link') copyText(linkInspeccion(id), "Enlace de inspección copiado");
       else if(act==='qr') mostrarQR(linkInspeccion(id), "Enlace de inspección");
@@ -10779,6 +10826,50 @@ function renderEnlacesInspPorTipo(tipo, hostId){
   });
   const bn = host.querySelector('[data-nuevo-enlace-tipo]');
   if(bn) bn.onclick = ()=> abrirNuevoEnlaceInsp(bn.dataset.nuevoEnlaceTipo);
+}
+
+/* ---------- Herramientas y equipos: tarjetas grandes con foto (mismo tamaño/estilo que
+   los enlaces de Inspecciones — grid grid-insp + .lcard) y ficha técnica completa ---------- */
+function renderHerramientasInspGrid(){
+  const host = document.getElementById('herramientasInspGrid'); if(!host) return;
+  const lista = INSPECCIONES.herramientas;
+  if(!lista.length){
+    host.innerHTML = `<div class="empty" style="padding:24px 20px"><div class="ic">${I.catalogo||I.box}</div><h3>Sin herramientas todavía</h3><p>Crea la primera para armar su ficha técnica y su hoja de vida.</p></div>`;
+    return;
+  }
+  host.innerHTML = '<div class="grid grid-insp">' + lista.map(h=>{
+    const sub = [h.fabricante, h.modelo].filter(Boolean).join(' · ');
+    return `
+      <div class="lcard">
+        ${h.foto ? `<div class="herr-foto" style="background-image:url('${h.foto}')"></div>` : `<div class="herr-foto herr-foto-vacia">${I.catalogo||I.box}</div>`}
+        <div class="lcard-top">
+          <span class="badge ${h.activo?'activa':'cerrada'}"><span class="dot"></span>${h.activo?'Activa':'Inactiva'}</span>
+        </div>
+        <h3>${esc(h.nombre)}</h3>
+        <div class="meta">
+          ${sub ? `<div>${I.catalogo}<span>${esc(sub)}</span></div>` : ''}
+          ${h.ubicacion ? `<div>${I.pin}<span>${esc(h.ubicacion)}</span></div>` : ''}
+          ${h.codigo ? `<div>${I.tag}<span>${esc(h.codigo)}</span></div>` : ''}
+        </div>
+        <div class="lcard-foot">
+          <button class="btn btn-primary btn-sm" data-herr="ver" data-id="${h.id}">${I.eye} Ver info</button>
+          <div class="card-actions">
+            ${puedeEscribir()?`<button class="icon-btn" title="Editar" data-herr="editar" data-id="${h.id}">${I.pen}</button>
+            <button class="icon-btn" title="${h.activo?'Desactivar':'Activar'}" data-herr="toggle" data-id="${h.id}">${h.activo?I.lock:I.check}</button>
+            <button class="icon-btn danger" title="Eliminar" data-herr="eliminar" data-id="${h.id}">${I.trash}</button>`:''}
+          </div>
+        </div>
+      </div>`;
+  }).join('') + '</div>';
+  host.querySelectorAll('[data-herr]').forEach(b=>{
+    b.onclick = ()=>{
+      const id = b.dataset.id, act = b.dataset.herr;
+      if(act==='ver') abrirDetalleHerramientaInsp(id);
+      else if(act==='editar') abrirFormHerramientaInsp(id);
+      else if(act==='toggle') toggleActivoHerramientaInsp(id, !INSPECCIONES.herramientas.find(x=>x.id===id).activo);
+      else if(act==='eliminar') eliminarHerramientaInsp(id);
+    };
+  });
 }
 
 async function verHojaDeVidaInsp(herramientaId){
@@ -11446,92 +11537,137 @@ function eliminarPredeterminadoInsp(id){
 }
 
 /* ---------- Herramientas y equipos (catálogo por contrato) ---------- */
-function abrirHerramientasInsp(){
-  if(contratoInspActualId==='todos'){ toast("Elige un contrato específico primero","err"); return; }
-  openModal(`<div class="modal" style="max-width:560px">
-    <div class="modal-head"><div><h2>Herramientas y equipos</h2><p>El catálogo de este contrato — cada una puede tener su propio enlace de inspección/preoperacional, para armar su hoja de vida.</p></div>
-      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body">
-      <div class="field row2" style="margin-bottom:14px">
-        <div><input id="herrInspNombre" placeholder="Nombre (ej. Guadañadora #3)"></div>
-        <div style="display:flex;gap:8px">
-          <input id="herrInspCodigo" placeholder="Código/serie (opcional)" style="flex:1">
-          <button class="btn btn-primary btn-sm" id="btnAddHerrInsp">${I.plus} Agregar</button>
-        </div>
+// Foto de la ficha técnica: una sola (no un grid como en Mantenimiento), mismo patrón de
+// compresión de siempre (comprimirImagen). Vive en una variable de módulo aparte porque el
+// formulario no tiene un "draft" propio — se resetea cada vez que se abre el formulario.
+let herrFotoDraft = null;
+function campoFotoHerrHTML(){
+  return `<div class="field" style="margin-bottom:14px">
+    <label>Foto <span class="opt">(opcional, sale en grande en la tarjeta y en la ficha)</span></label>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:6px">
+      ${herrFotoDraft?`<img src="${herrFotoDraft}" style="width:90px;height:90px;object-fit:cover;border-radius:8px;border:1px solid var(--line)">`:''}
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input type="file" id="fileFotoHerr" accept="image/*" style="display:none">
+        <button type="button" class="btn btn-ghost btn-sm" id="btnAddFotoHerr">${herrFotoDraft?I.pen:I.plus} ${herrFotoDraft?'Cambiar foto':'Agregar foto'}</button>
+        ${herrFotoDraft?`<button type="button" class="btn btn-ghost btn-sm" id="btnQuitarFotoHerr">${I.trash} Quitar foto</button>`:''}
       </div>
-      <div id="herrInspLista"></div>
     </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
-  </div>`);
-  document.getElementById('btnAddHerrInsp').onclick = guardarHerramientaInsp;
-  renderHerramientasInspLista();
+  </div>`;
+}
+function wireFormularioFotoHerr(refrescar){
+  const fileFoto = document.getElementById('fileFotoHerr');
+  if(fileFoto) fileFoto.onchange = async ()=>{
+    const f = fileFoto.files[0]; if(!f) return;
+    herrFotoDraft = await comprimirImagen(f, 900);
+    fileFoto.value = '';
+    refrescar();
+  };
+  const btnAdd = document.getElementById('btnAddFotoHerr'); if(btnAdd) btnAdd.onclick = ()=> fileFoto.click();
+  const btnQuitar = document.getElementById('btnQuitarFotoHerr'); if(btnQuitar) btnQuitar.onclick = ()=>{ herrFotoDraft = null; refrescar(); };
 }
 
-function renderHerramientasInspLista(){
-  const host = document.getElementById('herrInspLista'); if(!host) return;
-  const items = INSPECCIONES.herramientas;
-  host.innerHTML = items.length ? items.map(h=>`
-    <div class="cat-row">
-      <span style="flex:1;font-weight:600;font-size:13.5px;${h.activo?'':'opacity:.45;text-decoration:line-through'}">${esc(h.nombre)}</span>
-      <span class="muted-sm" style="width:110px">${esc(h.codigo||'—')}</span>
-      <label class="chk" style="padding:0"><input type="checkbox" data-herrinsp-activo="${h.id}" ${h.activo?'checked':''}> activa</label>
-      <button class="icon-btn" title="Editar" data-herrinsp-editar="${h.id}">${I.pen}</button>
-      <button class="icon-btn danger" title="Eliminar" data-herrinsp-del="${h.id}">${I.trash}</button>
-    </div>`).join('') : '<div class="muted-sm" style="padding:14px 0">Sin herramientas todavía.</div>';
-  host.querySelectorAll('[data-herrinsp-activo]').forEach(chk=>{
-    chk.onchange = ()=> toggleActivoHerramientaInsp(chk.dataset.herrinspActivo, chk.checked);
-  });
-  host.querySelectorAll('[data-herrinsp-editar]').forEach(b=>{
-    b.onclick = ()=> editarHerramientaInsp(b.dataset.herrinspEditar);
-  });
-  host.querySelectorAll('[data-herrinsp-del]').forEach(b=>{
-    b.onclick = ()=> eliminarHerramientaInsp(b.dataset.herrinspDel);
-  });
-}
-
-async function guardarHerramientaInsp(){
-  const nombre = document.getElementById('herrInspNombre').value.trim();
-  const codigo = document.getElementById('herrInspCodigo').value.trim() || null;
-  if(!nombre){ toast("Escribe el nombre de la herramienta","err"); return; }
-  const btn = document.getElementById('btnAddHerrInsp'); btn.disabled=true;
-  const { error } = await sb.from("insp_herramientas").insert({ nombre, codigo, contrato_id: contratoInspActualId });
-  btn.disabled=false;
-  if(error){ toast("No se pudo agregar: "+error.message,"err"); return; }
-  document.getElementById('herrInspNombre').value=''; document.getElementById('herrInspCodigo').value='';
-  await loadInspeccionesState();
-  renderHerramientasInspLista();
-  toast("Herramienta agregada","ok");
-}
-
-function editarHerramientaInsp(id){
-  const h = INSPECCIONES.herramientas.find(x=>x.id===id);
-  if(!h) return;
-  openSubModal(`<div class="modal" style="max-width:420px">
-    <div class="modal-head"><div><h2>Editar herramienta</h2><p>No afecta las inspecciones ya registradas — esas conservan el nombre con el que se guardaron.</p></div>
+const CAMPOS_TEXTO_HERR = [
+  ['fhCaracteristicas','caracteristicas_tecnicas','Características técnicas'],
+  ['fhFunciones','funciones','Funciones'],
+  ['fhEpp','epp_requerido','Elementos de protección personal'],
+  ['fhMedidas','medidas_preventivas','Medidas preventivas'],
+  ['fhRiesgos','riesgos','Riesgos'],
+];
+function abrirFormHerramientaInsp(id){
+  const h = id ? INSPECCIONES.herramientas.find(x=>x.id===id) : null;
+  herrFotoDraft = h ? (h.foto||null) : null;
+  openModal(`<div class="modal lg">
+    <div class="modal-head"><div><h2>${id?'Editar herramienta':'Nueva herramienta'}</h2><p>${id?'No afecta las inspecciones ya registradas — esas conservan el nombre con el que se guardaron.':'Se agrega al catálogo de este contrato, con su ficha técnica completa.'}</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
-      <div class="field"><label>Nombre</label><input id="editHerrInspNombre" value="${esc(h.nombre)}" placeholder="Nombre de la herramienta"></div>
-      <div class="field"><label>Código/serie <span class="opt">(opcional)</span></label><input id="editHerrInspCodigo" value="${esc(h.codigo||'')}" placeholder="Código o número de serie"></div>
+      <div class="field row2" style="margin-bottom:10px">
+        <div><label>Nombre *</label><input id="fhNombre" value="${esc(h?.nombre||'')}" placeholder="Ej. Guadañadora #3"></div>
+        <div><label>Código de inventario <span class="opt">(opcional)</span></label><input id="fhCodigo" value="${esc(h?.codigo||'')}"></div>
+      </div>
+      <div class="field row2" style="margin-bottom:10px">
+        <div><label>Fabricante <span class="opt">(opcional)</span></label><input id="fhFabricante" value="${esc(h?.fabricante||'')}"></div>
+        <div><label>Modelo <span class="opt">(opcional)</span></label><input id="fhModelo" value="${esc(h?.modelo||'')}"></div>
+      </div>
+      <div class="field row2" style="margin-bottom:10px">
+        <div><label>Fecha de adquisición <span class="opt">(opcional)</span></label><input type="date" id="fhFechaAdq" value="${h?.fecha_adquisicion||''}"></div>
+        <div><label>Puesta en servicio <span class="opt">(opcional)</span></label><input type="date" id="fhPuesta" value="${h?.puesta_en_servicio||''}"></div>
+      </div>
+      <div class="field row2" style="margin-bottom:10px">
+        <div><label>Ubicación <span class="opt">(opcional)</span></label><input id="fhUbicacion" value="${esc(h?.ubicacion||'')}" placeholder="Ej. Taller"></div>
+        <div><label>Sección <span class="opt">(opcional)</span></label><input id="fhSeccion" value="${esc(h?.seccion||'')}" placeholder="Ej. Mantenimiento"></div>
+      </div>
+      <div id="campoFotoHerrWrap">${campoFotoHerrHTML()}</div>
+      ${CAMPOS_TEXTO_HERR.map(([idc,campo,etiqueta])=>`<div class="field" style="margin-bottom:10px"><label>${etiqueta} <span class="opt">(opcional)</span></label><textarea id="${idc}" rows="3" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;box-sizing:border-box">${esc(h?.[campo]||'')}</textarea></div>`).join('')}
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" id="confEditHerrInsp">${I.check} Guardar</button></div></div>`, ()=>abrirHerramientasInsp());
-  document.getElementById("confEditHerrInsp").onclick = async ()=>{
-    const nombre = document.getElementById('editHerrInspNombre').value.trim();
-    const codigo = document.getElementById('editHerrInspCodigo').value.trim() || null;
+      <button class="btn btn-primary" id="btnGuardarFormHerr">${I.check} Guardar</button></div>
+  </div>`);
+  function refrescarFotoHerr(){
+    document.getElementById('campoFotoHerrWrap').innerHTML = campoFotoHerrHTML();
+    wireFormularioFotoHerr(refrescarFotoHerr);
+  }
+  wireFormularioFotoHerr(refrescarFotoHerr);
+  document.getElementById('btnGuardarFormHerr').onclick = async ()=>{
+    const nombre = document.getElementById('fhNombre').value.trim();
     if(!nombre){ toast("Escribe el nombre de la herramienta","err"); return; }
-    const btn=document.getElementById("confEditHerrInsp"); btn.disabled=true; btn.innerHTML="Guardando…";
-    const { error } = await sb.from("insp_herramientas").update({ nombre, codigo }).eq("id", id);
+    const payload = {
+      nombre,
+      codigo: document.getElementById('fhCodigo').value.trim() || null,
+      fabricante: document.getElementById('fhFabricante').value.trim() || null,
+      modelo: document.getElementById('fhModelo').value.trim() || null,
+      fecha_adquisicion: document.getElementById('fhFechaAdq').value || null,
+      puesta_en_servicio: document.getElementById('fhPuesta').value || null,
+      ubicacion: document.getElementById('fhUbicacion').value.trim() || null,
+      seccion: document.getElementById('fhSeccion').value.trim() || null,
+      foto: herrFotoDraft
+    };
+    CAMPOS_TEXTO_HERR.forEach(([idc,campo])=>{ payload[campo] = document.getElementById(idc).value.trim() || null; });
+    const btn = document.getElementById('btnGuardarFormHerr'); btn.disabled=true; btn.innerHTML="Guardando…";
+    const { error } = id
+      ? await sb.from("insp_herramientas").update(payload).eq("id", id)
+      : await sb.from("insp_herramientas").insert({ ...payload, contrato_id: contratoInspActualId });
     if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
     await loadInspeccionesState();
-    toast("Herramienta actualizada","ok");
+    renderHerramientasInspGrid();
+    toast(id?"Herramienta actualizada":"Herramienta agregada","ok");
     closeModal();
   };
+}
+
+function abrirDetalleHerramientaInsp(id){
+  const h = INSPECCIONES.herramientas.find(x=>x.id===id);
+  if(!h) return;
+  const campoCorto = (etiqueta, valor)=> `<div class="info-item"><div class="k">${etiqueta}</div><div class="v">${valor?esc(valor):'—'}</div></div>`;
+  openModal(`<div class="modal lg">
+    <div class="modal-head"><div><h2>${esc(h.nombre)}</h2><p>Ficha técnica</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      ${h.foto?`<img src="${h.foto}" style="width:100%;max-height:280px;object-fit:cover;border-radius:12px;margin-bottom:16px">`:''}
+      <div class="info-grid">
+        ${campoCorto('Fabricante', h.fabricante)}
+        ${campoCorto('Modelo', h.modelo)}
+        ${campoCorto('Código de inventario', h.codigo)}
+        ${campoCorto('Ubicación', h.ubicacion)}
+        ${campoCorto('Sección', h.seccion)}
+        ${campoCorto('Fecha de adquisición', h.fecha_adquisicion?fmtDate(h.fecha_adquisicion):null)}
+        ${campoCorto('Puesta en servicio', h.puesta_en_servicio?fmtDate(h.puesta_en_servicio):null)}
+      </div>
+      ${CAMPOS_TEXTO_HERR.map(([idc,campo,etiqueta])=> h[campo] ? `<div class="panel-section" style="margin-top:16px"><div class="section-label">${etiqueta}</div><p style="white-space:pre-wrap;margin:0;font-size:13.5px;color:var(--ink-2)">${esc(h[campo])}</p></div>` : '').join('')}
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
+      <button class="btn btn-ghost" onclick="verHojaDeVidaInsp('${id}')">${I.eye} Ver hoja de vida</button>
+      ${puedeEscribir()?`<button class="btn btn-ghost" onclick="abrirMantenimientosHerramientaInsp('${id}')">${I.pen} Gestionar mantenimiento</button>
+      <button class="btn btn-primary" onclick="abrirFormHerramientaInsp('${id}')">${I.pen} Editar</button>`:''}
+    </div>
+  </div>`);
 }
 
 async function toggleActivoHerramientaInsp(id, activo){
   const { error } = await sb.from("insp_herramientas").update({ activo }).eq("id", id);
   if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
   await loadInspeccionesState();
+  renderHerramientasInspGrid();
 }
 
 function eliminarHerramientaInsp(id){
@@ -11541,12 +11677,13 @@ function eliminarHerramientaInsp(id){
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">¿Eliminar <b>${esc(h?.nombre||'esta herramienta')}</b> del catálogo? Los enlaces que la tenían asociada quedan sin herramienta (siguen funcionando); las inspecciones ya registradas conservan su nombre.</p></div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-danger" id="confDelHerrInsp">${I.trash} Sí, eliminar</button></div></div>`, ()=>abrirHerramientasInsp());
+      <button class="btn btn-danger" id="confDelHerrInsp">${I.trash} Sí, eliminar</button></div></div>`);
   document.getElementById("confDelHerrInsp").onclick = async ()=>{
     const btn=document.getElementById("confDelHerrInsp"); btn.disabled=true; btn.innerHTML="Eliminando…";
     const { error } = await sb.from("insp_herramientas").delete().eq("id", id);
     if(error){ btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`; toast("No se pudo eliminar: "+error.message,"err"); return; }
     await loadInspeccionesState();
+    renderHerramientasInspGrid();
     toast("Herramienta eliminada","ok");
     closeModal();
   };
@@ -12314,11 +12451,18 @@ async function abrirEditarInspeccionPorId(id){
 }
 
 function abrirEditarInspeccion(data){
+  // tieneFotos solo activa el bloque de fotos "de respaldo" al final del formulario (el
+  // que usan formatos viejos, de antes de que fotos fuera una sección movible dentro de
+  // estructura — ver renderInspFormBody). Si el formato de esta inspección nunca tuvo
+  // fotos (ni sección explícita ni el flag viejo), no hay que ofrecer agregarlas ahora:
+  // se respeta tal cual la estructura con la que se registró. Solo se prende si YA
+  // existen fotos guardadas en el registro (caso legado real, no un formato sin fotos).
+  const fotosExistentes = Array.isArray(data.fotos) ? [...data.fotos] : [];
   inspeccionDraft = {
     estructura: Array.isArray(data.estructura) ? data.estructura : [],
-    tieneFotos: true,
+    tieneFotos: fotosExistentes.length > 0,
     respuestas: JSON.parse(JSON.stringify(data.respuestas || {})),
-    fotos: Array.isArray(data.fotos) ? [...data.fotos] : []
+    fotos: fotosExistentes
   };
   openModal(`<div class="modal lg">
     <div class="modal-head"><div><h2>Editar inspección</h2><p>${esc(data.formato_nombre)}</p></div>
