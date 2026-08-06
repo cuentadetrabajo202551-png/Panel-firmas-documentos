@@ -10747,6 +10747,7 @@ function renderEnlacesInspPorTipo(tipo, hostId){
               <span class="num">${n}</span>
             </div>
             <div class="card-actions">
+              ${en.activo?`<button class="icon-btn" title="Registrar aquí" data-eit="registrar" data-id="${en.id}">${I.plus}</button>`:''}
               <button class="icon-btn" title="Ver detalle" data-eit="ver" data-id="${en.id}">${I.eye}</button>
               <button class="icon-btn" title="Copiar enlace" data-eit="link" data-id="${en.id}">${I.link}</button>
               <button class="icon-btn" title="Compartir QR" data-eit="qr" data-id="${en.id}">${I.qr}</button>
@@ -10764,7 +10765,8 @@ function renderEnlacesInspPorTipo(tipo, hostId){
   host.querySelectorAll('[data-eit]').forEach(b=>{
     b.onclick = ()=>{
       const id = b.dataset.id, act = b.dataset.eit;
-      if(act==='ver') abrirDetalleEnlaceInsp(id);
+      if(act==='registrar') location.hash = "#/inspeccion/"+id;
+      else if(act==='ver') abrirDetalleEnlaceInsp(id);
       else if(act==='link') copyText(linkInspeccion(id), "Enlace de inspección copiado");
       else if(act==='qr') mostrarQR(linkInspeccion(id), "Enlace de inspección");
       else if(act==='nombre') renombrarEnlaceInsp(id);
@@ -10781,21 +10783,10 @@ function renderEnlacesInspPorTipo(tipo, hostId){
 
 async function verHojaDeVidaInsp(herramientaId){
   const h = INSPECCIONES.herramientas.find(x=>x.id===herramientaId);
-  // Acceso rápido "registrar aquí": los enlaces activos de esta herramienta (puede tener
-  // hasta 3, uno por tipo) — así, si quien la tiene enfrente prefiere hacerlo desde su
-  // propio computador en vez de escanear el QR, entra directo al mismo formulario público
-  // (el router ya lo resuelve igual con o sin sesión de admin abierta).
-  const enlacesHerr = INSPECCIONES.enlaces.filter(e=>e.herramienta_id===herramientaId && e.activo);
-  const registrarHTML = enlacesHerr.length ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
-    ${enlacesHerr.map(e=>`<button type="button" class="btn btn-primary btn-sm" onclick="location.hash='${linkInspeccion(e.id)}'">${I.plus} Registrar ${esc(etiquetaTipoInsp(e.tipo).toLowerCase())}</button>`).join('')}
-  </div>` : '';
   openModal(`<div class="modal lg">
     <div class="modal-head"><div><h2>Hoja de vida — ${esc(h?.nombre||'')}</h2><p>Todo lo registrado para esta herramienta, de más reciente a más antigua.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body">
-      ${registrarHTML}
-      <div id="hojaVidaInspBody"><div class="empty"><h3>Cargando…</h3></div></div>
-    </div>
+    <div class="modal-body" id="hojaVidaInspBody"><div class="empty"><h3>Cargando…</h3></div></div>
     <div class="modal-foot" id="hojaVidaInspFoot">
       <button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
       ${puedeEscribir()?`<button class="btn btn-ghost" onclick="abrirMantenimientosHerramientaInsp('${herramientaId}')">${I.plus} Agregar mantenimiento</button>`:''}
