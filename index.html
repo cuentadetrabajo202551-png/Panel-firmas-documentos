@@ -461,6 +461,8 @@ table.dt tr:hover td{background:#fafbfe}
 .grid-insp .card-actions .icon-btn svg{width:15px;height:15px}
 .grid-insp .attn{flex:none}
 .grid-herr{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
+.grid-herr .lcard-foot{flex-wrap:wrap;row-gap:10px}
+.grid-herr .card-actions{flex:1 1 100%;justify-content:flex-end}
 .herr-foto{margin:-20px -20px 0 -20px;height:160px;background-size:contain;background-repeat:no-repeat;background-position:center;background-color:var(--brand-soft);border-radius:var(--radius) var(--radius) 0 0}
 .herr-foto-vacia{display:flex;align-items:center;justify-content:center;background:var(--brand-soft);color:var(--brand)}
 .herr-foto-vacia svg{width:44px;height:44px}
@@ -9725,7 +9727,7 @@ function renderDtlPublicoNuevoFormulario(entidadId, nombreEntidad, catalogoUnico
    ============================================================ */
 let INSPECCIONES = { contratos: [], formatos: [], predeterminados: [], herramientas: [], mantenimientos: [], enlaces: [], inspecciones: [] };
 let contratoInspActualId = localStorage.getItem('insp_contrato_actual') || null;
-let inspSubtabActiva = null; // recuerda la pestaña elegida (preop/insp/hv/formatos) entre refrescos silenciosos
+let inspSubtabActiva = null; // recuerda la pestaña elegida (preop/insp/inventario/herramientas/formatos) entre refrescos silenciosos
 let formatosInspFiltroTipo = 'todos'; // filtro de "Formatos": todos/inspeccion/preoperacional
 
 async function loadInspeccionesState(){
@@ -10612,7 +10614,7 @@ async function renderInspeccionesAdmin(modo){
   // había elegido (inspSubtabActiva) para que un refresco silencioso (cada 20s) no lo
   // regrese siempre a la primera; solo se resetea si esa pestaña ya no aplica (ej. pasó
   // a "Todos los contratos", donde solo existe "Formatos").
-  const tabsDisponibles = enTodos ? ['formatos'] : ['preop','insp','mantenimiento','inventario','hv','formatos','herramientas'];
+  const tabsDisponibles = enTodos ? ['formatos'] : ['preop','insp','inventario','formatos','herramientas'];
   const tabInspActiva = tabsDisponibles.includes(inspSubtabActiva) ? inspSubtabActiva : tabsDisponibles[0];
 
   document.getElementById("app").innerHTML = `
@@ -10653,9 +10655,7 @@ async function renderInspeccionesAdmin(modo){
           <div class="subtab-list">
             ${!enTodos?`<button type="button" class="subtab-item ${tabInspActiva==='preop'?'active':''}" data-subtab="preop">Inspección preoperacional</button>
             <button type="button" class="subtab-item ${tabInspActiva==='insp'?'active':''}" data-subtab="insp">Inspecciones</button>
-            <button type="button" class="subtab-item ${tabInspActiva==='mantenimiento'?'active':''}" data-subtab="mantenimiento">Mantenimiento</button>
             <button type="button" class="subtab-item ${tabInspActiva==='inventario'?'active':''}" data-subtab="inventario">Inventario</button>
-            <button type="button" class="subtab-item ${tabInspActiva==='hv'?'active':''}" data-subtab="hv">Hoja de vida</button>
             <button type="button" class="subtab-item ${tabInspActiva==='herramientas'?'active':''}" data-subtab="herramientas">Herramientas y equipos</button>`:''}
             <button type="button" class="subtab-item ${tabInspActiva==='formatos'?'active':''}" data-subtab="formatos">Formatos</button>
           </div>
@@ -10667,26 +10667,8 @@ async function renderInspeccionesAdmin(modo){
             <div class="subtab-pane ${tabInspActiva==='insp'?'active':''}" data-pane="insp">
               <div id="enlacesInspInsp"></div>
             </div>
-            <div class="subtab-pane ${tabInspActiva==='mantenimiento'?'active':''}" data-pane="mantenimiento">
-              <p class="muted-sm" style="margin:0 0 10px">Elige una herramienta para registrar o revisar sus mantenimientos — correctivos y preventivos.</p>
-              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-                <select id="selMantenimientoInsp" style="flex:1;min-width:220px;max-width:360px">
-                  ${INSPECCIONES.herramientas.length ? INSPECCIONES.herramientas.map(h=>`<option value="${h.id}">${esc(h.nombre)}${h.activo?'':' (inactiva)'}</option>`).join('') : '<option value="">Sin herramientas en el catálogo todavía</option>'}
-                </select>
-                <button class="btn btn-primary btn-sm" id="btnAbrirMantenimientoInsp" ${INSPECCIONES.herramientas.length?'':'disabled'}>${I.pen} Gestionar mantenimiento</button>
-              </div>
-            </div>
             <div class="subtab-pane ${tabInspActiva==='inventario'?'active':''}" data-pane="inventario">
               <div id="enlacesInspInventario"></div>
-            </div>
-            <div class="subtab-pane ${tabInspActiva==='hv'?'active':''}" data-pane="hv">
-              <p class="muted-sm" style="margin:0 0 10px">Elige una herramienta para ver todo lo que se le ha inspeccionado — mensuales y preoperacionales, en orden cronológico.</p>
-              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-                <select id="selHojaVidaInsp" style="flex:1;min-width:220px;max-width:360px">
-                  ${INSPECCIONES.herramientas.length ? INSPECCIONES.herramientas.map(h=>`<option value="${h.id}">${esc(h.nombre)}${h.activo?'':' (inactiva)'}</option>`).join('') : '<option value="">Sin herramientas en el catálogo todavía</option>'}
-                </select>
-                <button class="btn btn-primary btn-sm" id="btnVerHojaVidaInsp" ${INSPECCIONES.herramientas.length?'':'disabled'}>${I.eye} Ver hoja de vida</button>
-              </div>
             </div>
             <div class="subtab-pane ${tabInspActiva==='herramientas'?'active':''}" data-pane="herramientas">
               ${puedeEscribir()?`<button class="btn btn-ghost btn-sm" id="btnNuevaHerramientaInsp" style="margin-bottom:14px">${I.plus} Nueva herramienta</button>`:''}
@@ -10733,16 +10715,6 @@ async function renderInspeccionesAdmin(modo){
   const bhi = document.getElementById("btnHistorialInsp"); if(bhi) bhi.onclick = ()=> abrirHistorialInspecciones();
   const bcf = document.getElementById("btnCrearFormatoInsp"); if(bcf) bcf.onclick = ()=>{ location.hash = "#/inspecciones/formato/nueva"; };
   const bfirmas = document.getElementById("btnFirmasInsp"); if(bfirmas) bfirmas.onclick = abrirPredeterminadosInsp;
-  const bvhv = document.getElementById("btnVerHojaVidaInsp");
-  if(bvhv) bvhv.onclick = ()=>{
-    const id = document.getElementById('selHojaVidaInsp').value;
-    if(id) verHojaDeVidaInsp(id);
-  };
-  const bmant = document.getElementById("btnAbrirMantenimientoInsp");
-  if(bmant) bmant.onclick = ()=>{
-    const id = document.getElementById('selMantenimientoInsp').value;
-    if(id) abrirMantenimientosHerramientaInsp(id);
-  };
   const bnh = document.getElementById("btnNuevaHerramientaInsp"); if(bnh) bnh.onclick = ()=> abrirFormHerramientaInsp(null);
   if(!enTodos){
     renderEnlacesInspPorTipo('preoperacional', 'enlacesInspPreop');
@@ -10841,7 +10813,7 @@ function renderHerramientasInspGrid(){
   host.innerHTML = '<div class="grid grid-insp grid-herr">' + lista.map(h=>{
     const sub = [h.fabricante, h.modelo].filter(Boolean).join(' · ');
     return `
-      <div class="lcard">
+      <div class="lcard" data-herr-card="${h.id}" style="cursor:pointer">
         ${h.foto ? `<div class="herr-foto" style="background-image:url('${h.foto}')"></div>` : `<div class="herr-foto herr-foto-vacia">${I.catalogo||I.box}</div>`}
         <div class="lcard-top">
           <span class="badge ${h.activo?'activa':'cerrada'}"><span class="dot"></span>${h.activo?'Activa':'Inactiva'}</span>
@@ -10853,8 +10825,9 @@ function renderHerramientasInspGrid(){
           ${h.codigo ? `<div>${I.tag}<span>${esc(h.codigo)}</span></div>` : ''}
         </div>
         <div class="lcard-foot">
-          <button class="btn btn-primary btn-sm" data-herr="ver" data-id="${h.id}">${I.eye} Ver info</button>
           <div class="card-actions">
+            <button class="icon-btn" title="Ver hoja de vida" data-herr="hv" data-id="${h.id}">${I.doc}</button>
+            <button class="icon-btn" title="Gestionar mantenimiento" data-herr="mant" data-id="${h.id}">${I.gear}</button>
             ${puedeEscribir()?`<button class="icon-btn" title="Editar" data-herr="editar" data-id="${h.id}">${I.pen}</button>
             <button class="icon-btn" title="${h.activo?'Desactivar':'Activar'}" data-herr="toggle" data-id="${h.id}">${h.activo?I.lock:I.check}</button>
             <button class="icon-btn danger" title="Eliminar" data-herr="eliminar" data-id="${h.id}">${I.trash}</button>`:''}
@@ -10862,10 +10835,15 @@ function renderHerramientasInspGrid(){
         </div>
       </div>`;
   }).join('') + '</div>';
+  host.querySelectorAll('[data-herr-card]').forEach(c=>{
+    c.onclick = (e)=>{ if(e.target.closest('button')) return; abrirDetalleHerramientaInsp(c.dataset.herrCard); };
+  });
   host.querySelectorAll('[data-herr]').forEach(b=>{
-    b.onclick = ()=>{
+    b.onclick = (e)=>{
+      e.stopPropagation();
       const id = b.dataset.id, act = b.dataset.herr;
-      if(act==='ver') abrirDetalleHerramientaInsp(id);
+      if(act==='hv') verHojaDeVidaInsp(id);
+      else if(act==='mant') abrirMantenimientosHerramientaInsp(id);
       else if(act==='editar') abrirFormHerramientaInsp(id);
       else if(act==='toggle') toggleActivoHerramientaInsp(id, !INSPECCIONES.herramientas.find(x=>x.id===id).activo);
       else if(act==='eliminar') eliminarHerramientaInsp(id);
