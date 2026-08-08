@@ -460,6 +460,7 @@ table.dt tr:hover td{background:#fafbfe}
 .grid-insp .card-actions .icon-btn{width:30px;height:30px;border-radius:8px;flex:none}
 .grid-insp .card-actions .icon-btn svg{width:15px;height:15px}
 .grid-insp .attn{flex:none}
+.grid-herr{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
 .herr-foto{margin:-20px -20px 0 -20px;height:160px;background-size:cover;background-position:center;border-radius:var(--radius) var(--radius) 0 0}
 .herr-foto-vacia{display:flex;align-items:center;justify-content:center;background:var(--brand-soft);color:var(--brand)}
 .herr-foto-vacia svg{width:44px;height:44px}
@@ -10837,7 +10838,7 @@ function renderHerramientasInspGrid(){
     host.innerHTML = `<div class="empty" style="padding:24px 20px"><div class="ic">${I.catalogo||I.box}</div><h3>Sin herramientas todavía</h3><p>Crea la primera para armar su ficha técnica y su hoja de vida.</p></div>`;
     return;
   }
-  host.innerHTML = '<div class="grid grid-insp">' + lista.map(h=>{
+  host.innerHTML = '<div class="grid grid-insp grid-herr">' + lista.map(h=>{
     const sub = [h.fabricante, h.modelo].filter(Boolean).join(' · ');
     return `
       <div class="lcard">
@@ -11093,6 +11094,7 @@ function renderFormatosInspGrid(){
             <span class="num">${n}</span>
             <span class="lab">formulario${n===1?'':'s'} creado${n===1?'':'s'}<br>a partir de esta</span>
           </div>
+          <button class="icon-btn" title="Ver en qué contratos se usa" data-fa="verUso" data-id="${f.id}">${I.eye}</button>
         </div>
         ${puedeEscribir()?`<div class="card-actions" style="padding-top:10px;border-top:1px solid var(--line-2);margin-top:10px">
           <button class="icon-btn" title="Editar formato" data-fa="editar" data-id="${f.id}">${I.pen}</button>
@@ -11110,8 +11112,32 @@ function renderFormatosInspGrid(){
       else if(act==='duplicar') duplicarFormatoInsp(id);
       else if(act==='toggleFormato') toggleActivoFormatoInsp(id);
       else if(act==='delFormato') eliminarFormatoInsp(id);
+      else if(act==='verUso') verUsoFormatoInsp(id);
     };
   });
+}
+
+function verUsoFormatoInsp(id){
+  const f = INSPECCIONES.formatos.find(x=>x.id===id);
+  const porContrato = {};
+  INSPECCIONES.enlaces.filter(e=>e.formato_id===id).forEach(e=>{
+    const nombre = (INSPECCIONES.contratos.find(c=>c.id===e.contrato_id)||{}).nombre || 'Contrato desconocido';
+    porContrato[nombre] = (porContrato[nombre]||0) + 1;
+  });
+  const filas = Object.entries(porContrato).sort((a,b)=>b[1]-a[1]);
+  openModal(`<div class="modal" style="max-width:440px">
+    <div class="modal-head"><div><h2>Dónde se usa</h2><p>Formularios creados a partir de "${esc(f?.nombre||'')}", por contrato.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      ${filas.length ? `<div style="display:flex;flex-direction:column;gap:8px">${filas.map(([nombre,n])=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--brand-soft);border-radius:10px">
+          <span style="font-weight:600">${esc(nombre)}</span>
+          <span class="badge activa">${n} formulario${n===1?'':'s'}</span>
+        </div>`).join('')}</div>`
+      : `<div class="empty"><h3>Todavía no se ha usado</h3><p>Aún no se ha creado ningún formulario a partir de esta plantilla en ningún contrato.</p></div>`}
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
+  </div>`);
 }
 
 async function toggleActivoEnlaceInsp(id){
