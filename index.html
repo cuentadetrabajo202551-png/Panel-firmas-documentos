@@ -10937,7 +10937,7 @@ async function construirHojaVidaInspPDF(herramientaId){
     formato_nombre: x.formato_nombre, inspector_nombre: x.inspector_nombre, creado_en: x.creado_en,
     ip_address: x.ip_address, dispositivo_ua: x.dispositivo_ua }));
   const eventosMant = (dm||[]).map(x=>({ origen:'mantenimiento', fecha: x.fecha,
-    formato_nombre: etiquetaTipoMantInsp(x.tipo)+' — '+(x.descripcion||'Sin descripción')+' ('+etiquetaFrecuenciaMantInsp(x.frecuencia)+')',
+    formato_nombre: etiquetaTipoMantInsp(x.tipo)+' - '+(x.descripcion||'Sin descripción')+' ('+etiquetaFrecuenciaMantInsp(x.frecuencia)+')',
     inspector_nombre: x.responsable_nombre, creado_en: null, ip_address: null, dispositivo_ua: null }));
   const lista = [...eventosInsp, ...eventosMant].sort((a,b)=> (b.fecha||'').localeCompare(a.fecha||''));
   const camposCortos = [
@@ -11886,12 +11886,13 @@ async function guardarMantenimientoInsp(herramientaId){
   const descripcion = document.getElementById('mantInspDescripcion').value.trim() || null;
   if(!fecha){ toast("Elige la fecha del mantenimiento","err"); return; }
   const h = INSPECCIONES.herramientas.find(x=>x.id===herramientaId);
-  const btn = document.getElementById('btnAddMantInsp'); btn.disabled=true;
+  const btn = document.getElementById('btnAddMantInsp'); const btnHtml = btn.innerHTML;
+  btn.disabled=true; btn.innerHTML = "Agregando…";
   const { error } = await sb.from("insp_mantenimientos").insert({
     contrato_id: contratoInspActualId, herramienta_id: herramientaId, herramienta_nombre: h?.nombre||'',
     fecha, frecuencia, tipo, descripcion, responsable_nombre, fotos: mantFotosDraft
   });
-  btn.disabled=false;
+  btn.disabled=false; btn.innerHTML = btnHtml;
   if(error){ toast("No se pudo agregar: "+error.message,"err"); return; }
   document.getElementById('mantInspDescripcion').value=''; document.getElementById('mantInspResponsable').value='';
   mantFotosDraft = [];
