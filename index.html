@@ -461,7 +461,7 @@ table.dt tr:hover td{background:#fafbfe}
 .grid-insp .card-actions .icon-btn svg{width:15px;height:15px}
 .grid-insp .attn{flex:none}
 .grid-herr{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
-.herr-foto{margin:-20px -20px 0 -20px;height:160px;background-size:cover;background-position:center;border-radius:var(--radius) var(--radius) 0 0}
+.herr-foto{margin:-20px -20px 0 -20px;height:160px;background-size:contain;background-repeat:no-repeat;background-position:center;background-color:var(--brand-soft);border-radius:var(--radius) var(--radius) 0 0}
 .herr-foto-vacia{display:flex;align-items:center;justify-content:center;background:var(--brand-soft);color:var(--brand)}
 .herr-foto-vacia svg{width:44px;height:44px}
 
@@ -11668,7 +11668,7 @@ function abrirDetalleHerramientaInsp(id){
     <div class="modal-head"><div><h2>${esc(h.nombre)}</h2><p>Ficha técnica</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
-      ${h.foto?`<img src="${h.foto}" style="width:100%;max-height:280px;object-fit:cover;border-radius:12px;margin-bottom:16px">`:''}
+      ${h.foto?`<div style="width:100%;height:320px;background:var(--brand-soft);border-radius:12px;margin-bottom:16px;display:flex;align-items:center;justify-content:center;overflow:hidden"><img src="${h.foto}" style="max-width:100%;max-height:100%;object-fit:contain"></div>`:''}
       <div class="info-grid">
         ${campoCorto('Fabricante', h.fabricante)}
         ${campoCorto('Modelo', h.modelo)}
