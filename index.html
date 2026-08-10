@@ -9808,8 +9808,8 @@ let formatosInspFiltroTipo = 'todos'; // filtro de "Formatos": todos/inspeccion/
 async function loadInspeccionesState(){
   const [co, fo, en, ins, pd] = await Promise.all([
     sb.from("insp_contratos").select("id,nombre,activo,creado_en").order("creado_en",{ascending:true}),
-    sb.from("insp_formatos").select("id,nombre,activo,tiene_fotos,firmantes,color_acento,mostrar_cumplimiento,tipo").order("nombre",{ascending:true}),
-    sb.from("insp_enlaces").select("id,contrato_id,formato_id,predeterminado_id,firmantes_banco,herramienta_id,nombre,formato_nombre,tiene_fotos,firmantes,color_acento,mostrar_cumplimiento,tipo,activo,creado_en").order("creado_en",{ascending:true}),
+    sb.from("insp_formatos").select("id,nombre,activo,tiene_fotos,firmantes,color_acento,mostrar_cumplimiento,pdf_horizontal,tipo").order("nombre",{ascending:true}),
+    sb.from("insp_enlaces").select("id,contrato_id,formato_id,predeterminado_id,firmantes_banco,herramienta_id,nombre,formato_nombre,tiene_fotos,firmantes,color_acento,mostrar_cumplimiento,pdf_horizontal,tipo,activo,creado_en").order("creado_en",{ascending:true}),
     cargarTodasFilas(()=> sb.from("insp_inspecciones").select("id,enlace_id,contrato_id,formato_nombre,creado_en,creado_por,inspector_nombre").order("creado_en",{ascending:false}).order("id",{ascending:true})),
     // Banco de firmas GLOBAL (igual que "Formatos") — no por contrato, ver [[CAMBIOS_SQL_63]].
     sb.from("insp_predeterminados").select("id,nombre,responsable_nombre,responsable_cargo,firma").order("nombre",{ascending:true})
@@ -9970,7 +9970,7 @@ async function renderConstructorFormatoInsp(formatoId, enlaceId){
   if(formatoId || enlaceId){
     bloquear(enlaceId ? "Cargando…" : "Cargando formato…");
     const { data, error } = enlaceId
-      ? await sb.from("insp_enlaces").select("formato_nombre,tiene_fotos,estructura,firmantes,color_acento,mostrar_cumplimiento,tipo,imagen_pdf,activo").eq("id",enlaceId).maybeSingle()
+      ? await sb.from("insp_enlaces").select("formato_nombre,tiene_fotos,estructura,firmantes,color_acento,mostrar_cumplimiento,pdf_horizontal,tipo,imagen_pdf,activo").eq("id",enlaceId).maybeSingle()
       : await sb.from("insp_formatos").select("*").eq("id",formatoId).maybeSingle();
     desbloquear();
     if(error || !data){ toast(enlaceId?"No se pudo cargar":"No se pudo cargar el formato","err"); location.hash="#/inspecciones"; return; }
@@ -9980,6 +9980,7 @@ async function renderConstructorFormatoInsp(formatoId, enlaceId){
       firmantes: Array.isArray(data.firmantes) ? JSON.parse(JSON.stringify(data.firmantes)) : JSON.parse(JSON.stringify(FIRMANTES_DEFAULT_INSP)),
       color_acento: data.color_acento || '#14215a',
       mostrar_cumplimiento: data.mostrar_cumplimiento !== false,
+      pdf_horizontal: data.pdf_horizontal === true,
       tipo: ['preoperacional','inventario'].includes(data.tipo) ? data.tipo : 'inspeccion',
       imagen_pdf: data.imagen_pdf || null
     };
@@ -9990,7 +9991,7 @@ async function renderConstructorFormatoInsp(formatoId, enlaceId){
       formatoEditorState.estructura.push({ id: nuevoIdCampoInsp(), tipo:'fotos', titulo:'Registro fotográfico', max:5, requerido:false });
     }
   } else {
-    formatoEditorState = { nombre:"", activo:true, estructura: [{ id: nuevoIdCampoInsp(), tipo:'fotos', titulo:'Registro fotográfico', max:5, requerido:false }], firmantes: JSON.parse(JSON.stringify(FIRMANTES_DEFAULT_INSP)), color_acento: '#14215a', mostrar_cumplimiento: true, tipo: 'inspeccion', imagen_pdf: null };
+    formatoEditorState = { nombre:"", activo:true, estructura: [{ id: nuevoIdCampoInsp(), tipo:'fotos', titulo:'Registro fotográfico', max:5, requerido:false }], firmantes: JSON.parse(JSON.stringify(FIRMANTES_DEFAULT_INSP)), color_acento: '#14215a', mostrar_cumplimiento: true, pdf_horizontal: false, tipo: 'inspeccion', imagen_pdf: null };
   }
 
   // El panel de la derecha es una previsualización EN VIVO: reutiliza el mismo motor
@@ -10034,6 +10035,7 @@ async function renderConstructorFormatoInsp(formatoId, enlaceId){
           <button type="button" class="btn btn-ghost btn-sm" id="btnResetColorAcento">Restablecer azul institucional</button>
         </div>
         <label class="chk" style="margin-top:12px"><input type="checkbox" id="fiMostrarCumplimiento" ${formatoEditorState.mostrar_cumplimiento?'checked':''}> Mostrar % de cumplimiento automático (en el PDF y en "Ver detalle")</label>
+        <label class="chk" style="margin-top:8px"><input type="checkbox" id="fiPdfHorizontal" ${formatoEditorState.pdf_horizontal?'checked':''}> Generar PDF en horizontal (útil para checklist con muchos ítems por trabajador)</label>
         <div style="margin-top:14px">
           <label style="font-size:13px;color:var(--ink-2);font-weight:600;display:block;margin-bottom:6px">Foto del equipo (aparece en el encabezado del PDF)</label>
           <div id="fiImagenPdfPreview" style="margin-bottom:8px;${formatoEditorState.imagen_pdf?'':'display:none'}"><img src="${formatoEditorState.imagen_pdf||''}" style="height:60px;border:1px solid var(--line);border-radius:8px;background:#fff;object-fit:contain;padding:3px"></div>
@@ -10199,6 +10201,7 @@ async function renderConstructorFormatoInsp(formatoId, enlaceId){
     document.getElementById('fiColorAcento').value = '#14215a';
   };
   document.getElementById('fiMostrarCumplimiento').onchange = (e)=>{ formatoEditorState.mostrar_cumplimiento = e.target.checked; renderSeccionesFormatoInsp(); };
+  document.getElementById('fiPdfHorizontal').onchange = (e)=>{ formatoEditorState.pdf_horizontal = e.target.checked; };
   document.querySelectorAll('[data-fi-tipo]').forEach(b=>{
     b.onclick = ()=>{
       formatoEditorState.tipo = b.dataset.fiTipo;
@@ -10697,7 +10700,7 @@ async function guardarFormatoInsp(){
     // plantilla de "Formatos" — por diseño quedan independientes desde que se activó.
     // No toca tipo/contrato_id/herramienta_id/firmantes_banco/predeterminado_id/activo.
     bloquear("Guardando cambios…");
-    const payload = { formato_nombre: nombre, tiene_fotos: formatoEditorState.estructura.some(s=>s.tipo==='fotos'), estructura: formatoEditorState.estructura, firmantes: formatoEditorState.firmantes, color_acento: formatoEditorState.color_acento, mostrar_cumplimiento: formatoEditorState.mostrar_cumplimiento, imagen_pdf: formatoEditorState.imagen_pdf };
+    const payload = { formato_nombre: nombre, tiene_fotos: formatoEditorState.estructura.some(s=>s.tipo==='fotos'), estructura: formatoEditorState.estructura, firmantes: formatoEditorState.firmantes, color_acento: formatoEditorState.color_acento, mostrar_cumplimiento: formatoEditorState.mostrar_cumplimiento, pdf_horizontal: formatoEditorState.pdf_horizontal, imagen_pdf: formatoEditorState.imagen_pdf };
     const { error } = await sb.from("insp_enlaces").update(payload).eq("id", enlaceEditorId);
     desbloquear();
     if(error){ if(btn){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar cambios`; } toast("No se pudo guardar: "+error.message,"err"); return; }
@@ -10709,7 +10712,7 @@ async function guardarFormatoInsp(){
   }
 
   bloquear("Guardando formato…");
-  const payload = { nombre, tiene_fotos: formatoEditorState.estructura.some(s=>s.tipo==='fotos'), estructura: formatoEditorState.estructura, firmantes: formatoEditorState.firmantes, color_acento: formatoEditorState.color_acento, mostrar_cumplimiento: formatoEditorState.mostrar_cumplimiento, tipo: formatoEditorState.tipo, imagen_pdf: formatoEditorState.imagen_pdf };
+  const payload = { nombre, tiene_fotos: formatoEditorState.estructura.some(s=>s.tipo==='fotos'), estructura: formatoEditorState.estructura, firmantes: formatoEditorState.firmantes, color_acento: formatoEditorState.color_acento, mostrar_cumplimiento: formatoEditorState.mostrar_cumplimiento, pdf_horizontal: formatoEditorState.pdf_horizontal, tipo: formatoEditorState.tipo, imagen_pdf: formatoEditorState.imagen_pdf };
   const res = formatoEditorId
     ? await sb.from("insp_formatos").update(payload).eq("id", formatoEditorId)
     : await sb.from("insp_formatos").insert(payload).select().single();
@@ -11438,9 +11441,9 @@ async function toggleActivoFormatoInsp(id){
 
 async function duplicarFormatoInsp(id){
   bloquear("Duplicando formato…");
-  const { data, error } = await sb.from("insp_formatos").select("nombre,tiene_fotos,estructura,firmantes,color_acento,mostrar_cumplimiento,tipo,imagen_pdf").eq("id",id).maybeSingle();
+  const { data, error } = await sb.from("insp_formatos").select("nombre,tiene_fotos,estructura,firmantes,color_acento,mostrar_cumplimiento,pdf_horizontal,tipo,imagen_pdf").eq("id",id).maybeSingle();
   if(error || !data){ desbloquear(); toast("No se pudo cargar el formato","err"); return; }
-  const { error: errIns } = await sb.from("insp_formatos").insert({ nombre: (data.nombre||"Formato")+" (copia)", tiene_fotos: data.tiene_fotos, estructura: data.estructura, firmantes: data.firmantes, color_acento: data.color_acento, mostrar_cumplimiento: data.mostrar_cumplimiento, tipo: data.tipo, imagen_pdf: data.imagen_pdf, activo: true });
+  const { error: errIns } = await sb.from("insp_formatos").insert({ nombre: (data.nombre||"Formato")+" (copia)", tiene_fotos: data.tiene_fotos, estructura: data.estructura, firmantes: data.firmantes, color_acento: data.color_acento, mostrar_cumplimiento: data.mostrar_cumplimiento, pdf_horizontal: data.pdf_horizontal, tipo: data.tipo, imagen_pdf: data.imagen_pdf, activo: true });
   desbloquear();
   if(errIns){ toast("No se pudo duplicar: "+errIns.message,"err"); return; }
   await loadInspeccionesState();
@@ -11574,7 +11577,7 @@ function abrirNuevoEnlaceInsp(tipoFiltro){
     try{
       // Tomar un formato = copiarlo completo al enlace, no referenciarlo — desde aquí queda
       // 100% independiente de la plantilla (editable sin afectarla, sobrevive si se borra).
-      const { data: full, error: errFull } = await sb.from("insp_formatos").select("nombre,tiene_fotos,estructura,firmantes,color_acento,mostrar_cumplimiento,tipo,imagen_pdf").eq("id",formato_id).maybeSingle();
+      const { data: full, error: errFull } = await sb.from("insp_formatos").select("nombre,tiene_fotos,estructura,firmantes,color_acento,mostrar_cumplimiento,pdf_horizontal,tipo,imagen_pdf").eq("id",formato_id).maybeSingle();
       if(errFull || !full){ toast("No se pudo cargar el formato elegido","err"); return; }
       // Sin campo de etiqueta al crear: el formulario nace con el mismo nombre que tenía
       // la plantilla en "Formatos" (nombre queda null, y la tarjeta cae al fallback
@@ -11583,7 +11586,7 @@ function abrirNuevoEnlaceInsp(tipoFiltro){
       const { data, error } = await sb.from("insp_enlaces").insert({
         contrato_id: contratoInspActualId, formato_id, predeterminado_id: null, firmantes_banco: {}, herramienta_id, nombre: null,
         formato_nombre: full.nombre, tiene_fotos: full.tiene_fotos, estructura: full.estructura, firmantes: full.firmantes,
-        color_acento: full.color_acento, mostrar_cumplimiento: full.mostrar_cumplimiento, tipo: full.tipo, imagen_pdf: full.imagen_pdf
+        color_acento: full.color_acento, mostrar_cumplimiento: full.mostrar_cumplimiento, pdf_horizontal: full.pdf_horizontal, tipo: full.tipo, imagen_pdf: full.imagen_pdf
       }).select().single();
       if(error){ toast("No se pudo crear: "+error.message,"err"); return; }
       await loadInspeccionesState();
@@ -12644,7 +12647,10 @@ async function abrirHistorialInspecciones(mesInicial){
       </div>
       <div id="historialInspLista" style="margin-top:12px"><div class="empty"><h3>Cargando…</h3></div></div>
     </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
+      <button class="btn btn-primary" id="btnDescargarHistorialInsp">${I.doc} Descargar ZIP</button>
+    </div>
   </div>`);
 
   async function cargar(mes){
@@ -12684,7 +12690,56 @@ async function abrirHistorialInspecciones(mesInicial){
   }
 
   document.getElementById('historialInspMes').onchange = (e)=> cargar(e.target.value);
+  document.getElementById('btnDescargarHistorialInsp').onclick = ()=>{
+    const mesInput = document.getElementById('historialInspMes');
+    const mes = (mesInput && mesInput.value) || mes0;
+    descargarZipInspeccionesFiltrado(contratoInspActualId, mes, c?.nombre);
+  };
   cargar(mes0);
+}
+
+/* Descarga en un solo ZIP el PDF de cada inspección del mes filtrado — mismo patrón que
+   descargarZipKardexContratoFiltrado (EPP/Dotación, línea ~3836): junta el mes en Supabase,
+   arma un PDF por registro con construirInspeccionPDF (ya soporta pasar el id directo) y
+   los empaqueta con JSZip. */
+async function descargarZipInspeccionesFiltrado(contratoId, mes, nombreContrato){
+  if(!window.jspdf || !window.jspdf.jsPDF){ toast("No se pudo cargar el generador de PDF (revisa tu conexión)","err"); return; }
+  if(!window.JSZip){ toast("No se pudo cargar el compresor ZIP (revisa tu conexión)","err"); return; }
+  const { desde } = rangoDelMes(mes);
+  const [y,m] = mes.split('-').map(Number);
+  const siguienteMes = (m===12 ? (y+1)+'-01-01' : y+'-'+String(m+1).padStart(2,'0')+'-01');
+  bloquear("Preparando ZIP…");
+  try{
+    const { data, error } = await sb.from("insp_inspecciones").select("id")
+      .eq("contrato_id", contratoId).gte("creado_en", desde).lt("creado_en", siguienteMes)
+      .order("creado_en",{ascending:false});
+    if(error){ toast("No se pudo cargar el mes: "+error.message,"err"); return; }
+    const lista = data || [];
+    if(!lista.length){ toast("No hay inspecciones registradas en ese mes","err"); return; }
+    const zip = new JSZip();
+    const usados = {};
+    let incluidos = 0;
+    for(let i=0;i<lista.length;i++){
+      bloquearMsg(`Generando inspección ${i+1} de ${lista.length}…`);
+      try{
+        const r = await construirInspeccionPDF(lista[i].id);
+        if(!r) continue;
+        let base = r.nombreBase || ('inspeccion_'+(i+1));
+        if(usados[base]!=null){ usados[base]++; base = base+'_'+usados[base]; } else usados[base]=0;
+        zip.file(base+'.pdf', r.doc.output('arraybuffer'));
+        incluidos++;
+      }catch(e){ console.warn('inspeccion zip filtrado', lista[i].id, e); }
+    }
+    if(!incluidos){ toast("No se pudo generar ningún PDF de ese mes","err"); return; }
+    const blob = await zip.generateAsync({ type:'blob', compression:'DEFLATE' });
+    const url = URL.createObjectURL(blob);
+    const nombreSafe = String(nombreContrato||'contrato').replace(/[^\w\sáéíóúñ-]/gi,'').trim().replace(/\s+/g,'_').slice(0,40);
+    const a = document.createElement('a'); a.href=url; a.download = 'Inspecciones_'+nombreSafe+'_'+mes+'.zip';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 6000);
+    toast(`ZIP con ${incluidos} inspección(es) generado`,"ok");
+  }catch(e){ console.error(e); toast("No se pudo generar el ZIP: "+(e.message||''),"err"); }
+  finally{ desbloquear(); }
 }
 
 /* ---------- Ver una inspección ya guardada (solo lectura) + descargar su PDF ---------- */
@@ -13280,10 +13335,17 @@ async function construirInspeccionPDF(idOrData){
   if(insp.mostrar_cumplimiento == null) insp.mostrar_cumplimiento = true;
   const nombreContrato = insp.contrato_nombre != null ? insp.contrato_nombre : ((INSPECCIONES.contratos.find(c=>c.id===insp.contrato_id)||{}).nombre || "");
 
+  // Horizontal (landscape) es opcional, elegido a mano por el usuario al crear/editar el
+  // formato — por defecto sigue en vertical (sección 7.182 de MEMORY.md). Pensado para
+  // checklist "por trabajador" con muchos ítems, que en A4 vertical (~190mm útiles) dejan
+  // los encabezados de columna partidos en 3-4 líneas; en horizontal (~277mm útiles) caben
+  // mucho mejor. M/RIGHT ya alimentan a TODAS las secciones vía ctx, así que basta con
+  // recalcular PW/PH aquí — el resto de la función no necesita saber en qué orientación está.
+  const horizontal = insp.pdf_horizontal === true;
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({unit:"mm", format:"a4"});
-  const PW = 210, M = 10, RIGHT = PW - M;
-  const FOOTER_Y = 290, FOOTER_TOP = 278;
+  const doc = new jsPDF({unit:"mm", format:"a4", orientation: horizontal?"landscape":"portrait"});
+  const PW = horizontal ? 297 : 210, PH = horizontal ? 210 : 297, M = 10, RIGHT = PW - M;
+  const FOOTER_Y = PH-7, FOOTER_TOP = PH-19;
   let pag = 1;
 
   function piePagina(){
@@ -13318,16 +13380,16 @@ async function construirInspeccionPDF(idOrData){
   }
   y += hH;
 
-  const fh=14;
+  const fh=14, colW=(RIGHT-M)/3;
   doc.setDrawColor(150,160,190); doc.rect(M,y,RIGHT-M,fh);
-  doc.line(M+63,y,M+63,y+fh); doc.line(M+126,y,M+126,y+fh);
+  doc.line(M+colW,y,M+colW,y+fh); doc.line(M+colW*2,y,M+colW*2,y+fh);
   const horaInsp = insp.creado_en ? new Date(insp.creado_en).toLocaleTimeString("es-CO",{hour:'2-digit',minute:'2-digit'}) : '';
   doc.setFont("helvetica","bold"); doc.setFontSize(7); doc.setTextColor(90,90,110);
-  doc.text("FECHA", M+3, y+5); doc.text("CONTRATO", M+66, y+5); doc.text(insp.herramienta_nombre?"HERRAMIENTA":"EMPRESA", M+129, y+5);
+  doc.text("FECHA", M+3, y+5); doc.text("CONTRATO", M+colW+3, y+5); doc.text(insp.herramienta_nombre?"HERRAMIENTA":"EMPRESA", M+colW*2+3, y+5);
   doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor(20,20,20);
   doc.text(fmtDate((insp.creado_en||'').slice(0,10)) + (horaInsp?"  "+horaInsp:""), M+3, y+10.5);
-  doc.text(doc.splitTextToSize(pdfTexto(nombreContrato||"—"), 60), M+66, y+10.5);
-  doc.text(doc.splitTextToSize(pdfTexto(insp.herramienta_nombre || "Don Aseo Ltda."), 60), M+129, y+10.5);
+  doc.text(doc.splitTextToSize(pdfTexto(nombreContrato||"—"), colW-6), M+colW+3, y+10.5);
+  doc.text(doc.splitTextToSize(pdfTexto(insp.herramienta_nombre || "Don Aseo Ltda."), colW-6), M+colW*2+3, y+10.5);
   y += fh + 4;
 
   // Resumen de cumplimiento — calculado con el mismo marcado manual conforme/no
