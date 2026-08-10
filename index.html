@@ -719,12 +719,18 @@ table.dt tr:hover td{background:#fafbfe}
 // se respeta el tema del sistema operativo/navegador.
 (function(){
   try{
-    // Los formularios públicos de Inspecciones (#/inspeccion/<enlace>, el link/QR que
-    // se comparte con inspectores/trabajadores) SIEMPRE se ven en modo claro — nunca
-    // heredan el tema oscuro guardado ni el del sistema operativo del celular de quien
-    // lo abre. Decisión explícita del usuario: el formulario oficial debe verse igual
-    // para todos, sin importar el modo del dispositivo.
-    if(location.hash.indexOf('#/inspeccion/')===0){
+    // TODO link remoto/público (sin login) SIEMPRE se ve en modo claro — nunca hereda
+    // el tema oscuro guardado ni el del sistema operativo/navegador de quien lo abre.
+    // Regla fija del usuario, motivada porque varios trabajadores que registraban su
+    // propia entrega de Dotación desde su celular la veían en modo oscuro sin haberlo
+    // elegido. Mismo listado de rutas que esRutaPublica() (más abajo en este archivo;
+    // si se agrega una ruta pública nueva ahí, hay que agregarla también acá) — QR de
+    // asistencia, firma de documentos, entrega remota de EPP/Dotación (incl. "trabajador
+    // nuevo"), y el formulario público de Inspecciones.
+    var h = location.hash;
+    if(h.indexOf('#/lista/')===0 || h.indexOf('#/firmar/')===0 || h.indexOf('#/responsable/')===0 ||
+       h.indexOf('#/firmadoc/')===0 || h.indexOf('#/dotacionlegal/entrega')===0 ||
+       h.indexOf('#/dotacion/entrega')===0 || h.indexOf('#/inspeccion/')===0){
       document.documentElement.setAttribute('data-theme', 'light');
       return;
     }
@@ -1290,6 +1296,13 @@ function topbar(active){
     </div></div>`;
 }
 function temaActual(){ return document.documentElement.getAttribute('data-theme')==='dark' ? 'dark' : 'light'; }
+// Regla fija: TODO link remoto/público (sin login — QR de asistencia, firma de
+// documentos, entrega remota de EPP/Dotación, formulario de Inspecciones) se ve
+// SIEMPRE en modo claro, nunca hereda el tema oscuro guardado ni el del sistema
+// operativo de quien lo abre. El script del <head> ya cubre la carga inicial (mismo
+// listado de rutas que esRutaPublica()); esto refuerza por si se llega navegando
+// dentro de la misma pestaña (ese script del <head> solo corre una vez, al cargar).
+function forzarTemaClaroPublico(){ document.documentElement.setAttribute('data-theme', 'light'); }
 function aplicarTema(t){
   document.documentElement.setAttribute('data-theme', t);
   try{ localStorage.setItem('tema_firmas', t); }catch(e){}
@@ -1876,6 +1889,7 @@ let publicList = null;
 let publicCount = 0;
 
 async function renderPublic(id){
+  forzarTemaClaroPublico();
   document.body.style.overflow="";
   const { data:filasPub, error:loadErr } = await sb.rpc("asis_lista_publica", { p_id: id });
   const row = filasPub && filasPub[0];
@@ -2148,6 +2162,7 @@ function mostrarYaRegistrado(documento){
    VISTA PÚBLICA · FIRMA DEL RESPONSABLE (persona externa, sin login)
    ============================================================ */
 async function renderFirmaResponsable(id){
+  forzarTemaClaroPublico();
   document.body.style.overflow="";
   const host = document.getElementById("app");
   const { data:filasResp } = await sb.rpc("asis_lista_responsable_publica", { p_id: id });
@@ -4278,6 +4293,7 @@ function wireFormularioFirma(){
 }
 
 async function renderFirmaPublica(token){
+  forzarTemaClaroPublico();
   document.body.style.overflow="";
   const cont = document.getElementById("app");
   cont.innerHTML = `<div class="pub-wrap"><div class="pub-card"><div class="pub-body" style="text-align:center;padding:54px 20px"><div class="muted-sm">Cargando documento…</div></div></div></div>`;
@@ -4505,6 +4521,7 @@ function extraFieldsDocHTML(c){
 }
 
 async function renderFirmaDoc(id){
+  forzarTemaClaroPublico();
   document.body.style.overflow="";
   const cont = document.getElementById("app");
   cont.innerHTML = `<div class="pub-wrap"><div class="pub-card"><div class="pub-body" style="text-align:center;padding:54px 20px"><div class="muted-sm">Cargando documento…</div></div></div></div>`;
@@ -6641,6 +6658,7 @@ let dotPublicoState = { contratoId:null, catalogo:[], trabajador:null, foto:null
    caso de alguien que cambió de contrato); si de verdad hay ambigüedad (0
    activos, o 2+ activos a la vez), se le pregunta en cuál trabaja. */
 async function renderDotPublicoUniversal(){
+  forzarTemaClaroPublico();
   dotPublicoState = { contratoId:null, catalogo:[], trabajador:null, foto:null };
   await cargarAppConfig();   // sin esto, APP_CONFIG queda en su valor por defecto y el aviso "(obligatoria)" no sale aunque sí se exija al guardar (lo aplica un trigger en la base de datos, no el cliente)
   renderDotPublicoCedulaUniversal();
@@ -6836,6 +6854,7 @@ function renderDotPublicoExito(){
    registro que el enlace normal (renderDotPublicoFormulario/confirmarEntregaDotPublica) —
    así no hay dos versiones distintas del paso de "elegir EPP y firmar" que mantener. ---------- */
 async function renderDotPublicoNuevo(contratoId){
+  forzarTemaClaroPublico();
   dotPublicoState = { contratoId:null, catalogo:[], trabajador:null, foto:null };
   await cargarAppConfig();
   bloquear("Cargando…");
@@ -9466,6 +9485,7 @@ async function descargarExcelDtlSeleccion(entidadIds){
 let dtlPublicoState = { trabajador:null, foto:null };
 
 async function renderDtlPublico(){
+  forzarTemaClaroPublico();
   dtlPublicoState = { trabajador:null, foto:null };
   await cargarAppConfig();
   renderDtlPublicoCedula();
@@ -9672,6 +9692,7 @@ function renderDtlPublicoExito(){
    formulario/RPC de registro del enlace normal (renderDtlPublicoFormulario/
    confirmarEntregaDtlPublica). ---------- */
 async function renderDtlPublicoNuevo(entidadId){
+  forzarTemaClaroPublico();
   dtlPublicoState = { trabajador:null, foto:null };
   await cargarAppConfig();
   bloquear("Cargando…");
@@ -9986,7 +10007,7 @@ async function renderConstructorFormatoInsp(formatoId, enlaceId){
             <button type="button" class="btn btn-primary btn-sm" data-cons-tab="form">👁 Formulario</button>
             <button type="button" class="btn btn-ghost btn-sm" data-cons-tab="pdf">${I.doc} Ver PDF final</button>
             <button type="button" class="btn btn-ghost btn-sm" id="btnActualizarPdfPreview" style="display:none">${I.check} Actualizar</button>
-            <button type="button" class="btn btn-ghost btn-sm" id="btnAbrirPdfPreview" style="display:none;margin-left:auto">${I.link} Abrir en pestaña nueva</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="btnAbrirPdfPreview" style="display:none;margin-left:auto">${I.pdf} Descargar PDF</button>
           </div>
           <div id="consVistaForm" class="pub-card">
             <div class="pub-head" style="padding:18px">
@@ -10037,7 +10058,7 @@ async function renderConstructorFormatoInsp(formatoId, enlaceId){
       };
       const r = await construirInspeccionPDF(insp);
       if(pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
-      pdfPreviewUrl = r.doc.output('bloburl'); // se conserva solo para "Abrir en pestaña nueva"
+      pdfPreviewUrl = r.doc.output('bloburl'); // se conserva solo para "Descargar PDF"
 
       // La vista principal NO usa <iframe>/<embed> con el visor nativo de PDF del
       // navegador — en producción eso salía en negro (probablemente por la opción
@@ -10073,7 +10094,14 @@ async function renderConstructorFormatoInsp(formatoId, enlaceId){
   }
   document.getElementById('btnAbrirPdfPreview').onclick = ()=>{
     if(!pdfPreviewUrl){ toast("Primero genera la vista previa","err"); return; }
-    window.open(pdfPreviewUrl, '_blank');
+    // Descarga en vez de abrir en pestaña nueva: un blob: URL abierto con window.open
+    // depende del visor nativo de PDF del navegador en OTRA pestaña — el mismo problema
+    // ("Ver PDF final" salía en negro/en blanco) que ya se evitó en el panel principal
+    // usando pdf.js a <canvas> (ver comentario arriba). Descargar el archivo es 100%
+    // confiable sin importar la configuración del navegador.
+    const a = document.createElement('a'); a.href = pdfPreviewUrl;
+    a.download = 'VistaPrevia_'+(formatoEditorState.nombre||'formato').replace(/[^\w\sáéíóúñ-]/gi,'').trim().replace(/\s+/g,'_').slice(0,50)+'.pdf';
+    document.body.appendChild(a); a.click(); a.remove();
   };
   document.querySelectorAll('[data-cons-tab]').forEach(b=>{
     b.onclick = async ()=>{
@@ -10356,12 +10384,13 @@ function renderEditorSeccionChecklist(s, i){
       <label style="font-size:13px;color:var(--ink-2)">Estados (separados por coma):
         <input data-checklist-estados="${i}" value="${esc(estadosStr)}" placeholder="Cumple, No cumple, N/A" style="margin-left:6px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;width:220px">
       </label>
-      <label class="chk"><input type="checkbox" data-checklist-marca="${i}" ${s.conMarcaModelo?'checked':''}> Con marca/modelo por ítem</label>
+      <label class="chk"><input type="checkbox" data-checklist-por-trabajador="${i}" ${s.porTrabajador?'checked':''}> Evaluar por trabajador (una fila por persona)</label>
+      ${!s.porTrabajador?`<label class="chk"><input type="checkbox" data-checklist-marca="${i}" ${s.conMarcaModelo?'checked':''}> Con marca/modelo por ítem</label>
       <label class="chk"><input type="checkbox" data-checklist-cantidad="${i}" ${s.conCantidad?'checked':''}> Con cantidad por ítem</label>
       <label class="chk"><input type="checkbox" data-checklist-vencimiento="${i}" ${s.conFechaVencimiento?'checked':''}> Con fecha por ítem</label>
-      <label class="chk"><input type="checkbox" data-checklist-obs="${i}" ${s.conObservaciones?'checked':''}> Con observaciones por ítem</label>
+      <label class="chk"><input type="checkbox" data-checklist-obs="${i}" ${s.conObservaciones?'checked':''}> Con observaciones por ítem</label>`:''}
     </div>
-    ${s.conFechaVencimiento?`<div style="margin:-6px 0 12px">
+    ${(s.conFechaVencimiento && !s.porTrabajador)?`<div style="margin:-6px 0 12px">
       <label style="font-size:13px;color:var(--ink-2)">Etiqueta de esa fecha (ej. "Fecha de vencimiento", "Fecha de último mantenimiento"):
         <input data-checklist-vencimiento-etiqueta="${i}" value="${esc(s.fechaVenceEtiqueta||'Fecha de vencimiento')}" placeholder="Fecha de vencimiento" style="margin-left:6px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;width:280px;max-width:100%">
       </label>
@@ -10475,6 +10504,9 @@ function wireEditoresSeccionInsp(host){
       s.estadosTipo[val] = tipo;
       renderSeccionesFormatoInsp();
     };
+  });
+  host.querySelectorAll('[data-checklist-por-trabajador]').forEach(el=>{
+    el.onchange = (e)=>{ const i=+el.dataset.checklistPorTrabajador; st.estructura[i].porTrabajador = e.target.checked; renderSeccionesFormatoInsp(); renderInspFormBody(); };
   });
   host.querySelectorAll('[data-checklist-obs]').forEach(el=>{
     el.onchange = (e)=>{ const i=+el.dataset.checklistObs; st.estructura[i].conObservaciones = e.target.checked; renderInspFormBody(); };
@@ -12052,6 +12084,7 @@ function renderSeccionNotaInsp(s){
 }
 
 function renderSeccionChecklistInsp(s){
+  if(s.porTrabajador) return renderSeccionChecklistPorTrabajadorInsp(s);
   return `<div class="panel-section" style="margin-bottom:18px">
     <div class="section-label">${esc(s.titulo||'')}</div>
     ${(s.items||[]).map(it=>{
@@ -12069,6 +12102,39 @@ function renderSeccionChecklistInsp(s){
         ${s.conObservaciones?`<input data-item-obs="${it.id}" value="${esc(r.observaciones||'')}" placeholder="Observaciones (opcional)" style="width:100%;margin-top:8px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;box-sizing:border-box">`:''}
       </div>`;
     }).join('')}
+  </div>`;
+}
+
+// Checklist "por trabajador" (sección 7.166 de MEMORY.md): los mismos ítems/estados de
+// un checklist normal, pero evaluados una vez POR FILA en vez de una sola vez para toda la
+// inspección. Los trabajadores se agregan a mano (Nombre/Cédula), mismo patrón que
+// "Agregar fila" de tabla_dinamica — respuestas[s.id] pasa a ser un array de filas
+// {nombre,cedula,estados:{[itemId]:estado}} en vez del objeto plano por ítem de un
+// checklist normal.
+function renderSeccionChecklistPorTrabajadorInsp(s){
+  const filas = Array.isArray(inspeccionDraft.respuestas[s.id]) ? inspeccionDraft.respuestas[s.id] : [];
+  return `<div class="panel-section" style="margin-bottom:18px">
+    <div class="section-label">${esc(s.titulo||'')}</div>
+    <div data-fila-trab="${s.id}">
+      ${filas.map((fila,j)=>`
+        <div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+            <input data-fila-nombre="${s.id}:${j}" value="${esc(fila.nombre||'')}" placeholder="Nombre del trabajador" style="flex:1;min-width:160px;padding:6px 8px;border:1px solid var(--line);border-radius:6px">
+            <input data-fila-cedula="${s.id}:${j}" value="${esc(fila.cedula||'')}" placeholder="Cédula" style="flex:1;min-width:120px;padding:6px 8px;border:1px solid var(--line);border-radius:6px">
+            <button type="button" class="icon-btn danger" title="Quitar trabajador" data-fila-del="${s.id}:${j}">${I.trash}</button>
+          </div>
+          ${(s.items||[]).map(it=>{
+            const estActual = (fila.estados||{})[it.id];
+            return `<div style="margin-bottom:6px">
+              <div class="muted-sm" style="margin-bottom:4px">${esc(it.texto)}</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                ${(s.estados||[]).map(estado=>{ const cls = claseEstadoInsp(estado, s.estadosTipo); return `<button type="button" class="chip-estado ${estActual===estado?'active '+cls:''}" data-fila-item-estado="${s.id}:${j}:${it.id}" data-estado-val="${esc(estado)}" data-estado-cls="${cls}">${esc(estado)}</button>`; }).join('')}
+              </div>
+            </div>`;
+          }).join('')}
+        </div>`).join('') || '<p class="muted-sm">Sin trabajadores todavía — agrega uno abajo.</p>'}
+    </div>
+    <button type="button" class="btn btn-ghost btn-sm" data-fila-add="${s.id}">${I.plus} Agregar trabajador</button>
   </div>`;
 }
 
@@ -12172,6 +12238,54 @@ function wireInspFormBody(host){
   host.querySelectorAll('[data-item-vence]').forEach(el=>{
     el.oninput = ()=>{ const id=el.dataset.itemVence; const r = inspeccionDraft.respuestas[id] = inspeccionDraft.respuestas[id]||{}; r.fecha_vencimiento = el.value; };
   });
+  host.querySelectorAll('[data-fila-nombre]').forEach(el=>{
+    el.oninput = ()=>{
+      const [sid,j] = el.dataset.filaNombre.split(':');
+      const arr = Array.isArray(inspeccionDraft.respuestas[sid]) ? inspeccionDraft.respuestas[sid] : (inspeccionDraft.respuestas[sid]=[]);
+      arr[+j] = arr[+j] || {};
+      arr[+j].nombre = el.value;
+    };
+  });
+  host.querySelectorAll('[data-fila-cedula]').forEach(el=>{
+    el.oninput = ()=>{
+      const [sid,j] = el.dataset.filaCedula.split(':');
+      const arr = Array.isArray(inspeccionDraft.respuestas[sid]) ? inspeccionDraft.respuestas[sid] : (inspeccionDraft.respuestas[sid]=[]);
+      arr[+j] = arr[+j] || {};
+      arr[+j].cedula = el.value;
+    };
+  });
+  host.querySelectorAll('[data-fila-del]').forEach(b=>{
+    b.onclick = ()=>{
+      const [sid,j] = b.dataset.filaDel.split(':');
+      const arr = inspeccionDraft.respuestas[sid] || [];
+      arr.splice(+j,1);
+      renderInspFormBody();
+      actualizarProgresoInsp();
+    };
+  });
+  host.querySelectorAll('[data-fila-add]').forEach(b=>{
+    b.onclick = ()=>{
+      const sid = b.dataset.filaAdd;
+      const arr = Array.isArray(inspeccionDraft.respuestas[sid]) ? inspeccionDraft.respuestas[sid] : (inspeccionDraft.respuestas[sid]=[]);
+      arr.push({ nombre:'', cedula:'', estados:{} });
+      renderInspFormBody();
+    };
+  });
+  host.querySelectorAll('[data-fila-item-estado]').forEach(b=>{
+    b.onclick = ()=>{
+      const [sid,j,itemId] = b.dataset.filaItemEstado.split(':');
+      const arr = Array.isArray(inspeccionDraft.respuestas[sid]) ? inspeccionDraft.respuestas[sid] : (inspeccionDraft.respuestas[sid]=[]);
+      const fila = arr[+j] = arr[+j] || {};
+      fila.estados = fila.estados || {};
+      const val = b.dataset.estadoVal;
+      fila.estados[itemId] = fila.estados[itemId]===val ? null : val;
+      host.querySelectorAll(`[data-fila-item-estado="${sid}:${j}:${itemId}"]`).forEach(x=>{
+        const activa = x.dataset.estadoVal===fila.estados[itemId];
+        x.className = 'chip-estado' + (activa ? ' active '+x.dataset.estadoCls : '');
+      });
+      actualizarProgresoInsp();
+    };
+  });
   host.querySelectorAll('[data-tabla-celda]').forEach(el=>{
     el.oninput = ()=>{
       const [sid,j,colId] = el.dataset.tablaCelda.split(':');
@@ -12266,6 +12380,14 @@ function calcularProgresoInsp(){
         const v = inspeccionDraft.respuestas[c.id];
         const vacio = c.tipo==='seleccion_multiple' ? !(Array.isArray(v)&&v.length) : !v;
         if(!vacio) completados++;
+      }
+    } else if(s.tipo==='checklist' && s.porTrabajador){
+      const filas = Array.isArray(inspeccionDraft.respuestas[s.id]) ? inspeccionDraft.respuestas[s.id] : [];
+      for(const fila of filas){
+        for(const it of (s.items||[])){
+          total++;
+          if((fila.estados||{})[it.id]) completados++;
+        }
       }
     } else if(s.tipo==='checklist'){
       for(const it of (s.items||[])){
@@ -12392,6 +12514,7 @@ function renderSeccionInfoLectura(s, respuestas){
   </div>`;
 }
 function renderSeccionChecklistLectura(s, respuestas){
+  if(s.porTrabajador) return renderSeccionChecklistPorTrabajadorLectura(s, respuestas);
   return `<div class="panel-section" style="margin-bottom:14px">
     <div class="section-label">${esc(s.titulo||'')}</div>
     <div class="table-wrap"><table class="dt">
@@ -12401,6 +12524,21 @@ function renderSeccionChecklistLectura(s, respuestas){
         return `<tr><td>${esc(it.texto)}</td><td>${r.estado?`<span class="chip-estado active ${claseEstadoInsp(r.estado, s.estadosTipo)}" style="cursor:default;padding:4px 10px;font-size:12px">${esc(r.estado)}</span>`:'—'}</td>${s.conMarcaModelo?`<td>${esc(r.marca_modelo||'—')}</td>`:''}${s.conCantidad?`<td>${esc(r.cantidad??'—')}</td>`:''}${s.conFechaVencimiento?`<td>${r.fecha_vencimiento?fmtDate(r.fecha_vencimiento):'—'}</td>`:''}${s.conObservaciones?`<td>${esc(r.observaciones||'—')}</td>`:''}</tr>`;
       }).join('')}</tbody>
     </table></div>
+  </div>`;
+}
+// Checklist "por trabajador" en "Ver detalle" (panel admin): filas = trabajadores,
+// columnas = Nombre/Cédula + un ítem cada una. Mismo criterio que renderSeccionTablaLectura.
+function renderSeccionChecklistPorTrabajadorLectura(s, respuestas){
+  const filas = Array.isArray(respuestas[s.id]) ? respuestas[s.id] : [];
+  return `<div class="panel-section" style="margin-bottom:14px">
+    <div class="section-label">${esc(s.titulo||'')}</div>
+    ${filas.length ? `<div class="table-wrap"><table class="dt">
+      <thead><tr><th>Nombre</th><th>Cédula</th>${(s.items||[]).map(it=>`<th>${esc(it.texto)}</th>`).join('')}</tr></thead>
+      <tbody>${filas.map(fila=>`<tr><td>${esc(fila.nombre||'—')}</td><td>${esc(fila.cedula||'—')}</td>${(s.items||[]).map(it=>{
+        const estado = (fila.estados||{})[it.id];
+        return `<td>${estado?`<span class="chip-estado active ${claseEstadoInsp(estado, s.estadosTipo)}" style="cursor:default;padding:4px 10px;font-size:12px">${esc(estado)}</span>`:'—'}</td>`;
+      }).join('')}</tr>`).join('')}</tbody>
+    </table></div>` : '<p class="muted-sm">Sin trabajadores registrados.</p>'}
   </div>`;
 }
 function renderSeccionTablaLectura(s, respuestas){
@@ -12645,6 +12783,7 @@ function dibujarSeccionNotaPDF(doc, y, seccion, respuestas, ctx){
 }
 
 function dibujarSeccionChecklistPDF(doc, y, seccion, respuestas, ctx){
+  if(seccion.porTrabajador) return dibujarSeccionChecklistPorTrabajadorPDF(doc, y, seccion, respuestas, ctx);
   const { M, RIGHT, asegurarEspacio } = ctx;
   const estados = seccion.estados || [];
   const conObs = !!seccion.conObservaciones;
@@ -12744,6 +12883,87 @@ function dibujarSeccionChecklistPDF(doc, y, seccion, respuestas, ctx){
     if(cantIdx!=null && r.cantidad!=null && r.cantidad!==''){ doc.text(pdfTexto(String(r.cantidad)), (xs[cantIdx]+xs[cantIdx+1])/2, y+rowH/2+1.4, {align:"center"}); }
     if(venceIdx!=null && r.fecha_vencimiento){ doc.text(fmtDate(r.fecha_vencimiento), (xs[venceIdx]+xs[venceIdx+1])/2, y+rowH/2+1.4, {align:"center"}); }
     if(obsIdx!=null && wrappedObs.length){ doc.text(wrappedObs, xs[obsIdx]+2, y+4.4); }
+    y += rowH;
+  }
+  return y+4;
+}
+
+// Checklist "por trabajador" en el PDF: acá los TRABAJADORES son las filas y los ÍTEMS son
+// las columnas (al revés que el checklist normal, donde los ítems son filas y los estados
+// columnas) — con ~16 ítems cada columna mide unos pocos milímetros, así que en vez de
+// texto (no cabría ni la palabra más corta de un estado) cada celda es un cuadrito de color
+// — verde/rojo/gris, mismo criterio bien/mal/na que ya usa claseEstadoInsp en pantalla — y
+// solo se dibuja cuando esa persona tiene un estado marcado para ese ítem.
+function dibujarSeccionChecklistPorTrabajadorPDF(doc, y, seccion, respuestas, ctx){
+  const { M, RIGHT, asegurarEspacio } = ctx;
+  const filas = Array.isArray(respuestas[seccion.id]) ? respuestas[seccion.id] : [];
+  const items = seccion.items || [];
+  const COLOR_BIEN = [31,168,78], COLOR_MAL = [214,59,80], COLOR_NA = [154,162,184];
+
+  const nombreColW = 34, cedulaColW = 22;
+  const disponibleItems = Math.max(items.length*7, RIGHT-M-nombreColW-cedulaColW);
+  const itemColW = items.length ? disponibleItems/items.length : disponibleItems;
+  const xs = [M, M+nombreColW, M+nombreColW+cedulaColW];
+  items.forEach((_,i)=> xs.push(M+nombreColW+cedulaColW+itemColW*(i+1)));
+
+  function tituloYCab(yy){
+    doc.setFillColor(ctx.colorAcento[0],ctx.colorAcento[1],ctx.colorAcento[2]); doc.rect(M,yy,RIGHT-M,7,"F");
+    doc.setFont("helvetica","bold"); doc.setFontSize(9.5); doc.setTextColor(255,255,255);
+    doc.text(pdfTexto(seccion.titulo||""), M+3, yy+5);
+    yy += 7;
+    doc.setFont("helvetica","bold"); doc.setFontSize(6.2);
+    const celdas = [
+      {txt:'NOMBRE', x0:xs[0], x1:xs[1], align:'left'},
+      {txt:'CÉDULA', x0:xs[1], x1:xs[2], align:'left'}
+    ].concat(items.map((it,i)=>({txt:(it.texto||'').toUpperCase(), x0:xs[i+2], x1:xs[i+3], align:'center'})));
+    const wrapCeldas = celdas.map(c=> doc.splitTextToSize(pdfTexto(c.txt), Math.max(6,(c.x1-c.x0)-2)));
+    const maxLineas = Math.max(1, ...wrapCeldas.map(w=>w.length));
+    const h = Math.max(7, maxLineas*2.9+3.2);
+    doc.setFillColor(238,241,248); doc.rect(M,yy,RIGHT-M,h,"F");
+    doc.setDrawColor(150,160,190);
+    xs.forEach(x=>doc.line(x,yy,x,yy+h));
+    doc.rect(M,yy,RIGHT-M,h);
+    doc.setTextColor(40,40,60);
+    celdas.forEach((c,i)=>{
+      const lineas = wrapCeldas[i];
+      const startY = yy + (h-(lineas.length-1)*2.9)/2 + 1.4;
+      if(c.align==='left') doc.text(lineas, c.x0+1.5, startY);
+      else doc.text(lineas, (c.x0+c.x1)/2, startY, {align:"center"});
+    });
+    return yy+h;
+  }
+
+  y = asegurarEspacio(y, 14);
+  y = tituloYCab(y);
+
+  if(!filas.length){
+    doc.setFont("helvetica","italic"); doc.setFontSize(8); doc.setTextColor(140,140,160);
+    doc.text("Sin trabajadores registrados.", M+2, y+5);
+    return y+9;
+  }
+
+  for(const fila of filas){
+    doc.setFont("helvetica","normal"); doc.setFontSize(7.2);
+    const wrappedNombre = doc.splitTextToSize(pdfTexto(fila.nombre||'—'), nombreColW-3);
+    const wrappedCedula = doc.splitTextToSize(pdfTexto(fila.cedula||'—'), cedulaColW-3);
+    const rowH = Math.max(7, Math.max(wrappedNombre.length, wrappedCedula.length)*3.2 + 3);
+    if(y+rowH > ctx.FOOTER_TOP){ y = ctx.nuevaPagina(); y = tituloYCab(y); }
+    doc.setDrawColor(180,188,210);
+    xs.forEach(x=>doc.line(x,y,x,y+rowH));
+    doc.line(M,y+rowH,RIGHT,y+rowH);
+    doc.setFont("helvetica","normal"); doc.setFontSize(7.2); doc.setTextColor(20,20,20);
+    doc.text(wrappedNombre, M+1.5, y+4);
+    doc.text(wrappedCedula, xs[1]+1.5, y+4);
+    items.forEach((it,i)=>{
+      const estado = (fila.estados||{})[it.id];
+      if(!estado) return;
+      const cls = claseEstadoInsp(estado, seccion.estadosTipo);
+      const color = cls==='bien'?COLOR_BIEN : cls==='mal'?COLOR_MAL : COLOR_NA;
+      const sz = 3;
+      const cx = (xs[i+2]+xs[i+3])/2, cy = y+rowH/2;
+      doc.setFillColor(color[0],color[1],color[2]);
+      doc.rect(cx-sz/2, cy-sz/2, sz, sz, 'F');
+    });
     y += rowH;
   }
   return y+4;
