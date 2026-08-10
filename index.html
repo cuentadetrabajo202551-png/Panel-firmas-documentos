@@ -10785,7 +10785,7 @@ async function renderInspeccionesAdmin(modo){
             ${!enTodos?`<button type="button" class="subtab-item ${tabInspActiva==='preop'?'active':''}" data-subtab="preop">Inspección preoperacional</button>
             <button type="button" class="subtab-item ${tabInspActiva==='insp'?'active':''}" data-subtab="insp">Inspecciones</button>
             <button type="button" class="subtab-item ${tabInspActiva==='inventario'?'active':''}" data-subtab="inventario">Inventario</button>
-            <button type="button" class="subtab-item ${tabInspActiva==='herramientas'?'active':''}" data-subtab="herramientas">Herramientas y equipos</button>`:''}
+            <button type="button" class="subtab-item ${tabInspActiva==='herramientas'?'active':''}" data-subtab="herramientas">Herramientas/equipos: mmto y hv</button>`:''}
             <button type="button" class="subtab-item ${tabInspActiva==='formatos'?'active':''}" data-subtab="formatos">Formatos</button>
           </div>
           <div class="subtab-content">
@@ -12519,7 +12519,13 @@ function validarCamposRequeridosInsp(){
         const vacio = c.tipo==='seleccion_multiple' ? !(Array.isArray(v)&&v.length) : !v;
         if(vacio){ toast(`Falta "${c.etiqueta}"`,"err"); return false; }
       }
-    } else if(s.tipo==='checklist'){
+    } else if(s.tipo==='checklist' && !s.porTrabajador){
+      // Un checklist "por trabajador" nunca fue obligatorio en v1 (decisión explícita al
+      // construirlo, ver 7.166 en MEMORY.md) — esta rama, escrita antes de que existiera esa
+      // opción, no sabía leer su forma anidada (respuestas[seccionId][trabajadorId].estados)
+      // y siempre revisaba inspeccionDraft.respuestas[it.id] (la forma de un checklist
+      // normal), que para una sección por trabajador nunca existe — por eso bloqueaba el
+      // envío con "Falta marcar" incluso con el 100% de las celdas ya marcadas.
       for(const it of (s.items||[])){
         const r = inspeccionDraft.respuestas[it.id];
         if(!r || !r.estado){ toast(`Falta marcar "${it.texto}" en "${s.titulo||'checklist'}"`,"err"); return false; }
@@ -13751,7 +13757,7 @@ async function renderConfiguracion(silent){
               </div>
               <div class="sec-bar"><h2>Inspecciones: catálogo de herramientas y hoja de vida</h2></div>
               <div style="margin-bottom:20px;padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
-                <p style="margin-bottom:8px">Cada contrato tiene su propio catálogo de herramientas/equipos (botón "Herramientas y equipos"). Al crear un enlace en "Inspecciones"/"Inspección preoperacional" se le puede asociar una herramienta específica — así cada QR queda ligado a un equipo en particular.</p>
+                <p style="margin-bottom:8px">Cada contrato tiene su propio catálogo de herramientas/equipos (botón "Herramientas/equipos: mmto y hv"). Al crear un enlace en "Inspecciones"/"Inspección preoperacional" se le puede asociar una herramienta específica — así cada QR queda ligado a un equipo en particular.</p>
                 <p style="margin:0"><b>"Hoja de vida"</b> muestra, para la herramienta que elijas, todo lo que se le ha registrado (inspecciones y preoperacionales juntos, de más reciente a más antigua).</p>
               </div>
               <div class="sec-bar"><h2>EPP: permiso "puede agregar al catálogo"</h2></div>
