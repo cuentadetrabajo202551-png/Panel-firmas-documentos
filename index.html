@@ -10764,8 +10764,11 @@ async function renderInspeccionesAdmin(modo){
   // había elegido (inspSubtabActiva) para que un refresco silencioso (cada 20s) no lo
   // regrese siempre a la primera; solo se resetea si esa pestaña ya no aplica (ej. pasó
   // a "Todos los contratos", donde solo existe "Formatos").
-  const tabsDisponibles = enTodos ? ['formatos'] : ['preop','insp','inventario','formatos','herramientas'];
-  const tabInspActiva = tabsDisponibles.includes(inspSubtabActiva) ? inspSubtabActiva : tabsDisponibles[0];
+  // "Formatos" quedó exclusivo de administradores (sección 7.181 de MEMORY.md) — un editor
+  // nunca debe poder caer ahí, ni siquiera si "Todos los contratos" (que antes SOLO mostraba
+  // Formatos) queda seleccionado desde antes.
+  const tabsDisponibles = (enTodos ? ['formatos'] : ['preop','insp','inventario','formatos','herramientas']).filter(t=> t!=='formatos' || MIPERFIL.esAdmin);
+  const tabInspActiva = tabsDisponibles.includes(inspSubtabActiva) ? inspSubtabActiva : (tabsDisponibles[0] || '');
 
   document.getElementById("app").innerHTML = `
     ${topbar('inspecciones')}
@@ -10795,8 +10798,8 @@ async function renderInspeccionesAdmin(modo){
         <div class="section-label">Acciones</div>
         <div class="action-grid">
           <button class="action-card" id="btnHistorialInsp" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.cal}</div><span class="ac-title">Historial de inspecciones</span><span class="ac-chevron">›</span></button>
-          ${puedeEscribir()?`<button class="action-card" id="btnCrearFormatoInsp"><div class="ac-ic">${I.plus}</div><span class="ac-title">Crear formato</span><span class="ac-chevron">›</span></button>`:''}
-          ${puedeEscribir()?`<button class="action-card" id="btnFirmasInsp"><div class="ac-ic">${I.firma}</div><span class="ac-title">Firmas</span><span class="ac-chevron">›</span></button>`:''}
+          ${MIPERFIL.esAdmin?`<button class="action-card" id="btnCrearFormatoInsp"><div class="ac-ic">${I.plus}</div><span class="ac-title">Crear formato</span><span class="ac-chevron">›</span></button>`:''}
+          ${MIPERFIL.esAdmin?`<button class="action-card" id="btnFirmasInsp"><div class="ac-ic">${I.firma}</div><span class="ac-title">Firmas</span><span class="ac-chevron">›</span></button>`:''}
         </div>
       </div>
 
@@ -10807,7 +10810,7 @@ async function renderInspeccionesAdmin(modo){
             <button type="button" class="subtab-item ${tabInspActiva==='insp'?'active':''}" data-subtab="insp">Inspecciones</button>
             <button type="button" class="subtab-item ${tabInspActiva==='inventario'?'active':''}" data-subtab="inventario">Inventario</button>
             <button type="button" class="subtab-item ${tabInspActiva==='herramientas'?'active':''}" data-subtab="herramientas">Herramientas y equipos</button>`:''}
-            <button type="button" class="subtab-item ${tabInspActiva==='formatos'?'active':''}" data-subtab="formatos">Formatos</button>
+            ${MIPERFIL.esAdmin?`<button type="button" class="subtab-item ${tabInspActiva==='formatos'?'active':''}" data-subtab="formatos">Formatos</button>`:''}
           </div>
           <div class="subtab-content">
             ${!enTodos?`
@@ -10824,7 +10827,7 @@ async function renderInspeccionesAdmin(modo){
               ${puedeEscribir()?`<button class="btn btn-ghost btn-sm" id="btnNuevaHerramientaInsp" style="margin-bottom:14px">${I.plus} Nueva herramienta</button>`:''}
               <div id="herramientasInspGrid"></div>
             </div>`:''}
-            <div class="subtab-pane ${tabInspActiva==='formatos'?'active':''}" data-pane="formatos">
+            ${MIPERFIL.esAdmin?`<div class="subtab-pane ${tabInspActiva==='formatos'?'active':''}" data-pane="formatos">
               <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
                 <button type="button" class="tipo-estado-btn ${formatosInspFiltroTipo==='todos'?'active bien':''}" data-filtro-formato="todos">Todos</button>
                 <button type="button" class="tipo-estado-btn ${formatosInspFiltroTipo==='inspeccion'?'active bien':''}" data-filtro-formato="inspeccion">Inspección</button>
@@ -10832,7 +10835,7 @@ async function renderInspeccionesAdmin(modo){
                 <button type="button" class="tipo-estado-btn ${formatosInspFiltroTipo==='inventario'?'active bien':''}" data-filtro-formato="inventario">Inventario</button>
               </div>
               <div id="formatosInspGrid"></div>
-            </div>
+            </div>` : (!tabInspActiva ? `<div class="empty"><div class="ic">${I.box}</div><h3>Elige un contrato específico</h3><p>La biblioteca de Formatos es exclusiva de administradores — para ver tus inspecciones, elige un contrato en vez de "Todos los contratos".</p></div>` : '')}
           </div>
         </div>
       </div>
@@ -10881,7 +10884,7 @@ async function renderInspeccionesAdmin(modo){
 function renderEnlacesInspPorTipo(tipo, hostId){
   const host = document.getElementById(hostId); if(!host) return;
   const enlaces = enlacesDelContrato().filter(e=> e.tipo === tipo);
-  const botonNuevo = puedeEscribir() ? `<button class="btn btn-ghost btn-sm" data-nuevo-enlace-tipo="${tipo}" style="margin-top:10px">${I.plus} Crear formulario</button>` : '';
+  const botonNuevo = MIPERFIL.esAdmin ? `<button class="btn btn-ghost btn-sm" data-nuevo-enlace-tipo="${tipo}" style="margin-top:10px">${I.plus} Crear formulario</button>` : '';
   if(!enlaces.length){
     const copiaVacia = tipo==='preoperacional' ? 'Crea uno para que un trabajador registre el preoperacional de una herramienta.'
       : tipo==='inventario' ? 'Crea uno para registrar la revisión periódica de inventario de maquinaria/herramienta.'
@@ -10921,7 +10924,7 @@ function renderEnlacesInspPorTipo(tipo, hostId){
               <button class="icon-btn" title="Ver detalle" data-eit="ver" data-id="${en.id}">${I.eye}</button>
               <button class="icon-btn" title="Copiar enlace" data-eit="link" data-id="${en.id}">${I.link}</button>
               <button class="icon-btn" title="Compartir QR" data-eit="qr" data-id="${en.id}">${I.qr}</button>
-              ${puedeEscribir()?`<button class="icon-btn" title="Editar nombre" data-eit="nombre" data-id="${en.id}">${I.tag}</button>
+              ${MIPERFIL.esAdmin?`<button class="icon-btn" title="Editar nombre" data-eit="nombre" data-id="${en.id}">${I.tag}</button>
               <button class="icon-btn" title="Editar" data-eit="editar" data-id="${en.id}">${I.pen}</button>
               <button class="icon-btn" title="Cambiar herramienta" data-eit="herramienta" data-id="${en.id}">${I.catalogo}</button>
               ${firmantesEn.length?`<button class="icon-btn" title="Firmantes" data-eit="firma" data-id="${en.id}">${I.firma}</button>`:''}
@@ -10978,8 +10981,8 @@ function renderHerramientasInspGrid(){
           <div class="card-actions">
             <button class="icon-btn" title="Ver hoja de vida" data-herr="hv" data-id="${h.id}">${I.doc}</button>
             <button class="icon-btn" title="Gestionar mantenimiento" data-herr="mant" data-id="${h.id}">${I.gear}</button>
-            ${puedeEscribir()?`<button class="icon-btn" title="Editar" data-herr="editar" data-id="${h.id}">${I.pen}</button>
-            <button class="icon-btn" title="${h.activo?'Desactivar':'Activar'}" data-herr="toggle" data-id="${h.id}">${h.activo?I.lock:I.check}</button>
+            ${puedeEscribir()?`<button class="icon-btn" title="Editar" data-herr="editar" data-id="${h.id}">${I.pen}</button>`:''}
+            ${MIPERFIL.esAdmin?`<button class="icon-btn" title="${h.activo?'Desactivar':'Activar'}" data-herr="toggle" data-id="${h.id}">${h.activo?I.lock:I.check}</button>
             <button class="icon-btn danger" title="Eliminar" data-herr="eliminar" data-id="${h.id}">${I.trash}</button>`:''}
           </div>
         </div>
@@ -13766,7 +13769,7 @@ async function renderConfiguracion(silent){
                 <p style="margin-bottom:8px"><b>Administrador</b> — acceso total a todo, sin restricciones, en los 5 módulos.</p>
                 <p style="margin-bottom:8px"><b>Editor en Asistencia y Documentos y Firmas</b> — crea, y solo edita/elimina lo que él mismo creó; nunca puede tocar una lista cerrada o un documento finalizado, así sea suyo.</p>
                 <p style="margin-bottom:8px"><b>Editor en EPP y Dotación</b> — ve todo el directorio y todas las entregas; puede registrar entregas nuevas libremente; puede editar o eliminar <b>las entregas que él mismo registró, sin límite de tiempo</b> — pero nunca las que registró un compañero, eso solo lo puede tocar un administrador. Cada edición o eliminación queda registrada con el detalle exacto de qué cambió en Auditoría. <b>No puede agregar, editar ni eliminar trabajadores</b> del directorio (tampoco por carga masiva de Excel) — el directorio de trabajadores es solo de administrador. <b>Tampoco administra el catálogo de ítems de EPP</b> (editar/activar/desactivar/eliminar/carga masiva) — eso es solo de administrador, salvo que se le dé el permiso de "agregar al catálogo" (ver más abajo).</p>
-                <p style="margin-bottom:8px"><b>Editor en Inspecciones</b> — puede crear/editar/duplicar formatos (plantillas), tomarlos para activarlos en un contrato, y administrar el catálogo de herramientas del contrato.</p>
+                <p style="margin-bottom:8px"><b>Editor en Inspecciones</b> — puede operar los enlaces ya creados en su contrato (Registrar aquí, Ver detalle, Copiar enlace, Compartir QR) y editar la ficha de una herramienta del catálogo (sin poder desactivarla ni eliminarla). <b>No puede</b>: crear ni editar formatos/plantillas (la pestaña "Formatos" ni le aparece), usar el banco de "Firmas", crear un enlace nuevo ("Crear formulario"), ni editar nombre/editar/cambiar herramienta/desactivar/eliminar un enlace, ni tocar sus "Firmantes" — todo eso quedó exclusivo de administrador.</p>
                 <p style="margin-bottom:8px"><b>Visualizador</b> — en cualquier módulo, solo puede ver lo que sus módulos/contratos le permitan; nunca crea, edita ni elimina nada.</p>
                 <p style="margin-bottom:8px"><b>"Entregas de hoy" (junto al buscador, en EPP y Dotación)</b> — Administrador y Editor. <b>"Todos"</b> (selección masiva) — solo Administrador. Visualizador solo ve "Mostrar inactivos".</p>
                 <p style="margin:0"><b>Auditoría</b> — visible solo para Administrador. No es un módulo que se pueda conceder a un Editor o Visualizador; nadie más la ve, sin importar qué permisos tenga.</p>
@@ -13776,7 +13779,7 @@ async function renderConfiguracion(silent){
               </div>
               <div class="sec-bar"><h2>Inspecciones: "Formatos" vs. "Inspecciones"/"Inspección preoperacional"</h2></div>
               <div style="margin-bottom:20px;padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
-                <p style="margin-bottom:8px"><b>"Formatos"</b> es una biblioteca de plantillas — checklist, colores, firmantes — sin contrato ni responsable asociado. Ahí solo se crean/editan/duplican/activan/eliminan plantillas.</p>
+                <p style="margin-bottom:8px"><b>"Formatos"</b> es una biblioteca de plantillas — checklist, colores, firmantes — sin contrato ni responsable asociado. Ahí solo se crean/editan/duplican/activan/eliminan plantillas. <b>Exclusivo de administrador</b> — un editor ni siquiera ve la pestaña.</p>
                 <p style="margin-bottom:8px">Al ir a <b>"Inspecciones"</b> o <b>"Inspección preoperacional"</b> y tomar una plantilla ("Usar este formato"), se crea un <b>enlace independiente</b>: desde ese momento tiene su propia copia del contenido, editable ahí mismo (botón "Editar" de esa tarjeta) sin afectar ni ser afectado por la plantilla original. Una misma plantilla se puede tomar varias veces — una copia nueva por cada toma (ej. una por cada herramienta física).</p>
                 <p style="margin:0">Por eso <b>borrar una plantilla en "Formatos" nunca borra los enlaces</b> que ya se crearon a partir de ella — siguen funcionando exactamente igual.</p>
                 <p style="margin:8px 0 0">El botón <b>"Firmas"</b> (banco de firmas guardadas) funciona igual: es único para todos los contratos, no uno por contrato — una firma que crees ahí se puede usar en cualquier enlace de cualquier contrato.</p>
