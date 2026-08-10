@@ -9021,16 +9021,19 @@ function renderFormEditarEntregaDtl(){
       <div class="field" style="margin-top:14px"><label>Adicional <span class="opt">(opcional)</span></label><textarea id="eeDtlAdicional">${esc(d.adicional)}</textarea></div>
       ` : `
       <label style="font-weight:700;font-size:14px;display:block;margin:16px 0 10px">Elementos entregados</label>
-      <div class="field row2">
-        <div><label>Pantalones — cantidad</label><input type="number" min="0" id="eeDtlPantalonCant" value="${d.pantalonCantidad}"></div>
+      <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="eeDtlPantalonInc" ${d.pantalonCantidad>0?'checked':''}> Pantalones</label>
+      <div class="field row2" id="eeDtlPantalonFields">
+        <div><label>Cantidad</label><input type="number" min="0" id="eeDtlPantalonCant" value="${d.pantalonCantidad}"></div>
         <div><label>Talla *</label><input id="eeDtlPantalonTalla" value="${esc(d.pantalonTalla)}" placeholder="Ej. 34"></div>
       </div>
-      <div class="field row2">
-        <div><label>Camisas — cantidad</label><input type="number" min="0" id="eeDtlCamisaCant" value="${d.camisaCantidad}"></div>
+      <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="eeDtlCamisaInc" ${d.camisaCantidad>0?'checked':''}> Camisas</label>
+      <div class="field row2" id="eeDtlCamisaFields">
+        <div><label>Cantidad</label><input type="number" min="0" id="eeDtlCamisaCant" value="${d.camisaCantidad}"></div>
         <div><label>Talla *</label><input id="eeDtlCamisaTalla" value="${esc(d.camisaTalla)}" placeholder="Ej. M"></div>
       </div>
-      <div class="field row2">
-        <div><label>Par de botas — cantidad de pares</label><input type="number" min="0" id="eeDtlBotasCant" value="${d.botasCantidad}"></div>
+      <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="eeDtlBotasInc" ${d.botasCantidad>0?'checked':''}> Par de botas</label>
+      <div class="field row2" id="eeDtlBotasFields">
+        <div><label>Cantidad de pares</label><input type="number" min="0" id="eeDtlBotasCant" value="${d.botasCantidad}"></div>
         <div><label>Talla *</label><input id="eeDtlBotasTalla" value="${esc(d.botasTalla)}" placeholder="Ej. 40"></div>
       </div>
       <div class="field"><label>Adicional <span class="opt">(opcional)</span></label><textarea id="eeDtlAdicional">${esc(d.adicional)}</textarea></div>
@@ -9065,6 +9068,13 @@ function renderFormEditarEntregaDtl(){
   if(d.catalogoUnico){
     renderEeDtlItemsList();
     document.getElementById('btnEeDtlAddItem').onclick = ()=>{ d.items.push({nombreItem:'',cantidad:1,talla:''}); renderEeDtlItemsList(); };
+  } else {
+    // Mismo checkbox "incluir/excluir" del registro público (wireIncluirItemDtl, ya
+    // existía) — reutilizado acá para poder quitar un ítem de una entrega ya guardada sin
+    // tener que dejar la talla en blanco con la cantidad en 0 a mano (sección 7.174).
+    wireIncluirItemDtl('eeDtlPantalonInc','eeDtlPantalonFields','eeDtlPantalonCant', d.pantalonCantidad>0?d.pantalonCantidad:2);
+    wireIncluirItemDtl('eeDtlCamisaInc','eeDtlCamisaFields','eeDtlCamisaCant', d.camisaCantidad>0?d.camisaCantidad:2);
+    wireIncluirItemDtl('eeDtlBotasInc','eeDtlBotasFields','eeDtlBotasCant', d.botasCantidad>0?d.botasCantidad:1);
   }
   document.getElementById('btnEeDtlGuardar').onclick = guardarEdicionEntregaDtl;
   document.getElementById('btnCorregirFirmaTrabDtl').onclick = ()=> abrirCorregirFirmaEntrega('dtl_entregas','firma_trabajador','Firma del trabajador','dotacion');
@@ -12180,6 +12190,20 @@ function renderSeccionChecklistInsp(s){
   </div>`;
 }
 
+// ¿Las celdas de TODOS los trabajadores × TODOS los ítems de esta sección tienen exactamente
+// este estado? Sirve para resaltar cuál botón "Marcar todos: <estado>" quedó aplicado
+// (sección 7.172 de MEMORY.md) — sin esto los 3 botones se veían siempre iguales aunque abajo
+// ya estuviera todo marcado en verde, y el usuario pensaba que la marca no se guardaba.
+function todosLosTrabajadoresEnInsp(seccion, respTrab, val){
+  const trabajadores = seccion.trabajadores || [];
+  const items = seccion.items || [];
+  if(!trabajadores.length || !items.length) return false;
+  return trabajadores.every(t=>{
+    const estados = (respTrab[t.id]||{}).estados || {};
+    return items.every(it=> estados[it.id]===val);
+  });
+}
+
 // Checklist "por trabajador" (sección 7.166/7.167 de MEMORY.md): los mismos ítems/estados de
 // un checklist normal, pero evaluados una vez POR FILA en vez de una sola vez para toda la
 // inspección. Los trabajadores (Nombre/Cédula) se definen en el CONSTRUCTOR, igual que los
@@ -12199,7 +12223,12 @@ function renderSeccionChecklistPorTrabajadorInsp(s){
       <input type="text" data-buscar-trab="${s.id}" placeholder="Buscar trabajador por nombre o cédula…" style="width:100%;padding:8px 10px 8px 30px;border:1px solid var(--line);border-radius:8px;box-sizing:border-box;font-size:13px">
     </div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
-      ${(s.estados||[]).map(estado=>`<button type="button" class="btn btn-ghost btn-sm" data-marcar-todos-trab="${s.id}" data-marcar-todos-val="${esc(estado)}">Marcar todos: ${esc(estado)}</button>`).join('')}
+      ${(s.estados||[]).map(estado=>{
+        const cls = claseEstadoInsp(estado, s.estadosTipo);
+        const activo = todosLosTrabajadoresEnInsp(s, respTrab, estado);
+        return `<button type="button" class="tipo-estado-btn ${activo?'active '+cls:''}" style="padding:8px 14px;font-size:12.5px" data-marcar-todos-trab="${s.id}" data-marcar-todos-val="${esc(estado)}">Marcar todos: ${esc(estado)}</button>`;
+      }).join('')}
+      <button type="button" class="btn btn-ghost btn-sm" data-desmarcar-todos-trab="${s.id}">${I.close} Desmarcar todos</button>
     </div>
     <div id="trabList_${s.id}">
       ${trabajadores.map(t=>{
@@ -12344,21 +12373,30 @@ function wireInspFormBody(host){
         const activa = x.dataset.estadoVal===r.estados[itemId];
         x.className = 'chip-estado chip-estado-compacto' + (activa ? ' active '+x.dataset.estadoCls : '');
       });
-      // Actualiza el contador "X/Y" de la tarjeta colapsable de este trabajador (sección 7.168).
-      const badge = document.getElementById(`trabBadge_${sid}_${tid}`);
-      if(badge){
-        const seccion = inspeccionDraft.estructura.find(x=>x.id===sid);
-        if(seccion){
+      const seccion = inspeccionDraft.estructura.find(x=>x.id===sid);
+      if(seccion){
+        // Actualiza el contador "X/Y" de la tarjeta colapsable de este trabajador (sección 7.168).
+        const badge = document.getElementById(`trabBadge_${sid}_${tid}`);
+        if(badge){
           const total = (seccion.items||[]).length;
           const completados = (seccion.items||[]).filter(it=>r.estados[it.id]).length;
           badge.textContent = `${completados}/${total}`;
         }
+        // Refresca cuál botón "Marcar todos" queda resaltado (sección 7.172) — un clic manual
+        // en una sola celda puede romper o completar la uniformidad de toda la sección.
+        host.querySelectorAll(`[data-marcar-todos-trab="${sid}"]`).forEach(mb=>{
+          const val = mb.dataset.marcarTodosVal;
+          const activo = todosLosTrabajadoresEnInsp(seccion, respTrab, val);
+          const cls = claseEstadoInsp(val, seccion.estadosTipo);
+          mb.className = 'tipo-estado-btn' + (activo ? ' active '+cls : '');
+        });
       }
       actualizarProgresoInsp();
     };
   });
-  // "Marcar todos: <estado>" (sección 7.169 de MEMORY.md): rellena de una sola vez las celdas
-  // que TODAVÍA no tienen respuesta, para no pisar lo que el inspector ya marcó a mano.
+  // "Marcar todos: <estado>" (sección 7.169/7.171 de MEMORY.md): pone ESE estado en todas las
+  // celdas, pisando cualquier valor anterior — así alternar entre "Marcar todos: Cumple" y
+  // "Marcar todos: No cumple" cambia de verdad a todos, en vez de quedar pegado en el primero.
   host.querySelectorAll('[data-marcar-todos-trab]').forEach(b=>{
     b.onclick = ()=>{
       const sid = b.dataset.marcarTodosTrab;
@@ -12368,7 +12406,23 @@ function wireInspFormBody(host){
       (seccion.trabajadores||[]).forEach(t=>{
         const r = respTrab[t.id] = respTrab[t.id] || {};
         r.estados = r.estados || {};
-        (seccion.items||[]).forEach(it=>{ if(!r.estados[it.id]) r.estados[it.id] = val; });
+        (seccion.items||[]).forEach(it=>{ r.estados[it.id] = val; });
+      });
+      renderInspFormBody();
+      actualizarProgresoInsp();
+    };
+  });
+  // "Desmarcar todos" (sección 7.173): limpia TODAS las celdas de la sección de una vez —
+  // simétrico a "Marcar todos", para cuando el inspector quiere empezar de cero.
+  host.querySelectorAll('[data-desmarcar-todos-trab]').forEach(b=>{
+    b.onclick = ()=>{
+      const sid = b.dataset.desmarcarTodosTrab;
+      const seccion = inspeccionDraft.estructura.find(x=>x.id===sid); if(!seccion) return;
+      const respTrab = inspeccionDraft.respuestas[sid] && typeof inspeccionDraft.respuestas[sid]==='object' ? inspeccionDraft.respuestas[sid] : (inspeccionDraft.respuestas[sid]={});
+      (seccion.trabajadores||[]).forEach(t=>{
+        const r = respTrab[t.id] = respTrab[t.id] || {};
+        r.estados = r.estados || {};
+        (seccion.items||[]).forEach(it=>{ r.estados[it.id] = null; });
       });
       renderInspFormBody();
       actualizarProgresoInsp();
