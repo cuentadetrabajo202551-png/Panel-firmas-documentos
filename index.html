@@ -10109,6 +10109,7 @@ async function renderConstructorFormatoInsp(formatoId, enlaceId){
         firmantes: firmantesPreview,
         color_acento: formatoEditorState.color_acento,
         mostrar_cumplimiento: formatoEditorState.mostrar_cumplimiento,
+        pdf_horizontal: formatoEditorState.pdf_horizontal,
         imagen_pdf: formatoEditorState.imagen_pdf,
         herramienta_nombre: null
       };
@@ -12698,10 +12699,16 @@ async function abrirHistorialInspecciones(mesInicial){
   cargar(mes0);
 }
 
-/* Descarga en un solo ZIP el PDF de cada inspección del mes filtrado — mismo patrón que
+// Carpeta del ZIP según el tipo de inspección — mismos 3 valores que ya usa insp_enlaces/
+// insp_formatos.tipo (ver etiquetaTipoInsp). "Otros" es solo para filas guardadas ANTES de
+// CAMBIOS_SQL_70.sql, que no tienen tipo congelado — nunca debería verse para algo nuevo.
+const CARPETA_TIPO_INSP = { inspeccion:'Inspecciones', preoperacional:'Inspecciones preoperacionales', inventario:'Inventario' };
+
+/* Descarga en un solo ZIP el PDF de cada inspección del mes filtrado, agrupado en carpetas
+   por tipo (sección 7.184 de MEMORY.md) — mismo patrón base que
    descargarZipKardexContratoFiltrado (EPP/Dotación, línea ~3836): junta el mes en Supabase,
    arma un PDF por registro con construirInspeccionPDF (ya soporta pasar el id directo) y
-   los empaqueta con JSZip. */
+   los empaqueta con JSZip, cada uno dentro de la subcarpeta de su tipo. */
 async function descargarZipInspeccionesFiltrado(contratoId, mes, nombreContrato){
   if(!window.jspdf || !window.jspdf.jsPDF){ toast("No se pudo cargar el generador de PDF (revisa tu conexión)","err"); return; }
   if(!window.JSZip){ toast("No se pudo cargar el compresor ZIP (revisa tu conexión)","err"); return; }
@@ -12710,7 +12717,7 @@ async function descargarZipInspeccionesFiltrado(contratoId, mes, nombreContrato)
   const siguienteMes = (m===12 ? (y+1)+'-01-01' : y+'-'+String(m+1).padStart(2,'0')+'-01');
   bloquear("Preparando ZIP…");
   try{
-    const { data, error } = await sb.from("insp_inspecciones").select("id")
+    const { data, error } = await sb.from("insp_inspecciones").select("id,tipo")
       .eq("contrato_id", contratoId).gte("creado_en", desde).lt("creado_en", siguienteMes)
       .order("creado_en",{ascending:false});
     if(error){ toast("No se pudo cargar el mes: "+error.message,"err"); return; }
@@ -12724,9 +12731,11 @@ async function descargarZipInspeccionesFiltrado(contratoId, mes, nombreContrato)
       try{
         const r = await construirInspeccionPDF(lista[i].id);
         if(!r) continue;
+        const carpeta = CARPETA_TIPO_INSP[lista[i].tipo] || 'Otros';
+        const clave = carpeta+'/'+(r.nombreBase || ('inspeccion_'+(i+1)));
         let base = r.nombreBase || ('inspeccion_'+(i+1));
-        if(usados[base]!=null){ usados[base]++; base = base+'_'+usados[base]; } else usados[base]=0;
-        zip.file(base+'.pdf', r.doc.output('arraybuffer'));
+        if(usados[clave]!=null){ usados[clave]++; base = base+'_'+usados[clave]; } else usados[clave]=0;
+        zip.folder(carpeta).file(base+'.pdf', r.doc.output('arraybuffer'));
         incluidos++;
       }catch(e){ console.warn('inspeccion zip filtrado', lista[i].id, e); }
     }
