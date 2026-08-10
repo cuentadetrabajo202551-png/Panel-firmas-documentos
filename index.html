@@ -638,6 +638,15 @@ table.dt tr:hover td{background:#fafbfe}
 .chip-estado.active.bien{background:var(--green)}
 .chip-estado.active.mal{background:var(--danger)}
 .chip-estado.active.na{background:#9aa2b8}
+/* Checklist "por trabajador" en el formulario público (sección 7.168 de MEMORY.md): versión
+   compacta del chip-estado (mismo control, más chico) + tarjetas <details> colapsadas por
+   defecto, SOLO para este modo — el checklist normal no cambia en nada. */
+.chip-estado-compacto{padding:5px 9px;font-size:11px;min-height:28px;border-radius:8px}
+.trab-card summary{list-style:none;-webkit-tap-highlight-color:transparent}
+.trab-card summary::-webkit-details-marker{display:none}
+.trab-card summary::marker{content:""}
+.trab-card summary .trab-chevron{transition:transform .15s}
+.trab-card[open] summary .trab-chevron{transform:rotate(90deg)}
 /* Marcado manual de qué estado de un checklist cuenta como conforme/no conforme,
    en el constructor (ver 7.111 en MEMORY.md) — reutiliza los mismos 3 colores de
    .chip-estado (verde/rojo/gris) para que el criterio se vea igual en todos lados. */
@@ -10420,7 +10429,25 @@ function renderEditorSeccionChecklist(s, i){
     <div style="margin-top:10px;padding:8px;background:#f6f8fd;border-radius:8px">
       <textarea data-items-pegar="${i}" placeholder="Pega aquí varios ítems, uno por línea, y presiona Agregar" style="width:100%;min-height:70px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;box-sizing:border-box"></textarea>
       <button class="btn btn-ghost btn-sm" style="margin-top:6px" data-agregar-pegados="${i}">${I.plus} Agregar estos ítems</button>
-    </div>`;
+    </div>
+    ${s.porTrabajador?`<div style="margin-top:16px;padding-top:14px;border-top:1px dashed var(--line)">
+      <label style="font-size:13px;color:var(--ink-2);font-weight:700;display:block;margin-bottom:8px">Trabajadores a evaluar</label>
+      <div data-trabajadores-checklist="${i}">
+        ${(s.trabajadores||[]).map((t,j)=>`
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+            <input data-trab-nombre="${i}:${j}" value="${esc(t.nombre||'')}" placeholder="Nombre del trabajador" style="flex:1;padding:6px 8px;border:1px solid var(--line);border-radius:6px">
+            <input data-trab-cedula="${i}:${j}" value="${esc(t.cedula||'')}" placeholder="Cédula" style="width:140px;padding:6px 8px;border:1px solid var(--line);border-radius:6px">
+            <button class="icon-btn danger insp-del-btn" title="Quitar trabajador" data-trab-del="${i}:${j}">${I.trash}</button>
+          </div>`).join('') || '<p class="muted-sm">Sin trabajadores — agrega uno o pega varios abajo.</p>'}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <button class="btn btn-ghost btn-sm" data-add-trab="${i}">${I.plus} Agregar trabajador</button>
+      </div>
+      <div style="margin-top:10px;padding:8px;background:#f6f8fd;border-radius:8px">
+        <textarea data-trab-pegar="${i}" placeholder="Pega aquí varios trabajadores, uno por línea (Nombre, Cédula), y presiona Agregar" style="width:100%;min-height:70px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;box-sizing:border-box"></textarea>
+        <button class="btn btn-ghost btn-sm" style="margin-top:6px" data-agregar-trab-pegados="${i}">${I.plus} Agregar estos trabajadores</button>
+      </div>
+    </div>`:''}`;
 }
 
 function renderEditorSeccionTabla(s, i){
@@ -10543,6 +10570,34 @@ function wireEditoresSeccionInsp(host){
       if(!lineas.length) return;
       st.estructura[i].items = (st.estructura[i].items||[]).concat(lineas.map(texto=>({ id: nuevoIdCampoInsp(), texto })));
       renderSeccionesFormatoInsp();
+    };
+  });
+  // --- trabajadores de un checklist "por trabajador" (sección 7.166/7.167 de MEMORY.md) ---
+  // Mismo patrón exacto que los ítems de arriba, con Nombre+Cédula en vez de un solo texto.
+  host.querySelectorAll('[data-trab-nombre]').forEach(el=>{
+    el.oninput = (e)=>{ const [i,j]=el.dataset.trabNombre.split(':').map(Number); st.estructura[i].trabajadores[j].nombre = e.target.value; renderInspFormBody(); };
+  });
+  host.querySelectorAll('[data-trab-cedula]').forEach(el=>{
+    el.oninput = (e)=>{ const [i,j]=el.dataset.trabCedula.split(':').map(Number); st.estructura[i].trabajadores[j].cedula = e.target.value; renderInspFormBody(); };
+  });
+  host.querySelectorAll('[data-trab-del]').forEach(b=>{
+    b.onclick = ()=>{ const [i,j]=b.dataset.trabDel.split(':').map(Number); st.estructura[i].trabajadores.splice(j,1); renderSeccionesFormatoInsp(); renderInspFormBody(); };
+  });
+  host.querySelectorAll('[data-add-trab]').forEach(b=>{
+    b.onclick = ()=>{ const i=+b.dataset.addTrab; (st.estructura[i].trabajadores = st.estructura[i].trabajadores||[]).push({ id: nuevoIdCampoInsp(), nombre:'', cedula:'' }); renderSeccionesFormatoInsp(); renderInspFormBody(); };
+  });
+  host.querySelectorAll('[data-agregar-trab-pegados]').forEach(b=>{
+    b.onclick = ()=>{
+      const i = +b.dataset.agregarTrabPegados;
+      const ta = host.querySelector(`[data-trab-pegar="${i}"]`);
+      const lineas = (ta?.value||'').split('\n').map(v=>v.trim()).filter(Boolean);
+      if(!lineas.length) return;
+      const nuevos = lineas.map(linea=>{
+        const [nombre, cedula] = linea.split(',').map(v=>(v||'').trim());
+        return { id: nuevoIdCampoInsp(), nombre: nombre||'', cedula: cedula||'' };
+      });
+      st.estructura[i].trabajadores = (st.estructura[i].trabajadores||[]).concat(nuevos);
+      renderSeccionesFormatoInsp(); renderInspFormBody();
     };
   });
   // --- tabla_dinamica ---
@@ -12105,36 +12160,42 @@ function renderSeccionChecklistInsp(s){
   </div>`;
 }
 
-// Checklist "por trabajador" (sección 7.166 de MEMORY.md): los mismos ítems/estados de
+// Checklist "por trabajador" (sección 7.166/7.167 de MEMORY.md): los mismos ítems/estados de
 // un checklist normal, pero evaluados una vez POR FILA en vez de una sola vez para toda la
-// inspección. Los trabajadores se agregan a mano (Nombre/Cédula), mismo patrón que
-// "Agregar fila" de tabla_dinamica — respuestas[s.id] pasa a ser un array de filas
-// {nombre,cedula,estados:{[itemId]:estado}} en vez del objeto plano por ítem de un
-// checklist normal.
+// inspección. Los trabajadores (Nombre/Cédula) se definen en el CONSTRUCTOR, igual que los
+// ítems (7.167 — antes se agregaban a mano en el formulario público, el usuario pidió que
+// fuera igual que agregar ítems) — acá la lista de filas es FIJA (s.trabajadores), nunca se
+// agrega/quita desde el formulario público. inspeccionDraft.respuestas[s.id] es un objeto
+// keyeado por trabajador.id: {[trabajadorId]: {estados:{[itemId]:estado}}}.
 function renderSeccionChecklistPorTrabajadorInsp(s){
-  const filas = Array.isArray(inspeccionDraft.respuestas[s.id]) ? inspeccionDraft.respuestas[s.id] : [];
+  const respTrab = inspeccionDraft.respuestas[s.id] || (inspeccionDraft.respuestas[s.id] = {});
+  const trabajadores = s.trabajadores || [];
+  const totalItems = (s.items||[]).length;
   return `<div class="panel-section" style="margin-bottom:18px">
     <div class="section-label">${esc(s.titulo||'')}</div>
-    <div data-fila-trab="${s.id}">
-      ${filas.map((fila,j)=>`
-        <div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px">
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
-            <input data-fila-nombre="${s.id}:${j}" value="${esc(fila.nombre||'')}" placeholder="Nombre del trabajador" style="flex:1;min-width:160px;padding:6px 8px;border:1px solid var(--line);border-radius:6px">
-            <input data-fila-cedula="${s.id}:${j}" value="${esc(fila.cedula||'')}" placeholder="Cédula" style="flex:1;min-width:120px;padding:6px 8px;border:1px solid var(--line);border-radius:6px">
-            <button type="button" class="icon-btn danger" title="Quitar trabajador" data-fila-del="${s.id}:${j}">${I.trash}</button>
-          </div>
+    ${trabajadores.length ? trabajadores.map(t=>{
+      const r = respTrab[t.id] || {};
+      const estados = r.estados || {};
+      const completados = (s.items||[]).filter(it=>estados[it.id]).length;
+      return `<details class="trab-card" style="border:1px solid var(--line);border-radius:10px;margin-bottom:6px;overflow:hidden">
+        <summary style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer">
+          <span class="trab-chevron muted-sm" style="font-weight:700">›</span>
+          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;font-size:12.5px">${esc(t.nombre||'—')} <span class="muted-sm" style="font-weight:500">· ${esc(t.cedula||'—')}</span></span>
+          <span id="trabBadge_${s.id}_${t.id}" class="muted-sm" style="font-weight:700;font-size:11.5px;white-space:nowrap">${completados}/${totalItems}</span>
+        </summary>
+        <div style="padding:2px 10px 8px">
           ${(s.items||[]).map(it=>{
-            const estActual = (fila.estados||{})[it.id];
-            return `<div style="margin-bottom:6px">
-              <div class="muted-sm" style="margin-bottom:4px">${esc(it.texto)}</div>
-              <div style="display:flex;gap:8px;flex-wrap:wrap">
-                ${(s.estados||[]).map(estado=>{ const cls = claseEstadoInsp(estado, s.estadosTipo); return `<button type="button" class="chip-estado ${estActual===estado?'active '+cls:''}" data-fila-item-estado="${s.id}:${j}:${it.id}" data-estado-val="${esc(estado)}" data-estado-cls="${cls}">${esc(estado)}</button>`; }).join('')}
+            const estActual = estados[it.id];
+            return `<div style="margin-bottom:5px">
+              <div class="muted-sm" style="margin-bottom:3px;font-size:11px">${esc(it.texto)}</div>
+              <div style="display:flex;gap:5px;flex-wrap:wrap">
+                ${(s.estados||[]).map(estado=>{ const cls = claseEstadoInsp(estado, s.estadosTipo); return `<button type="button" class="chip-estado chip-estado-compacto ${estActual===estado?'active '+cls:''}" data-fila-item-estado="${s.id}:${t.id}:${it.id}" data-estado-val="${esc(estado)}" data-estado-cls="${cls}">${esc(estado)}</button>`; }).join('')}
               </div>
             </div>`;
           }).join('')}
-        </div>`).join('') || '<p class="muted-sm">Sin trabajadores todavía — agrega uno abajo.</p>'}
-    </div>
-    <button type="button" class="btn btn-ghost btn-sm" data-fila-add="${s.id}">${I.plus} Agregar trabajador</button>
+        </div>
+      </details>`;
+    }).join('') : '<p class="muted-sm">Este formato todavía no tiene trabajadores definidos — se agregan desde el constructor.</p>'}
   </div>`;
 }
 
@@ -12238,51 +12299,31 @@ function wireInspFormBody(host){
   host.querySelectorAll('[data-item-vence]').forEach(el=>{
     el.oninput = ()=>{ const id=el.dataset.itemVence; const r = inspeccionDraft.respuestas[id] = inspeccionDraft.respuestas[id]||{}; r.fecha_vencimiento = el.value; };
   });
-  host.querySelectorAll('[data-fila-nombre]').forEach(el=>{
-    el.oninput = ()=>{
-      const [sid,j] = el.dataset.filaNombre.split(':');
-      const arr = Array.isArray(inspeccionDraft.respuestas[sid]) ? inspeccionDraft.respuestas[sid] : (inspeccionDraft.respuestas[sid]=[]);
-      arr[+j] = arr[+j] || {};
-      arr[+j].nombre = el.value;
-    };
-  });
-  host.querySelectorAll('[data-fila-cedula]').forEach(el=>{
-    el.oninput = ()=>{
-      const [sid,j] = el.dataset.filaCedula.split(':');
-      const arr = Array.isArray(inspeccionDraft.respuestas[sid]) ? inspeccionDraft.respuestas[sid] : (inspeccionDraft.respuestas[sid]=[]);
-      arr[+j] = arr[+j] || {};
-      arr[+j].cedula = el.value;
-    };
-  });
-  host.querySelectorAll('[data-fila-del]').forEach(b=>{
-    b.onclick = ()=>{
-      const [sid,j] = b.dataset.filaDel.split(':');
-      const arr = inspeccionDraft.respuestas[sid] || [];
-      arr.splice(+j,1);
-      renderInspFormBody();
-      actualizarProgresoInsp();
-    };
-  });
-  host.querySelectorAll('[data-fila-add]').forEach(b=>{
-    b.onclick = ()=>{
-      const sid = b.dataset.filaAdd;
-      const arr = Array.isArray(inspeccionDraft.respuestas[sid]) ? inspeccionDraft.respuestas[sid] : (inspeccionDraft.respuestas[sid]=[]);
-      arr.push({ nombre:'', cedula:'', estados:{} });
-      renderInspFormBody();
-    };
-  });
+  // Checklist "por trabajador": los trabajadores son fijos (definidos en el constructor,
+  // ver 7.167 en MEMORY.md) — acá solo se marca el estado de cada celda. respuestas[sid]
+  // es un objeto keyeado por trabajador.id, no un array por índice.
   host.querySelectorAll('[data-fila-item-estado]').forEach(b=>{
     b.onclick = ()=>{
-      const [sid,j,itemId] = b.dataset.filaItemEstado.split(':');
-      const arr = Array.isArray(inspeccionDraft.respuestas[sid]) ? inspeccionDraft.respuestas[sid] : (inspeccionDraft.respuestas[sid]=[]);
-      const fila = arr[+j] = arr[+j] || {};
-      fila.estados = fila.estados || {};
+      const [sid,tid,itemId] = b.dataset.filaItemEstado.split(':');
+      const respTrab = inspeccionDraft.respuestas[sid] && typeof inspeccionDraft.respuestas[sid]==='object' ? inspeccionDraft.respuestas[sid] : (inspeccionDraft.respuestas[sid]={});
+      const r = respTrab[tid] = respTrab[tid] || {};
+      r.estados = r.estados || {};
       const val = b.dataset.estadoVal;
-      fila.estados[itemId] = fila.estados[itemId]===val ? null : val;
-      host.querySelectorAll(`[data-fila-item-estado="${sid}:${j}:${itemId}"]`).forEach(x=>{
-        const activa = x.dataset.estadoVal===fila.estados[itemId];
-        x.className = 'chip-estado' + (activa ? ' active '+x.dataset.estadoCls : '');
+      r.estados[itemId] = r.estados[itemId]===val ? null : val;
+      host.querySelectorAll(`[data-fila-item-estado="${sid}:${tid}:${itemId}"]`).forEach(x=>{
+        const activa = x.dataset.estadoVal===r.estados[itemId];
+        x.className = 'chip-estado chip-estado-compacto' + (activa ? ' active '+x.dataset.estadoCls : '');
       });
+      // Actualiza el contador "X/Y" de la tarjeta colapsable de este trabajador (sección 7.168).
+      const badge = document.getElementById(`trabBadge_${sid}_${tid}`);
+      if(badge){
+        const seccion = inspeccionDraft.estructura.find(x=>x.id===sid);
+        if(seccion){
+          const total = (seccion.items||[]).length;
+          const completados = (seccion.items||[]).filter(it=>r.estados[it.id]).length;
+          badge.textContent = `${completados}/${total}`;
+        }
+      }
       actualizarProgresoInsp();
     };
   });
@@ -12382,11 +12423,12 @@ function calcularProgresoInsp(){
         if(!vacio) completados++;
       }
     } else if(s.tipo==='checklist' && s.porTrabajador){
-      const filas = Array.isArray(inspeccionDraft.respuestas[s.id]) ? inspeccionDraft.respuestas[s.id] : [];
-      for(const fila of filas){
+      const respTrab = inspeccionDraft.respuestas[s.id] || {};
+      for(const t of (s.trabajadores||[])){
+        const r = respTrab[t.id] || {};
         for(const it of (s.items||[])){
           total++;
-          if((fila.estados||{})[it.id]) completados++;
+          if((r.estados||{})[it.id]) completados++;
         }
       }
     } else if(s.tipo==='checklist'){
@@ -12529,16 +12571,17 @@ function renderSeccionChecklistLectura(s, respuestas){
 // Checklist "por trabajador" en "Ver detalle" (panel admin): filas = trabajadores,
 // columnas = Nombre/Cédula + un ítem cada una. Mismo criterio que renderSeccionTablaLectura.
 function renderSeccionChecklistPorTrabajadorLectura(s, respuestas){
-  const filas = Array.isArray(respuestas[s.id]) ? respuestas[s.id] : [];
+  const trabajadores = s.trabajadores || [];
+  const respTrab = respuestas[s.id] || {};
   return `<div class="panel-section" style="margin-bottom:14px">
     <div class="section-label">${esc(s.titulo||'')}</div>
-    ${filas.length ? `<div class="table-wrap"><table class="dt">
+    ${trabajadores.length ? `<div class="table-wrap"><table class="dt">
       <thead><tr><th>Nombre</th><th>Cédula</th>${(s.items||[]).map(it=>`<th>${esc(it.texto)}</th>`).join('')}</tr></thead>
-      <tbody>${filas.map(fila=>`<tr><td>${esc(fila.nombre||'—')}</td><td>${esc(fila.cedula||'—')}</td>${(s.items||[]).map(it=>{
-        const estado = (fila.estados||{})[it.id];
+      <tbody>${trabajadores.map(t=>{ const r = respTrab[t.id] || {}; return `<tr><td>${esc(t.nombre||'—')}</td><td>${esc(t.cedula||'—')}</td>${(s.items||[]).map(it=>{
+        const estado = (r.estados||{})[it.id];
         return `<td>${estado?`<span class="chip-estado active ${claseEstadoInsp(estado, s.estadosTipo)}" style="cursor:default;padding:4px 10px;font-size:12px">${esc(estado)}</span>`:'—'}</td>`;
-      }).join('')}</tr>`).join('')}</tbody>
-    </table></div>` : '<p class="muted-sm">Sin trabajadores registrados.</p>'}
+      }).join('')}</tr>`; }).join('')}</tbody>
+    </table></div>` : '<p class="muted-sm">Este formato no tiene trabajadores definidos.</p>'}
   </div>`;
 }
 function renderSeccionTablaLectura(s, respuestas){
@@ -12896,7 +12939,8 @@ function dibujarSeccionChecklistPDF(doc, y, seccion, respuestas, ctx){
 // solo se dibuja cuando esa persona tiene un estado marcado para ese ítem.
 function dibujarSeccionChecklistPorTrabajadorPDF(doc, y, seccion, respuestas, ctx){
   const { M, RIGHT, asegurarEspacio } = ctx;
-  const filas = Array.isArray(respuestas[seccion.id]) ? respuestas[seccion.id] : [];
+  const trabajadores = seccion.trabajadores || [];
+  const respTrab = respuestas[seccion.id] || {};
   const items = seccion.items || [];
   const COLOR_BIEN = [31,168,78], COLOR_MAL = [214,59,80], COLOR_NA = [154,162,184];
 
@@ -12936,16 +12980,17 @@ function dibujarSeccionChecklistPorTrabajadorPDF(doc, y, seccion, respuestas, ct
   y = asegurarEspacio(y, 14);
   y = tituloYCab(y);
 
-  if(!filas.length){
+  if(!trabajadores.length){
     doc.setFont("helvetica","italic"); doc.setFontSize(8); doc.setTextColor(140,140,160);
-    doc.text("Sin trabajadores registrados.", M+2, y+5);
+    doc.text("Este formato no tiene trabajadores definidos.", M+2, y+5);
     return y+9;
   }
 
-  for(const fila of filas){
+  for(const t of trabajadores){
+    const r = respTrab[t.id] || {};
     doc.setFont("helvetica","normal"); doc.setFontSize(7.2);
-    const wrappedNombre = doc.splitTextToSize(pdfTexto(fila.nombre||'—'), nombreColW-3);
-    const wrappedCedula = doc.splitTextToSize(pdfTexto(fila.cedula||'—'), cedulaColW-3);
+    const wrappedNombre = doc.splitTextToSize(pdfTexto(t.nombre||'—'), nombreColW-3);
+    const wrappedCedula = doc.splitTextToSize(pdfTexto(t.cedula||'—'), cedulaColW-3);
     const rowH = Math.max(7, Math.max(wrappedNombre.length, wrappedCedula.length)*3.2 + 3);
     if(y+rowH > ctx.FOOTER_TOP){ y = ctx.nuevaPagina(); y = tituloYCab(y); }
     doc.setDrawColor(180,188,210);
@@ -12955,7 +13000,7 @@ function dibujarSeccionChecklistPorTrabajadorPDF(doc, y, seccion, respuestas, ct
     doc.text(wrappedNombre, M+1.5, y+4);
     doc.text(wrappedCedula, xs[1]+1.5, y+4);
     items.forEach((it,i)=>{
-      const estado = (fila.estados||{})[it.id];
+      const estado = (r.estados||{})[it.id];
       if(!estado) return;
       const cls = claseEstadoInsp(estado, seccion.estadosTipo);
       const color = cls==='bien'?COLOR_BIEN : cls==='mal'?COLOR_MAL : COLOR_NA;
