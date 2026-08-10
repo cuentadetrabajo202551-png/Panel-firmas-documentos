@@ -1328,6 +1328,18 @@ function wireLogout(){
   });
   document.querySelectorAll('[data-role="logout"]').forEach(b=>{
     b.onclick = async ()=>{
+      // Los 5 auto-refrescos silenciosos (Asistencia/Documentos/EPP/Dotación/Inspecciones,
+      // cada 20s) no se apagaban al cerrar sesión — y como el hash queda vacío igual que el
+      // de Asistencia, ese timer seguía viendo "estoy en Asistencia" y 20s después repintaba
+      // el panel viejo (con los contadores en 0, porque STATE.listas ya se vació) ENCIMA de
+      // la pantalla de login, justo mientras el usuario escribía el correo/clave de otra
+      // cuenta — reportado desde el celular. Recargar la página sí cortaba los timers (se
+      // reinician con el script), por eso ahí nunca se veía el problema.
+      if(_asisTimer){ clearInterval(_asisTimer); _asisTimer=null; }
+      if(_docsTimer){ clearInterval(_docsTimer); _docsTimer=null; }
+      if(_dotTimer){ clearInterval(_dotTimer); _dotTimer=null; }
+      if(_dtlTimer){ clearInterval(_dtlTimer); _dtlTimer=null; }
+      if(_inspTimer){ clearInterval(_inspTimer); _inspTimer=null; }
       await sb.auth.signOut(); STATE.listas=[]; STATE.userEmail="";
       MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], contratosInsp:[], nombre:"", uid:null };
       PERFILES_NOMBRE = {}; PERFILES_CORREO = {};
