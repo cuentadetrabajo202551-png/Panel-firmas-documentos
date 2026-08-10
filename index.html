@@ -903,14 +903,16 @@ function puedeEscribir(){ return MIPERFIL.esAdmin || MIPERFIL.rol==='editor'; }
    dar esta libertad de tiempo con confianza. */
 function puedoTocar(uidCreador){ return MIPERFIL.esAdmin || (MIPERFIL.rol==='editor' && uidCreador===MIPERFIL.uid); }
 /* Solo para entregas de EPP/Dotación (dot_entregas/dtl_entregas, sus ítems, y las escaneadas):
-   además de lo de arriba, un editor SÍ puede tocar una entrega remota (registrada por el
-   enlace público/QR, sin sesión — uidCreador queda null) — CAMBIOS_SQL_62, a pedido del
-   usuario ("si le mando el enlace a un trabajador de mi contrato, debo poder corregirlo yo
-   mismo"). El contrato/entidad al que pertenece ya se filtró aparte (solo llega a ver la
-   ficha de un trabajador de un contrato al que tiene acceso), y la RLS del servidor exige
+   CAMBIOS_SQL_68 quitó del todo la condición de creador — un editor con acceso al contrato/
+   entidad puede tocar CUALQUIER entrega, la haya registrado quien la haya registrado (a
+   pedido explícito del usuario: encontró una entrega de un compañero sin botones de editar
+   y prefirió que cualquier editor de ese contrato pueda corregir cualquier entrega, igual
+   que ya podía un admin — el filtro de "solo lo mío" quedó reservado para Asistencia y
+   Documentos, que no cambiaron). El contrato/entidad ya se filtró aparte (solo llega a ver
+   la ficha de un trabajador de un contrato al que tiene acceso), y la RLS del servidor exige
    ese mismo acceso de nuevo — este helper solo espeja esa regla para mostrar/ocultar los
    botones, la barrera real sigue siendo la RLS. */
-function puedoTocarEntrega(uidCreador){ return puedoTocar(uidCreador) || (!uidCreador && puedeEscribir()); }
+function puedoTocarEntrega(){ return puedeEscribir(); }
 /* Igual, pero además exige que no esté cerrado/finalizado (admin sí puede aunque esté cerrado) */
 function puedoTocarCerrable(uidCreador, cerrado){ return MIPERFIL.esAdmin || (MIPERFIL.rol==='editor' && uidCreador===MIPERFIL.uid && !cerrado); }
 function nombreDe(uid){ return uid ? (PERFILES_NOMBRE[uid] || "—") : "—"; }
@@ -6312,9 +6314,9 @@ async function renderFichaTrabajador(id){
         : esc(e.responsable_nombre||'—');
       const accionesCol = esEscaneada
         ? `<div style="display:flex;gap:6px"><button class="icon-btn" title="Ver archivo" onclick="verAdjuntoEntrega('${e.id}','dot_entregas')">${I.eye}</button>
-           ${puedoTocarEntrega(e.creado_por)?`<button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntregaEscaneada('${e.id}','${t.id}','dot_entregas')">${I.pen}</button>
+           ${puedoTocarEntrega()?`<button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntregaEscaneada('${e.id}','${t.id}','dot_entregas')">${I.pen}</button>
            <button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntrega('${e.id}','${t.id}')">${I.trash}</button>`:''}</div>`
-        : (puedoTocarEntrega(e.creado_por)?`<div style="display:flex;gap:6px"><button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntrega('${e.id}','${t.id}')">${I.pen}</button>
+        : (puedoTocarEntrega()?`<div style="display:flex;gap:6px"><button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntrega('${e.id}','${t.id}')">${I.pen}</button>
         <button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntrega('${e.id}','${t.id}')">${I.trash}</button></div>`:'');
       return `<tr>
         <td>${fmtDate(e.fecha)}${horaEnt?`<div class="muted-sm">${horaEnt}</div>`:''}${auditLinea}</td>
@@ -8905,9 +8907,9 @@ async function renderFichaTrabajadorDtl(id){
         : esc(e.responsable_nombre||(e.via==='remoto'?'(entrega remota)':'—'));
       const accionesCol = esEscaneada
         ? `<div style="display:flex;gap:6px"><button class="icon-btn" title="Ver archivo" onclick="verAdjuntoEntrega('${e.id}','dtl_entregas')">${I.eye}</button>
-           ${puedoTocarEntrega(e.creado_por)?`<button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntregaEscaneada('${e.id}','${t.id}','dtl_entregas')">${I.pen}</button>
+           ${puedoTocarEntrega()?`<button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntregaEscaneada('${e.id}','${t.id}','dtl_entregas')">${I.pen}</button>
            <button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntregaDtl('${e.id}','${t.id}')">${I.trash}</button>`:''}</div>`
-        : (puedoTocarEntrega(e.creado_por)?`<div style="display:flex;gap:6px"><button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntregaDtl('${e.id}','${t.id}')">${I.pen}</button>
+        : (puedoTocarEntrega()?`<div style="display:flex;gap:6px"><button class="icon-btn" title="Editar entrega" onclick="abrirEditarEntregaDtl('${e.id}','${t.id}')">${I.pen}</button>
         <button class="icon-btn danger" title="Eliminar entrega" onclick="eliminarEntregaDtl('${e.id}','${t.id}')">${I.trash}</button></div>`:'');
       return `<tr>
         <td>${fmtDate(e.fecha)}${horaEnt?`<div class="muted-sm">${horaEnt}</div>`:''}${auditLinea}</td>
@@ -10425,6 +10427,7 @@ function renderEditorSeccionChecklist(s, i){
     </div>
     <div style="display:flex;gap:8px;margin-top:6px">
       <button class="btn btn-ghost btn-sm" data-add-item="${i}">${I.plus} Agregar ítem</button>
+      ${(s.items||[]).length ? `<button class="btn btn-ghost btn-sm" style="color:var(--danger)" data-vaciar-items="${i}">${I.trash} Eliminar todos</button>` : ''}
     </div>
     <div style="margin-top:10px;padding:8px;background:#f6f8fd;border-radius:8px">
       <textarea data-items-pegar="${i}" placeholder="Pega aquí varios ítems, uno por línea, y presiona Agregar" style="width:100%;min-height:70px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;box-sizing:border-box"></textarea>
@@ -10442,6 +10445,7 @@ function renderEditorSeccionChecklist(s, i){
       </div>
       <div style="display:flex;gap:8px;margin-top:6px">
         <button class="btn btn-ghost btn-sm" data-add-trab="${i}">${I.plus} Agregar trabajador</button>
+        ${(s.trabajadores||[]).length ? `<button class="btn btn-ghost btn-sm" style="color:var(--danger)" data-vaciar-trab="${i}">${I.trash} Eliminar todos</button>` : ''}
       </div>
       <div style="margin-top:10px;padding:8px;background:#f6f8fd;border-radius:8px">
         <textarea data-trab-pegar="${i}" placeholder="Pega aquí varios trabajadores, uno por línea (Nombre, Cédula), y presiona Agregar" style="width:100%;min-height:70px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;box-sizing:border-box"></textarea>
@@ -10572,6 +10576,14 @@ function wireEditoresSeccionInsp(host){
       renderSeccionesFormatoInsp();
     };
   });
+  host.querySelectorAll('[data-vaciar-items]').forEach(b=>{
+    b.onclick = ()=>{
+      const i = +b.dataset.vaciarItems;
+      if(!confirm('¿Eliminar todos los ítems de esta lista?')) return;
+      st.estructura[i].items = [];
+      renderSeccionesFormatoInsp(); renderInspFormBody();
+    };
+  });
   // --- trabajadores de un checklist "por trabajador" (sección 7.166/7.167 de MEMORY.md) ---
   // Mismo patrón exacto que los ítems de arriba, con Nombre+Cédula en vez de un solo texto.
   host.querySelectorAll('[data-trab-nombre]').forEach(el=>{
@@ -10597,6 +10609,14 @@ function wireEditoresSeccionInsp(host){
         return { id: nuevoIdCampoInsp(), nombre: nombre||'', cedula: cedula||'' };
       });
       st.estructura[i].trabajadores = (st.estructura[i].trabajadores||[]).concat(nuevos);
+      renderSeccionesFormatoInsp(); renderInspFormBody();
+    };
+  });
+  host.querySelectorAll('[data-vaciar-trab]').forEach(b=>{
+    b.onclick = ()=>{
+      const i = +b.dataset.vaciarTrab;
+      if(!confirm('¿Eliminar todos los trabajadores de esta lista?')) return;
+      st.estructura[i].trabajadores = [];
       renderSeccionesFormatoInsp(); renderInspFormBody();
     };
   });
@@ -12173,29 +12193,39 @@ function renderSeccionChecklistPorTrabajadorInsp(s){
   const totalItems = (s.items||[]).length;
   return `<div class="panel-section" style="margin-bottom:18px">
     <div class="section-label">${esc(s.titulo||'')}</div>
-    ${trabajadores.length ? trabajadores.map(t=>{
-      const r = respTrab[t.id] || {};
-      const estados = r.estados || {};
-      const completados = (s.items||[]).filter(it=>estados[it.id]).length;
-      return `<details class="trab-card" style="border:1px solid var(--line);border-radius:10px;margin-bottom:6px;overflow:hidden">
-        <summary style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer">
-          <span class="trab-chevron muted-sm" style="font-weight:700">›</span>
-          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;font-size:12.5px">${esc(t.nombre||'—')} <span class="muted-sm" style="font-weight:500">· ${esc(t.cedula||'—')}</span></span>
-          <span id="trabBadge_${s.id}_${t.id}" class="muted-sm" style="font-weight:700;font-size:11.5px;white-space:nowrap">${completados}/${totalItems}</span>
-        </summary>
-        <div style="padding:2px 10px 8px">
-          ${(s.items||[]).map(it=>{
-            const estActual = estados[it.id];
-            return `<div style="margin-bottom:5px">
-              <div class="muted-sm" style="margin-bottom:3px;font-size:11px">${esc(it.texto)}</div>
-              <div style="display:flex;gap:5px;flex-wrap:wrap">
-                ${(s.estados||[]).map(estado=>{ const cls = claseEstadoInsp(estado, s.estadosTipo); return `<button type="button" class="chip-estado chip-estado-compacto ${estActual===estado?'active '+cls:''}" data-fila-item-estado="${s.id}:${t.id}:${it.id}" data-estado-val="${esc(estado)}" data-estado-cls="${cls}">${esc(estado)}</button>`; }).join('')}
-              </div>
-            </div>`;
-          }).join('')}
-        </div>
-      </details>`;
-    }).join('') : '<p class="muted-sm">Este formato todavía no tiene trabajadores definidos — se agregan desde el constructor.</p>'}
+    ${trabajadores.length ? `
+    <div style="position:relative;margin-bottom:8px">
+      <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);width:15px;height:15px;color:var(--ink-3);pointer-events:none">${I.search}</span>
+      <input type="text" data-buscar-trab="${s.id}" placeholder="Buscar trabajador por nombre o cédula…" style="width:100%;padding:8px 10px 8px 30px;border:1px solid var(--line);border-radius:8px;box-sizing:border-box;font-size:13px">
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+      ${(s.estados||[]).map(estado=>`<button type="button" class="btn btn-ghost btn-sm" data-marcar-todos-trab="${s.id}" data-marcar-todos-val="${esc(estado)}">Marcar todos: ${esc(estado)}</button>`).join('')}
+    </div>
+    <div id="trabList_${s.id}">
+      ${trabajadores.map(t=>{
+        const r = respTrab[t.id] || {};
+        const estados = r.estados || {};
+        const completados = (s.items||[]).filter(it=>estados[it.id]).length;
+        return `<details class="trab-card" data-trab-buscar="${esc(((t.nombre||'')+' '+(t.cedula||'')).toLowerCase())}" style="border:1px solid var(--line);border-radius:10px;margin-bottom:6px;overflow:hidden">
+          <summary style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer">
+            <span class="trab-chevron muted-sm" style="font-weight:700">›</span>
+            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;font-size:12.5px">${esc(t.nombre||'—')} <span class="muted-sm" style="font-weight:500">· ${esc(t.cedula||'—')}</span></span>
+            <span id="trabBadge_${s.id}_${t.id}" class="muted-sm" style="font-weight:700;font-size:11.5px;white-space:nowrap">${completados}/${totalItems}</span>
+          </summary>
+          <div style="padding:2px 10px 8px">
+            ${(s.items||[]).map(it=>{
+              const estActual = estados[it.id];
+              return `<div style="margin-bottom:5px">
+                <div class="muted-sm" style="margin-bottom:3px;font-size:11px">${esc(it.texto)}</div>
+                <div style="display:flex;gap:5px;flex-wrap:wrap">
+                  ${(s.estados||[]).map(estado=>{ const cls = claseEstadoInsp(estado, s.estadosTipo); return `<button type="button" class="chip-estado chip-estado-compacto ${estActual===estado?'active '+cls:''}" data-fila-item-estado="${s.id}:${t.id}:${it.id}" data-estado-val="${esc(estado)}" data-estado-cls="${cls}">${esc(estado)}</button>`; }).join('')}
+                </div>
+              </div>`;
+            }).join('')}
+          </div>
+        </details>`;
+      }).join('')}
+    </div>` : '<p class="muted-sm">Este formato todavía no tiene trabajadores definidos — se agregan desde el constructor.</p>'}
   </div>`;
 }
 
@@ -12325,6 +12355,33 @@ function wireInspFormBody(host){
         }
       }
       actualizarProgresoInsp();
+    };
+  });
+  // "Marcar todos: <estado>" (sección 7.169 de MEMORY.md): rellena de una sola vez las celdas
+  // que TODAVÍA no tienen respuesta, para no pisar lo que el inspector ya marcó a mano.
+  host.querySelectorAll('[data-marcar-todos-trab]').forEach(b=>{
+    b.onclick = ()=>{
+      const sid = b.dataset.marcarTodosTrab;
+      const val = b.dataset.marcarTodosVal;
+      const seccion = inspeccionDraft.estructura.find(x=>x.id===sid); if(!seccion) return;
+      const respTrab = inspeccionDraft.respuestas[sid] && typeof inspeccionDraft.respuestas[sid]==='object' ? inspeccionDraft.respuestas[sid] : (inspeccionDraft.respuestas[sid]={});
+      (seccion.trabajadores||[]).forEach(t=>{
+        const r = respTrab[t.id] = respTrab[t.id] || {};
+        r.estados = r.estados || {};
+        (seccion.items||[]).forEach(it=>{ if(!r.estados[it.id]) r.estados[it.id] = val; });
+      });
+      renderInspFormBody();
+      actualizarProgresoInsp();
+    };
+  });
+  // Buscador de trabajador (sección 7.169): filtro visual puro, no toca inspeccionDraft.
+  host.querySelectorAll('[data-buscar-trab]').forEach(el=>{
+    el.oninput = ()=>{
+      const q = el.value.trim().toLowerCase();
+      const lista = document.getElementById(`trabList_${el.dataset.buscarTrab}`); if(!lista) return;
+      lista.querySelectorAll('[data-trab-buscar]').forEach(card=>{
+        card.style.display = (!q || card.dataset.trabBuscar.includes(q)) ? '' : 'none';
+      });
     };
   });
   host.querySelectorAll('[data-tabla-celda]').forEach(el=>{
