@@ -9808,8 +9808,8 @@ let formatosInspFiltroTipo = 'todos'; // filtro de "Formatos": todos/inspeccion/
 async function loadInspeccionesState(){
   const [co, fo, en, ins, pd] = await Promise.all([
     sb.from("insp_contratos").select("id,nombre,activo,creado_en").order("creado_en",{ascending:true}),
-    sb.from("insp_formatos").select("id,nombre,activo,tiene_fotos,firmantes,color_acento,mostrar_cumplimiento,pdf_horizontal,tipo").order("nombre",{ascending:true}),
-    sb.from("insp_enlaces").select("id,contrato_id,formato_id,predeterminado_id,firmantes_banco,herramienta_id,nombre,formato_nombre,tiene_fotos,firmantes,color_acento,mostrar_cumplimiento,pdf_horizontal,tipo,activo,creado_en").order("creado_en",{ascending:true}),
+    sb.from("insp_formatos").select("id,nombre,activo,tiene_fotos,firmantes,color_acento,mostrar_cumplimiento,pdf_horizontal,pdf_codigo,pdf_fecha_creacion,pdf_version,tipo").order("nombre",{ascending:true}),
+    sb.from("insp_enlaces").select("id,contrato_id,formato_id,predeterminado_id,firmantes_banco,herramienta_id,nombre,formato_nombre,tiene_fotos,firmantes,color_acento,mostrar_cumplimiento,pdf_horizontal,pdf_codigo,pdf_fecha_creacion,pdf_version,tipo,activo,creado_en").order("creado_en",{ascending:true}),
     cargarTodasFilas(()=> sb.from("insp_inspecciones").select("id,enlace_id,contrato_id,formato_nombre,creado_en,creado_por,inspector_nombre").order("creado_en",{ascending:false}).order("id",{ascending:true})),
     // Banco de firmas GLOBAL (igual que "Formatos") — no por contrato, ver [[CAMBIOS_SQL_63]].
     sb.from("insp_predeterminados").select("id,nombre,responsable_nombre,responsable_cargo,firma").order("nombre",{ascending:true})
@@ -9970,7 +9970,7 @@ async function renderConstructorFormatoInsp(formatoId, enlaceId){
   if(formatoId || enlaceId){
     bloquear(enlaceId ? "Cargando…" : "Cargando formato…");
     const { data, error } = enlaceId
-      ? await sb.from("insp_enlaces").select("formato_nombre,tiene_fotos,estructura,firmantes,color_acento,mostrar_cumplimiento,pdf_horizontal,tipo,imagen_pdf,activo").eq("id",enlaceId).maybeSingle()
+      ? await sb.from("insp_enlaces").select("formato_nombre,tiene_fotos,estructura,firmantes,color_acento,mostrar_cumplimiento,pdf_horizontal,pdf_codigo,pdf_fecha_creacion,pdf_version,tipo,imagen_pdf,activo").eq("id",enlaceId).maybeSingle()
       : await sb.from("insp_formatos").select("*").eq("id",formatoId).maybeSingle();
     desbloquear();
     if(error || !data){ toast(enlaceId?"No se pudo cargar":"No se pudo cargar el formato","err"); location.hash="#/inspecciones"; return; }
@@ -9981,6 +9981,9 @@ async function renderConstructorFormatoInsp(formatoId, enlaceId){
       color_acento: data.color_acento || '#14215a',
       mostrar_cumplimiento: data.mostrar_cumplimiento !== false,
       pdf_horizontal: data.pdf_horizontal === true,
+      pdf_codigo: data.pdf_codigo || '',
+      pdf_fecha_creacion: data.pdf_fecha_creacion || '',
+      pdf_version: data.pdf_version || '',
       tipo: ['preoperacional','inventario'].includes(data.tipo) ? data.tipo : 'inspeccion',
       imagen_pdf: data.imagen_pdf || null
     };
@@ -9991,7 +9994,7 @@ async function renderConstructorFormatoInsp(formatoId, enlaceId){
       formatoEditorState.estructura.push({ id: nuevoIdCampoInsp(), tipo:'fotos', titulo:'Registro fotográfico', max:5, requerido:false });
     }
   } else {
-    formatoEditorState = { nombre:"", activo:true, estructura: [{ id: nuevoIdCampoInsp(), tipo:'fotos', titulo:'Registro fotográfico', max:5, requerido:false }], firmantes: JSON.parse(JSON.stringify(FIRMANTES_DEFAULT_INSP)), color_acento: '#14215a', mostrar_cumplimiento: true, pdf_horizontal: false, tipo: 'inspeccion', imagen_pdf: null };
+    formatoEditorState = { nombre:"", activo:true, estructura: [{ id: nuevoIdCampoInsp(), tipo:'fotos', titulo:'Registro fotográfico', max:5, requerido:false }], firmantes: JSON.parse(JSON.stringify(FIRMANTES_DEFAULT_INSP)), color_acento: '#14215a', mostrar_cumplimiento: true, pdf_horizontal: false, pdf_codigo: '', pdf_fecha_creacion: '', pdf_version: '', tipo: 'inspeccion', imagen_pdf: null };
   }
 
   // El panel de la derecha es una previsualización EN VIVO: reutiliza el mismo motor
@@ -10037,7 +10040,15 @@ async function renderConstructorFormatoInsp(formatoId, enlaceId){
         <label class="chk" style="margin-top:12px"><input type="checkbox" id="fiMostrarCumplimiento" ${formatoEditorState.mostrar_cumplimiento?'checked':''}> Mostrar % de cumplimiento automático (en el PDF y en "Ver detalle")</label>
         <label class="chk" style="margin-top:8px"><input type="checkbox" id="fiPdfHorizontal" ${formatoEditorState.pdf_horizontal?'checked':''}> Generar PDF en horizontal (útil para checklist con muchos ítems por trabajador)</label>
         <div style="margin-top:14px">
-          <label style="font-size:13px;color:var(--ink-2);font-weight:600;display:block;margin-bottom:6px">Foto del equipo (aparece en el encabezado del PDF)</label>
+          <label style="font-size:13px;color:var(--ink-2);font-weight:600;display:block;margin-bottom:6px">Codificación del documento <span class="opt">(opcional — con "Código" en blanco no sale nada)</span></label>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <div><label style="font-size:12px;color:var(--ink-3);display:block;margin-bottom:3px">Código</label><input id="fiPdfCodigo" value="${esc(formatoEditorState.pdf_codigo||'')}" placeholder="Ej. SST-FRT-025" style="padding:6px 8px;border:1px solid var(--line);border-radius:6px;width:160px"></div>
+            <div><label style="font-size:12px;color:var(--ink-3);display:block;margin-bottom:3px">Fecha de creación</label><input type="date" id="fiPdfFechaCreacion" value="${esc(formatoEditorState.pdf_fecha_creacion||'')}" style="padding:6px 8px;border:1px solid var(--line);border-radius:6px"></div>
+            <div><label style="font-size:12px;color:var(--ink-3);display:block;margin-bottom:3px">Versión</label><input id="fiPdfVersion" value="${esc(formatoEditorState.pdf_version||'')}" placeholder="Ej. 001" style="padding:6px 8px;border:1px solid var(--line);border-radius:6px;width:100px"></div>
+          </div>
+        </div>
+        <div style="margin-top:14px">
+          <label style="font-size:13px;color:var(--ink-2);font-weight:600;display:block;margin-bottom:6px">Foto del equipo (aparece junto al nombre de la herramienta en el PDF)</label>
           <div id="fiImagenPdfPreview" style="margin-bottom:8px;${formatoEditorState.imagen_pdf?'':'display:none'}"><img src="${formatoEditorState.imagen_pdf||''}" style="height:60px;border:1px solid var(--line);border-radius:8px;background:#fff;object-fit:contain;padding:3px"></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button type="button" class="btn btn-ghost btn-sm" id="btnSubirImagenPdf">${I.plus} <span id="fiImagenPdfLabel">${formatoEditorState.imagen_pdf ? 'Cambiar foto' : 'Subir foto del equipo'}</span></button>
@@ -10110,6 +10121,9 @@ async function renderConstructorFormatoInsp(formatoId, enlaceId){
         color_acento: formatoEditorState.color_acento,
         mostrar_cumplimiento: formatoEditorState.mostrar_cumplimiento,
         pdf_horizontal: formatoEditorState.pdf_horizontal,
+        pdf_codigo: formatoEditorState.pdf_codigo,
+        pdf_fecha_creacion: formatoEditorState.pdf_fecha_creacion,
+        pdf_version: formatoEditorState.pdf_version,
         imagen_pdf: formatoEditorState.imagen_pdf,
         herramienta_nombre: null
       };
@@ -10203,6 +10217,9 @@ async function renderConstructorFormatoInsp(formatoId, enlaceId){
   };
   document.getElementById('fiMostrarCumplimiento').onchange = (e)=>{ formatoEditorState.mostrar_cumplimiento = e.target.checked; renderSeccionesFormatoInsp(); };
   document.getElementById('fiPdfHorizontal').onchange = (e)=>{ formatoEditorState.pdf_horizontal = e.target.checked; };
+  document.getElementById('fiPdfCodigo').oninput = (e)=>{ formatoEditorState.pdf_codigo = e.target.value; };
+  document.getElementById('fiPdfFechaCreacion').oninput = (e)=>{ formatoEditorState.pdf_fecha_creacion = e.target.value; };
+  document.getElementById('fiPdfVersion').oninput = (e)=>{ formatoEditorState.pdf_version = e.target.value; };
   document.querySelectorAll('[data-fi-tipo]').forEach(b=>{
     b.onclick = ()=>{
       formatoEditorState.tipo = b.dataset.fiTipo;
@@ -10701,7 +10718,7 @@ async function guardarFormatoInsp(){
     // plantilla de "Formatos" — por diseño quedan independientes desde que se activó.
     // No toca tipo/contrato_id/herramienta_id/firmantes_banco/predeterminado_id/activo.
     bloquear("Guardando cambios…");
-    const payload = { formato_nombre: nombre, tiene_fotos: formatoEditorState.estructura.some(s=>s.tipo==='fotos'), estructura: formatoEditorState.estructura, firmantes: formatoEditorState.firmantes, color_acento: formatoEditorState.color_acento, mostrar_cumplimiento: formatoEditorState.mostrar_cumplimiento, pdf_horizontal: formatoEditorState.pdf_horizontal, imagen_pdf: formatoEditorState.imagen_pdf };
+    const payload = { formato_nombre: nombre, tiene_fotos: formatoEditorState.estructura.some(s=>s.tipo==='fotos'), estructura: formatoEditorState.estructura, firmantes: formatoEditorState.firmantes, color_acento: formatoEditorState.color_acento, mostrar_cumplimiento: formatoEditorState.mostrar_cumplimiento, pdf_horizontal: formatoEditorState.pdf_horizontal, pdf_codigo: formatoEditorState.pdf_codigo||null, pdf_fecha_creacion: formatoEditorState.pdf_fecha_creacion||null, pdf_version: formatoEditorState.pdf_version||null, imagen_pdf: formatoEditorState.imagen_pdf };
     const { error } = await sb.from("insp_enlaces").update(payload).eq("id", enlaceEditorId);
     desbloquear();
     if(error){ if(btn){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar cambios`; } toast("No se pudo guardar: "+error.message,"err"); return; }
@@ -10713,7 +10730,7 @@ async function guardarFormatoInsp(){
   }
 
   bloquear("Guardando formato…");
-  const payload = { nombre, tiene_fotos: formatoEditorState.estructura.some(s=>s.tipo==='fotos'), estructura: formatoEditorState.estructura, firmantes: formatoEditorState.firmantes, color_acento: formatoEditorState.color_acento, mostrar_cumplimiento: formatoEditorState.mostrar_cumplimiento, pdf_horizontal: formatoEditorState.pdf_horizontal, tipo: formatoEditorState.tipo, imagen_pdf: formatoEditorState.imagen_pdf };
+  const payload = { nombre, tiene_fotos: formatoEditorState.estructura.some(s=>s.tipo==='fotos'), estructura: formatoEditorState.estructura, firmantes: formatoEditorState.firmantes, color_acento: formatoEditorState.color_acento, mostrar_cumplimiento: formatoEditorState.mostrar_cumplimiento, pdf_horizontal: formatoEditorState.pdf_horizontal, pdf_codigo: formatoEditorState.pdf_codigo||null, pdf_fecha_creacion: formatoEditorState.pdf_fecha_creacion||null, pdf_version: formatoEditorState.pdf_version||null, tipo: formatoEditorState.tipo, imagen_pdf: formatoEditorState.imagen_pdf };
   const res = formatoEditorId
     ? await sb.from("insp_formatos").update(payload).eq("id", formatoEditorId)
     : await sb.from("insp_formatos").insert(payload).select().single();
@@ -11442,9 +11459,9 @@ async function toggleActivoFormatoInsp(id){
 
 async function duplicarFormatoInsp(id){
   bloquear("Duplicando formato…");
-  const { data, error } = await sb.from("insp_formatos").select("nombre,tiene_fotos,estructura,firmantes,color_acento,mostrar_cumplimiento,pdf_horizontal,tipo,imagen_pdf").eq("id",id).maybeSingle();
+  const { data, error } = await sb.from("insp_formatos").select("nombre,tiene_fotos,estructura,firmantes,color_acento,mostrar_cumplimiento,pdf_horizontal,pdf_codigo,pdf_fecha_creacion,pdf_version,tipo,imagen_pdf").eq("id",id).maybeSingle();
   if(error || !data){ desbloquear(); toast("No se pudo cargar el formato","err"); return; }
-  const { error: errIns } = await sb.from("insp_formatos").insert({ nombre: (data.nombre||"Formato")+" (copia)", tiene_fotos: data.tiene_fotos, estructura: data.estructura, firmantes: data.firmantes, color_acento: data.color_acento, mostrar_cumplimiento: data.mostrar_cumplimiento, pdf_horizontal: data.pdf_horizontal, tipo: data.tipo, imagen_pdf: data.imagen_pdf, activo: true });
+  const { error: errIns } = await sb.from("insp_formatos").insert({ nombre: (data.nombre||"Formato")+" (copia)", tiene_fotos: data.tiene_fotos, estructura: data.estructura, firmantes: data.firmantes, color_acento: data.color_acento, mostrar_cumplimiento: data.mostrar_cumplimiento, pdf_horizontal: data.pdf_horizontal, pdf_codigo: data.pdf_codigo, pdf_fecha_creacion: data.pdf_fecha_creacion, pdf_version: data.pdf_version, tipo: data.tipo, imagen_pdf: data.imagen_pdf, activo: true });
   desbloquear();
   if(errIns){ toast("No se pudo duplicar: "+errIns.message,"err"); return; }
   await loadInspeccionesState();
@@ -11578,7 +11595,7 @@ function abrirNuevoEnlaceInsp(tipoFiltro){
     try{
       // Tomar un formato = copiarlo completo al enlace, no referenciarlo — desde aquí queda
       // 100% independiente de la plantilla (editable sin afectarla, sobrevive si se borra).
-      const { data: full, error: errFull } = await sb.from("insp_formatos").select("nombre,tiene_fotos,estructura,firmantes,color_acento,mostrar_cumplimiento,pdf_horizontal,tipo,imagen_pdf").eq("id",formato_id).maybeSingle();
+      const { data: full, error: errFull } = await sb.from("insp_formatos").select("nombre,tiene_fotos,estructura,firmantes,color_acento,mostrar_cumplimiento,pdf_horizontal,pdf_codigo,pdf_fecha_creacion,pdf_version,tipo,imagen_pdf").eq("id",formato_id).maybeSingle();
       if(errFull || !full){ toast("No se pudo cargar el formato elegido","err"); return; }
       // Sin campo de etiqueta al crear: el formulario nace con el mismo nombre que tenía
       // la plantilla en "Formatos" (nombre queda null, y la tarjeta cae al fallback
@@ -11587,7 +11604,7 @@ function abrirNuevoEnlaceInsp(tipoFiltro){
       const { data, error } = await sb.from("insp_enlaces").insert({
         contrato_id: contratoInspActualId, formato_id, predeterminado_id: null, firmantes_banco: {}, herramienta_id, nombre: null,
         formato_nombre: full.nombre, tiene_fotos: full.tiene_fotos, estructura: full.estructura, firmantes: full.firmantes,
-        color_acento: full.color_acento, mostrar_cumplimiento: full.mostrar_cumplimiento, pdf_horizontal: full.pdf_horizontal, tipo: full.tipo, imagen_pdf: full.imagen_pdf
+        color_acento: full.color_acento, mostrar_cumplimiento: full.mostrar_cumplimiento, pdf_horizontal: full.pdf_horizontal, pdf_codigo: full.pdf_codigo, pdf_fecha_creacion: full.pdf_fecha_creacion, pdf_version: full.pdf_version, tipo: full.tipo, imagen_pdf: full.imagen_pdf
       }).select().single();
       if(error){ toast("No se pudo crear: "+error.message,"err"); return; }
       await loadInspeccionesState();
@@ -13366,10 +13383,15 @@ async function construirInspeccionPDF(idOrData){
   function asegurarEspacio(y, alto){ return (y+alto > FOOTER_TOP) ? nuevaPagina() : y; }
   const ctx = { M, RIGHT, FOOTER_TOP, asegurarEspacio, nuevaPagina, colorAcento: hexToRgbInsp(insp.color_acento) };
 
-  // Encabezado
+  // Encabezado — la esquina superior derecha es del bloque de codificación
+  // (Código/Fecha de creación/Versión, opcional por formato — sección 7.186 de
+  // MEMORY.md) cuando el formato trae "pdf_codigo"; ya NO es de la foto del equipo
+  // (imagen_pdf), que se corrió a la fila de abajo, junto al nombre de la herramienta.
   let y = M;
-  const hH=24, logoW=44, fotoW = insp.imagen_pdf ? 32 : 0;
-  const contentRight = RIGHT - fotoW;
+  const hH=24, logoW=44;
+  const tieneCod = !!(insp.pdf_codigo && String(insp.pdf_codigo).trim());
+  const codW = tieneCod ? 50 : 0;
+  const contentRight = RIGHT - codW;
   doc.setDrawColor(150,160,190); doc.setLineWidth(0.3); doc.rect(M,y,RIGHT-M,hH);
   doc.line(M+logoW,y,M+logoW,y+hH);
   try{ doc.addImage(LOGO,"JPEG",M+4,y+2,36,36*315/570); }catch(e){}
@@ -13377,15 +13399,13 @@ async function construirInspeccionPDF(idOrData){
   doc.text(doc.splitTextToSize(pdfTexto((insp.formato_nombre||"INSPECCIÓN").toUpperCase()), contentRight-M-logoW-6), M+logoW+(contentRight-M-logoW)/2, y+11, {align:"center"});
   doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(90,90,110);
   doc.text(pdfTexto("Don Aseo Ltda."+(nombreContrato?" · "+nombreContrato:"")), M+logoW+(contentRight-M-logoW)/2, y+20, {align:"center"});
-  if(insp.imagen_pdf){
+  if(tieneCod){
     doc.line(contentRight,y,contentRight,y+hH);
-    try{
-      const tam = await getImageSize(insp.imagen_pdf);
-      const padd = 2, cajaW = fotoW - padd*2, cajaH = hH - padd*2;
-      let dw = cajaW, dh = tam ? cajaW*tam.h/tam.w : cajaH;
-      if(dh > cajaH){ dh = cajaH; dw = tam ? cajaH*tam.w/tam.h : cajaW; }
-      doc.addImage(insp.imagen_pdf, contentRight+(fotoW-dw)/2, y+(hH-dh)/2, dw, dh);
-    }catch(e){}
+    doc.setFont("helvetica","bold"); doc.setFontSize(7.3); doc.setTextColor(40,40,40);
+    doc.text(pdfTexto("Código: "+insp.pdf_codigo), RIGHT-47, y+6);
+    doc.setFont("helvetica","normal");
+    doc.text("Fecha de creación: "+(insp.pdf_fecha_creacion ? fmtDate(insp.pdf_fecha_creacion) : "—"), RIGHT-47, y+11.5);
+    doc.text(pdfTexto("Versión: "+(insp.pdf_version || "—")), RIGHT-47, y+17);
   }
   y += hH;
 
@@ -13394,11 +13414,25 @@ async function construirInspeccionPDF(idOrData){
   doc.line(M+colW,y,M+colW,y+fh); doc.line(M+colW*2,y,M+colW*2,y+fh);
   const horaInsp = insp.creado_en ? new Date(insp.creado_en).toLocaleTimeString("es-CO",{hour:'2-digit',minute:'2-digit'}) : '';
   doc.setFont("helvetica","bold"); doc.setFontSize(7); doc.setTextColor(90,90,110);
-  doc.text("FECHA", M+3, y+5); doc.text("CONTRATO", M+colW+3, y+5); doc.text(insp.herramienta_nombre?"HERRAMIENTA":"EMPRESA", M+colW*2+3, y+5);
+  doc.text("FECHA", M+3, y+5); doc.text("CONTRATO", M+colW+3, y+5);
+  const terceraColX = M+colW*2;
+  const tieneFotoHerr = !!insp.imagen_pdf;
+  const fotoHerrSize = 11;
+  const textoX3 = terceraColX + (tieneFotoHerr ? fotoHerrSize+5 : 3);
+  doc.text(insp.herramienta_nombre?"HERRAMIENTA":"EMPRESA", textoX3, y+5);
   doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor(20,20,20);
   doc.text(fmtDate((insp.creado_en||'').slice(0,10)) + (horaInsp?"  "+horaInsp:""), M+3, y+10.5);
   doc.text(doc.splitTextToSize(pdfTexto(nombreContrato||"—"), colW-6), M+colW+3, y+10.5);
-  doc.text(doc.splitTextToSize(pdfTexto(insp.herramienta_nombre || "Don Aseo Ltda."), colW-6), M+colW*2+3, y+10.5);
+  doc.text(doc.splitTextToSize(pdfTexto(insp.herramienta_nombre || "Don Aseo Ltda."), colW-6-(tieneFotoHerr?fotoHerrSize+5:0)), textoX3, y+10.5);
+  if(tieneFotoHerr){
+    try{
+      const tam = await getImageSize(insp.imagen_pdf);
+      const cajaW = fotoHerrSize, cajaH = fotoHerrSize;
+      let dw = cajaW, dh = tam ? cajaW*tam.h/tam.w : cajaH;
+      if(dh > cajaH){ dh = cajaH; dw = tam ? cajaH*tam.w/tam.h : cajaW; }
+      doc.addImage(insp.imagen_pdf, terceraColX+2+(cajaW-dw)/2, y+(fh-dh)/2, dw, dh);
+    }catch(e){}
+  }
   y += fh + 4;
 
   // Resumen de cumplimiento — calculado con el mismo marcado manual conforme/no
