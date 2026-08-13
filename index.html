@@ -4700,8 +4700,14 @@ async function loadDotacionState(){
   DOTACION.trabajadores = t.data || [];
   DOTACION.entregas = e.data || [];
   DOTACION.entregaItems = ei.data || [];
-  // Si el contrato guardado ya no existe (o nunca se eligió uno), cae al primero activo, o al primero que haya
-  const existe = contratoActualId==='todos' || DOTACION.contratos.some(x=>x.id===contratoActualId);
+  // Si el contrato guardado ya no existe (o nunca se eligió uno), cae al primero activo, o al primero que haya.
+  // "todos" solo es válido para admin — un editor/visualizador puede tener este valor pegado
+  // en localStorage desde una sesión anterior de OTRA cuenta (admin) en el mismo navegador;
+  // el <select> nunca le ofrece esa opción, así que sin esta comprobación se quedaba
+  // atascado en "todos" para siempre (ocultando "Nuevo trabajador" y deshabilitando
+  // "Historial de entregas" y demás herramientas por contrato, sin que nada en pantalla
+  // explicara por qué).
+  const existe = (contratoActualId==='todos' && MIPERFIL.esAdmin) || DOTACION.contratos.some(x=>x.id===contratoActualId);
   if(!existe){
     const primero = DOTACION.contratos.find(x=>x.activo) || DOTACION.contratos[0];
     contratoActualId = primero ? primero.id : null;
@@ -5407,7 +5413,7 @@ function abrirTrabajadorForm(id){
       <div class="field"><label>Número de identificación (cédula) *</label><input id="tCedula" value="${esc(t.identificacion||'')}" placeholder="C.C." inputmode="numeric"></div>
       ` : `
       <div class="field"><label>Número de identificación (cédula) *</label><input id="tCedula" type="password" inputmode="numeric" placeholder="C.C." autocomplete="off" onpaste="return false" ondrop="return false" oncopy="return false"></div>
-      <div class="field"><label>Confirmar número de identificación *</label><input id="tCedulaConfirm" type="password" inputmode="numeric" placeholder="Escríbela de nuevo" autocomplete="off" onpaste="return false" ondrop="return false" oncopy="return false"></div>
+      <div class="field"><label>Confirmar número de identificación *</label><input id="tCedulaConfirm" type="text" inputmode="numeric" placeholder="Escríbela de nuevo" autocomplete="off" onpaste="return false" ondrop="return false" oncopy="return false"></div>
       <p class="muted-sm" style="margin-top:-8px">Se pide escribirla dos veces, sin poder copiar y pegar, para evitar registrar una cédula mal digitada.</p>
       `}
       <div class="field"><label>Cargo</label><input id="tCargo" value="${esc(t?.cargo||'')}" placeholder="Cargo"></div>
@@ -8029,7 +8035,7 @@ function abrirTrabajadorDtlForm(id){
       <div class="field"><label>Número de identificación (cédula) *</label><input id="tdCedula" value="${esc(t.identificacion||'')}" placeholder="C.C." inputmode="numeric"></div>
       ` : `
       <div class="field"><label>Número de identificación (cédula) *</label><input id="tdCedula" type="password" inputmode="numeric" placeholder="C.C." autocomplete="off" onpaste="return false" ondrop="return false" oncopy="return false"></div>
-      <div class="field"><label>Confirmar número de identificación *</label><input id="tdCedulaConfirm" type="password" inputmode="numeric" placeholder="Escríbela de nuevo" autocomplete="off" onpaste="return false" ondrop="return false" oncopy="return false"></div>
+      <div class="field"><label>Confirmar número de identificación *</label><input id="tdCedulaConfirm" type="text" inputmode="numeric" placeholder="Escríbela de nuevo" autocomplete="off" onpaste="return false" ondrop="return false" oncopy="return false"></div>
       <p class="muted-sm" style="margin-top:-8px">Se pide escribirla dos veces, sin poder copiar y pegar, para evitar registrar una cédula mal digitada.</p>
       `}
       <div class="field"><label>Cargo</label><input id="tdCargo" value="${esc(t?.cargo||'')}" placeholder="Cargo"></div>
