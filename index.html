@@ -5464,8 +5464,9 @@ async function guardarTrabajador(id){
   // con el mismo nombre de contrato y esa cédula no está ya ahí (ver CAMBIOS_SQL_73.sql).
   let msgFinal = id ? "Trabajador actualizado" : "Trabajador creado";
   if(!id && nuevoId){
-    const { data: espejo } = await sb.rpc('dot_espejo_en_dtl', { p_trabajador_id: nuevoId });
-    if(espejo?.ok) msgFinal += ` · también creado en Dotación (${espejo.entidad_nombre})`;
+    const { data: espejo, error: errEspejo } = await sb.rpc('dot_espejo_en_dtl', { p_trabajador_id: nuevoId });
+    if(errEspejo){ console.error('dot_espejo_en_dtl', errEspejo); msgFinal += ` · no se pudo reflejar en Dotación: ${errEspejo.message}`; }
+    else if(espejo?.ok) msgFinal += ` · también creado en Dotación (${espejo.entidad_nombre})`;
     else if(espejo?.motivo==='sin_permiso_destino') msgFinal += ` · no se pudo reflejar en Dotación: no tienes permiso ahí (${espejo.entidad_nombre})`;
   }
   toast(msgFinal,"ok");
@@ -8085,8 +8086,9 @@ async function guardarTrabajadorDtl(id){
   // el mismo nombre de entidad y esa cédula no está ya ahí (ver CAMBIOS_SQL_73.sql).
   let msgFinal = id ? "Trabajador actualizado" : "Trabajador creado";
   if(!id && nuevoId){
-    const { data: espejo } = await sb.rpc('dtl_espejo_en_dot', { p_trabajador_id: nuevoId });
-    if(espejo?.ok) msgFinal += ` · también creado en EPP (${espejo.contrato_nombre})`;
+    const { data: espejo, error: errEspejo } = await sb.rpc('dtl_espejo_en_dot', { p_trabajador_id: nuevoId });
+    if(errEspejo){ console.error('dtl_espejo_en_dot', errEspejo); msgFinal += ` · no se pudo reflejar en EPP: ${errEspejo.message}`; }
+    else if(espejo?.ok) msgFinal += ` · también creado en EPP (${espejo.contrato_nombre})`;
     else if(espejo?.motivo==='sin_permiso_destino') msgFinal += ` · no se pudo reflejar en EPP: no tienes permiso ahí (${espejo.contrato_nombre})`;
   }
   toast(msgFinal,"ok");
