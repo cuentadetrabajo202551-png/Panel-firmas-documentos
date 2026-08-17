@@ -14312,15 +14312,55 @@ async function toggleActivoContratoAct(id){
   await loadActividadesState();
   closeModal(); abrirGestionContratosAct();
 }
-function abrirFormContratoAct(id, onDone){
+async function abrirFormContratoAct(id, onDone){
   const c = id ? ACTIVIDADES.contratos.find(x=>x.id===id) : null;
+  // Al crear un contrato nuevo, se sugieren los nombres que ya existen como "contrato" en
+  // Dotación (dtl_entidades) — para que coincidan EXACTO y no se rompan por un typo las
+  // funciones que emparejan módulos por nombre (espejo EPP<->Dotación, RH). El usuario puede
+  // igual escribir un nombre distinto con "Otro" si el contrato aún no existe en Dotación.
+  let entidadesDtl = [];
+  if(!c){
+    bloquear("Cargando contratos de Dotación…");
+    try{
+      const { data } = await sb.from("dtl_entidades").select("id,nombre,activo").order("nombre",{ascending:true});
+      entidadesDtl = data || [];
+    } finally { desbloquear(); }
+  }
   openModal(`<div class="modal" style="max-width:420px">
     <div class="modal-head"><div><h2>${c?'Editar contrato':'Nuevo contrato'}</h2></div><button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body"><div class="field"><label>Nombre *</label><input id="acNombre" value="${esc(c?.nombre||'')}" placeholder="Ej. Comfenalco Antioquia"></div></div>
+    <div class="modal-body">
+      ${c ? `
+        <div class="field"><label>Nombre *</label><input id="acNombre" value="${esc(c.nombre||'')}" placeholder="Ej. Comfenalco Antioquia"></div>
+      ` : `
+        <div class="field">
+          <label>Nombre *</label>
+          <select id="acNombreSelect">
+            <option value="">— Elige un contrato de Dotación —</option>
+            ${entidadesDtl.map(e=>`<option value="${esc(e.nombre)}">${esc(e.nombre)}${e.activo?'':' (archivado)'}</option>`).join('')}
+            <option value="__otro__">Otro (escribir el nombre)</option>
+          </select>
+          <p class="muted-sm" style="margin-top:6px">${entidadesDtl.length ? 'Se sugieren los contratos que ya existen en Dotación, para que el nombre coincida exactamente.' : 'Aún no hay contratos creados en Dotación — escribe el nombre con "Otro".'}</p>
+        </div>
+        <div class="field" id="acNombreManualWrap" style="display:none">
+          <label>Nombre del contrato *</label>
+          <input id="acNombreManual" placeholder="Ej. Comfenalco Antioquia">
+        </div>
+      `}
+    </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" id="btnGuardarContratoAct">${I.check} Guardar</button></div>
   </div>`);
+  if(!c){
+    document.getElementById('acNombreSelect').onchange = (e)=>{
+      document.getElementById('acNombreManualWrap').style.display = e.target.value==='__otro__' ? 'block' : 'none';
+    };
+  }
   document.getElementById('btnGuardarContratoAct').onclick = async ()=>{
-    const nombre = document.getElementById('acNombre').value.trim();
+    let nombre;
+    if(c){ nombre = document.getElementById('acNombre').value.trim(); }
+    else {
+      const sel = document.getElementById('acNombreSelect').value;
+      nombre = (sel==='__otro__' ? document.getElementById('acNombreManual').value : sel).trim();
+    }
     if(!nombre){ toast("Falta el nombre","err"); return; }
     const btn = document.getElementById('btnGuardarContratoAct'); btn.disabled=true; btn.innerHTML="Guardando…";
     let error, data;
