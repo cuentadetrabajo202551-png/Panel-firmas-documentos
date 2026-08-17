@@ -368,6 +368,35 @@ input[type="date"], input[type="time"]{background:#fff;color:var(--ink)}
 .badge.activa .dot{background:var(--green);box-shadow:0 0 0 3px rgba(31,168,78,.18)}
 .badge.cerrada{background:#eef0f6;color:var(--ink-2)}
 .badge.cerrada .dot{background:var(--ink-3)}
+.badge.warn{background:#faeeda;color:#854f0b}
+.badge.warn .dot{background:#c8891f}
+.badge.info{background:#eeedfe;color:#3c3489}
+.badge.info .dot{background:#5b4fd6}
+.act-timeline-item{padding:10px 0;border-bottom:1px solid var(--line-2)}
+.act-timeline-item:last-child{border-bottom:none}
+.cal-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.cal-grid-head{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:6px;font-size:11.5px;font-weight:800;color:var(--ink-3);text-transform:uppercase;letter-spacing:.03em;text-align:center}
+.cal-grid-mes{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.cal-dia{min-height:90px;padding:6px;border:1px solid var(--line);border-radius:10px;background:var(--card);cursor:pointer;transition:.15s}
+.cal-dia:hover{border-color:var(--brand-soft2)}
+.cal-dia-fuera{opacity:.4}
+.cal-dia-hoy{border-color:var(--brand);box-shadow:0 0 0 1px var(--brand)}
+.cal-dia-num{font-size:12.5px;font-weight:800;color:var(--ink-2);margin-bottom:4px}
+.cal-dia-hoy .cal-dia-num{color:var(--brand)}
+.cal-dia-chips{display:flex;flex-direction:column;gap:3px}
+.act-chip{display:flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:3px 6px;border-radius:5px;background:var(--brand-soft);border-left:3px solid var(--brand);color:var(--ink);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;cursor:pointer}
+.act-chip-hora{opacity:.7;font-weight:800;flex:none}
+.act-chip-txt{overflow:hidden;text-overflow:ellipsis}
+.act-chip-mas{font-size:10.5px;font-weight:800;color:var(--brand-deep);cursor:pointer;padding:2px 4px}
+.cal-grid-semana{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}
+.cal-col-semana{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--card);min-height:220px}
+.cal-col-semana-head{padding:8px;text-align:center;font-size:12px;color:var(--ink-2);background:var(--brand-soft);cursor:pointer;font-weight:700}
+.cal-col-semana.cal-dia-hoy .cal-col-semana-head{background:var(--brand);color:#fff}
+.cal-col-semana-body{padding:6px;display:flex;flex-direction:column;gap:4px}
+@media(max-width:900px){
+  .cal-dia{min-height:64px}
+  .cal-grid-semana{grid-template-columns:1fr}
+}
 .lcard .tipo{font-size:11.5px;font-weight:700;color:var(--brand-deep);background:var(--brand-soft);padding:4px 10px;border-radius:7px;display:inline-block}
 .lcard h3{font-family:var(--display);font-size:19px;font-weight:700;letter-spacing:-.01em;line-height:1.25}
 .lcard .meta{display:flex;flex-direction:column;gap:7px;font-size:13px;color:var(--ink-2)}
@@ -844,7 +873,7 @@ if(window.emailjs){ try{ emailjs.init({ publicKey: EMAILJS_KEY }); }catch(e){ tr
 let STATE = { listas: [], userEmail: "" };
 
 /* ---------- Permisos del usuario logueado (roles/módulos/contratos) ---------- */
-let MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], catalogoDot:[], trabajadoresDot:[], entidadesDtl:[], trabajadoresDtl:[], contratosInsp:[], nombre:"", uid:null };
+let MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], catalogoDot:[], trabajadoresDot:[], entidadesDtl:[], trabajadoresDtl:[], contratosInsp:[], contratosAct:[], nombre:"", uid:null };
 /* Mapa uid -> nombre/correo, para mostrar "Creado por: X" sin exponer toda acc_perfiles */
 let PERFILES_NOMBRE = {};
 let PERFILES_CORREO = {};
@@ -860,14 +889,15 @@ async function cargarAppConfig(){
 async function cargarMiPerfil(){
   await cargarAppConfig();
   const { data:{ session } } = await sb.auth.getSession();
-  if(!session){ MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], catalogoDot:[], trabajadoresDot:[], entidadesDtl:[], trabajadoresDtl:[], contratosInsp:[], nombre:"", uid:null }; return; }
+  if(!session){ MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], catalogoDot:[], trabajadoresDot:[], entidadesDtl:[], trabajadoresDtl:[], contratosInsp:[], contratosAct:[], nombre:"", uid:null }; return; }
   const uid = session.user.id;
-  const [{ data:p }, { data:pm }, { data:pc }, { data:pe }, { data:pi }, { data:pn }] = await Promise.all([
+  const [{ data:p }, { data:pm }, { data:pc }, { data:pe }, { data:pi }, { data:pa }, { data:pn }] = await Promise.all([
     sb.from("acc_perfiles").select("es_admin,activo,nombre,rol").eq("id",uid).maybeSingle(),
     sb.from("acc_perfil_modulos").select("modulo").eq("perfil_id",uid),
     sb.from("acc_perfil_contratos").select("contrato_id,puede_agregar_catalogo,puede_agregar_trabajadores").eq("perfil_id",uid),
     sb.from("acc_perfil_entidades").select("entidad_id,puede_agregar_trabajadores").eq("perfil_id",uid),
     sb.from("acc_perfil_contratos_insp").select("contrato_id").eq("perfil_id",uid),
+    sb.from("acc_perfil_contratos_act").select("contrato_id").eq("perfil_id",uid),
     sb.rpc("acc_perfiles_nombres")
   ]);
   MIPERFIL = {
@@ -882,6 +912,7 @@ async function cargarMiPerfil(){
     entidadesDtl: (pe||[]).map(x=>x.entidad_id),
     trabajadoresDtl: (pe||[]).filter(x=>x.puede_agregar_trabajadores).map(x=>x.entidad_id),
     contratosInsp: (pi||[]).map(x=>x.contrato_id),
+    contratosAct: (pa||[]).map(x=>x.contrato_id),
     nombre: (p && p.nombre) || session.user.email || "",
     uid
   };
@@ -891,6 +922,7 @@ async function cargarMiPerfil(){
 }
 function tieneModulo(m){ return MIPERFIL.esAdmin || (MIPERFIL.activo && MIPERFIL.modulos.includes(m)); }
 function tieneContratoDotacion(id){ return MIPERFIL.esAdmin || MIPERFIL.contratos.includes(id); }
+function tieneContratoAct(id){ return MIPERFIL.esAdmin || MIPERFIL.contratosAct.includes(id); }
 function puedeAgregarCatalogoDot(id){ return MIPERFIL.esAdmin || MIPERFIL.catalogoDot.includes(id); }
 function puedeAgregarTrabajadorDot(id){ return MIPERFIL.esAdmin || MIPERFIL.trabajadoresDot.includes(id); }
 function tieneEntidadDtl(id){ return MIPERFIL.esAdmin || MIPERFIL.entidadesDtl.includes(id); }
@@ -1182,6 +1214,16 @@ async function router(){
     else if(mFormatoInsp){ await renderConstructorFormatoInsp(mFormatoInsp[1]==='nueva' ? null : decodeURIComponent(mFormatoInsp[1])); }
     else if(mEnlaceInsp){ await renderConstructorFormatoInsp(null, decodeURIComponent(mEnlaceInsp[1])); }
     else { await renderInspeccionesAdmin(); }   // MÓDULO: Inspecciones
+  } else if(location.hash === "#/actividades" || location.hash.startsWith("#/actividades/")){
+    if(!tieneModulo('actividades')){ renderSinAcceso("Actividades"); return; }
+    const mEditarAct = location.hash.match(/^#\/actividades\/(.+)\/editar$/);
+    const mFichaAct = location.hash.match(/^#\/actividades\/(.+)$/);
+    if(location.hash === "#/actividades/nueva"){
+      if(!puedeEscribir()){ renderSinAcceso("Actividades"); } else { await renderFormActividad(null); }
+    } else if(mEditarAct){
+      if(!puedeEscribir()){ renderSinAcceso("Actividades"); } else { await renderFormActividad(decodeURIComponent(mEditarAct[1])); }
+    } else if(mFichaAct){ await renderFichaActividad(decodeURIComponent(mFichaAct[1])); }
+    else { await renderActividadesAdmin(); }   // MÓDULO: Actividades
   } else {
     // Ruta por defecto (recién logueado, o cualquier hash no reconocido). Si no tiene Asistencia,
     // en vez de mostrar "sin acceso" de una, lo mandamos al primer módulo que sí tenga habilitado
@@ -1191,6 +1233,7 @@ async function router(){
       if(tieneModulo('dotacion')){ location.hash = "#/dotacion"; return; }
       if(tieneModulo('dotacionlegal')){ location.hash = "#/dotacionlegal"; return; }
       if(tieneModulo('inspecciones')){ location.hash = "#/inspecciones"; return; }
+      if(tieneModulo('actividades')){ location.hash = "#/actividades"; return; }
       renderSinAcceso();
       return;
     }
@@ -1256,6 +1299,7 @@ function navLinksHTML(active, claseActiva, incluirConfig, conIconos){
     ${tieneModulo('dotacion')?`<a href="#/dotacion" class="${active==='dotacion'?claseActiva:''}">${ic(I.navEpp)}Entregas de EPP</a>`:''}
     ${tieneModulo('dotacionlegal')?`<a href="#/dotacionlegal" class="${active==='dotacionlegal'?claseActiva:''}">${ic(I.navDotacion)}Entregas de dotación</a>`:''}
     ${tieneModulo('inspecciones')?`<a href="#/inspecciones" class="${active==='inspecciones'?claseActiva:''}">${ic(I.navInspeccion)}Formularios de inspección</a>`:''}
+    ${tieneModulo('actividades')?`<a href="#/actividades" class="${active==='actividades'?claseActiva:''}">${ic(I.cal)}Programación de actividades</a>`:''}
     ${MIPERFIL.esAdmin?`<a href="#/auditoria" class="${active==='auditoria'?claseActiva:''}">${ic(I.navAuditoria)}Auditoría</a>`:''}
     ${incluirConfig && MIPERFIL.esAdmin?`<a href="#/configuracion" class="${active==='configuracion'?claseActiva:''}">Configuración</a>`:''}
   `;
@@ -1345,7 +1389,7 @@ function wireLogout(){
       if(_dtlTimer){ clearInterval(_dtlTimer); _dtlTimer=null; }
       if(_inspTimer){ clearInterval(_inspTimer); _inspTimer=null; }
       await sb.auth.signOut(); STATE.listas=[]; STATE.userEmail="";
-      MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], contratosInsp:[], nombre:"", uid:null };
+      MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], catalogoDot:[], trabajadoresDot:[], entidadesDtl:[], trabajadoresDtl:[], contratosInsp:[], contratosAct:[], nombre:"", uid:null };
       PERFILES_NOMBRE = {}; PERFILES_CORREO = {};
       location.hash=""; router();
     };
@@ -5467,7 +5511,16 @@ async function guardarTrabajador(id){
     const { data: espejo, error: errEspejo } = await sb.rpc('dot_espejo_en_dtl', { p_trabajador_id: nuevoId });
     if(errEspejo){ console.error('dot_espejo_en_dtl', errEspejo); msgFinal += ` · no se pudo reflejar en Dotación: ${errEspejo.message}`; }
     else if(espejo?.ok) msgFinal += ` · también creado en Dotación (${espejo.entidad_nombre})`;
-    else if(espejo?.motivo==='sin_permiso_destino') msgFinal += ` · no se pudo reflejar en Dotación: no tienes permiso ahí (${espejo.entidad_nombre})`;
+    else {
+      const motivos = {
+        sin_permiso_destino: `no tienes el permiso en Dotación (${espejo?.entidad_nombre||'—'})`,
+        ya_existe: `esa cédula ya existía en Dotación (${espejo?.entidad_nombre||'—'})`,
+        sin_entidad_correspondiente: 'no hay ninguna entidad de Dotación con ese mismo nombre de contrato',
+        sin_acceso_origen: 'sin acceso al contrato de origen',
+        no_encontrado: 'no se encontró el trabajador recién creado'
+      };
+      msgFinal += ` · no se reflejó en Dotación: ${motivos[espejo?.motivo] || espejo?.motivo || 'motivo desconocido'}`;
+    }
   }
   toast(msgFinal,"ok");
   const mFicha = location.hash.match(/^#\/dotacion\/trabajador\/(.+)$/);
@@ -8089,7 +8142,16 @@ async function guardarTrabajadorDtl(id){
     const { data: espejo, error: errEspejo } = await sb.rpc('dtl_espejo_en_dot', { p_trabajador_id: nuevoId });
     if(errEspejo){ console.error('dtl_espejo_en_dot', errEspejo); msgFinal += ` · no se pudo reflejar en EPP: ${errEspejo.message}`; }
     else if(espejo?.ok) msgFinal += ` · también creado en EPP (${espejo.contrato_nombre})`;
-    else if(espejo?.motivo==='sin_permiso_destino') msgFinal += ` · no se pudo reflejar en EPP: no tienes permiso ahí (${espejo.contrato_nombre})`;
+    else {
+      const motivos = {
+        sin_permiso_destino: `no tienes el permiso en EPP (${espejo?.contrato_nombre||'—'})`,
+        ya_existe: `esa cédula ya existía en EPP (${espejo?.contrato_nombre||'—'})`,
+        sin_contrato_correspondiente: 'no hay ningún contrato de EPP con ese mismo nombre de entidad',
+        sin_acceso_origen: 'sin acceso a la entidad de origen',
+        no_encontrado: 'no se encontró el trabajador recién creado'
+      };
+      msgFinal += ` · no se reflejó en EPP: ${motivos[espejo?.motivo] || espejo?.motivo || 'motivo desconocido'}`;
+    }
   }
   toast(msgFinal,"ok");
   const mFicha = location.hash.match(/^#\/dotacionlegal\/trabajador\/(.+)$/);
@@ -13765,6 +13827,1647 @@ async function enviarInspeccionPublica(enlaceId){
 }
 
 /* ============================================================
+   MÓDULO ACTIVIDADES · Programación y Seguimiento de Actividades
+   Fase 1: núcleo funcional — contratos/sedes/tipos propios, la
+   actividad como expediente completo, cuadrilla, evidencias
+   clasificadas (antes/durante/después), documentos adjuntos, e
+   historial tipo línea de tiempo (alimentado por el trigger de
+   CAMBIOS_SQL_74.sql para estado/responsable/fecha, y a mano desde
+   acá para evidencia/documentos). El calendario visual, la
+   recurrencia, el dashboard de indicadores y los reportes PDF/Excel
+   llegan en fases siguientes — ver sección 7.19x de MEMORY.md.
+   ============================================================ */
+let ACTIVIDADES = { contratos:[], sedes:[], tipos:[], actividades:[] };
+let actContratoActualId = localStorage.getItem('act_contrato_actual') || null;
+let actQuery = '';
+let actFiltroEstado = 'todos';
+let actTabActiva = 'calendario';
+let calVista = 'mes';
+let calFecha = hoyLocal();
+
+const ACT_ESTADOS = {
+  programada: { label:'Programada', clase:'enviado' },
+  en_ejecucion: { label:'En ejecución', clase:'info' },
+  ejecutada: { label:'Ejecutada', clase:'activa' },
+  ejecutada_con_novedades: { label:'Ejecutada con novedades', clase:'warn' },
+  pendiente: { label:'Pendiente', clase:'cerrada' },
+  reprogramada: { label:'Reprogramada', clase:'warn' },
+  cancelada: { label:'Cancelada', clase:'venc' }
+};
+const ACT_PRIORIDADES = { baja:'Baja', media:'Media', alta:'Alta', critica:'Crítica' };
+
+async function loadActividadesState(){
+  const [co, se, ti, ac] = await Promise.all([
+    sb.from("act_contratos").select("id,nombre,activo,creado_en").order("nombre",{ascending:true}),
+    sb.from("act_sedes").select("id,contrato_id,nombre,direccion,activo").order("nombre",{ascending:true}),
+    sb.from("act_tipos_actividad").select("id,nombre,color,activo").order("nombre",{ascending:true}),
+    cargarTodasFilas(()=> sb.from("act_actividades").select("id,contrato_id,sede_id,tipo_id,serie_id,folio,descripcion,area_detalle,prioridad,estado,responsable_principal_uid,fecha_programada,hora_inicio_estimada,hora_fin_estimada,duracion_estimada_minutos,fecha_programada_original,veces_reprogramada,fecha_inicio_real,fecha_fin_real,requiere_evidencia,requiere_informe,observaciones,motivo_cancelacion,evidencias_count,documentos_count,creado_en,creado_por").order("fecha_programada",{ascending:false}))
+  ]);
+  const err = co.error || se.error || ti.error || ac.error;
+  if(err){ console.warn(err); toast("Error cargando Actividades: "+err.message,"err"); }
+  ACTIVIDADES.contratos = co.data || [];
+  ACTIVIDADES.sedes = se.data || [];
+  ACTIVIDADES.tipos = ti.data || [];
+  ACTIVIDADES.actividades = ac.data || [];
+  // "todos" solo es válido para admin (mismo candado que EPP, sección 7.189 de MEMORY.md) —
+  // si no, un editor/visualizador puede quedar pegado ahí por localStorage de otra cuenta.
+  const existe = (actContratoActualId==='todos' && MIPERFIL.esAdmin) || ACTIVIDADES.contratos.some(x=>x.id===actContratoActualId);
+  if(!existe){
+    const primero = ACTIVIDADES.contratos.find(x=>x.activo) || ACTIVIDADES.contratos[0];
+    actContratoActualId = primero ? primero.id : null;
+    if(actContratoActualId) localStorage.setItem('act_contrato_actual', actContratoActualId);
+  }
+}
+function actContratoActual(){ return ACTIVIDADES.contratos.find(c=>c.id===actContratoActualId); }
+function sedesDelContrato(contratoId){ return ACTIVIDADES.sedes.filter(s=>s.contrato_id===(contratoId||actContratoActualId) && s.activo!==false); }
+function tiposActivosAct(){ return ACTIVIDADES.tipos.filter(t=>t.activo!==false); }
+function actividadesDelContrato(){ return actContratoActualId==='todos' ? ACTIVIDADES.actividades : ACTIVIDADES.actividades.filter(a=>a.contrato_id===actContratoActualId); }
+function nombreTipoAct(id){ return ACTIVIDADES.tipos.find(t=>t.id===id)?.nombre || '—'; }
+function nombreSedeAct(id){ return id ? (ACTIVIDADES.sedes.find(s=>s.id===id)?.nombre || '—') : null; }
+function nombreContratoAct(id){ return ACTIVIDADES.contratos.find(c=>c.id===id)?.nombre || '—'; }
+function folioActividadTexto(folio){ return 'OT-'+String(folio).padStart(6,'0'); }
+function esActividadVencida(a){ return (a.estado==='programada' || a.estado==='reprogramada') && a.fecha_programada < hoyLocal(); }
+function badgeEstadoActividadHTML(a){
+  if(esActividadVencida(a)) return `<span class="badge venc"><span class="dot"></span>Vencida</span>`;
+  const e = ACT_ESTADOS[a.estado] || {label:a.estado, clase:''};
+  return `<span class="badge ${e.clase}"><span class="dot"></span>${esc(e.label)}</span>`;
+}
+
+/* ---------- Fase 4: indicadores + "requieren atención" — leídos de lo que ya
+   está en memoria (ACTIVIDADES.actividades), sin consultas nuevas. El % de
+   cumplimiento se calcula solo sobre actividades no canceladas cuya fecha ya
+   llegó (no tendría sentido contra actividades futuras todavía sin ejecutar). ---------- */
+function indicadoresActividades(){
+  const lista = actividadesDelContrato();
+  const hoy = hoyLocal();
+  const programadas = lista.filter(a=> a.estado==='programada' || a.estado==='reprogramada').length;
+  const enEjecucion = lista.filter(a=> a.estado==='en_ejecucion').length;
+  const ejecutadas = lista.filter(a=> a.estado==='ejecutada' || a.estado==='ejecutada_con_novedades').length;
+  const vencidas = lista.filter(esActividadVencida).length;
+  const base = lista.filter(a=> a.estado!=='cancelada' && a.fecha_programada <= hoy).length;
+  const cumplimiento = base>0 ? Math.round((ejecutadas/base)*100) : null;
+  return { total:lista.length, programadas, enEjecucion, ejecutadas, vencidas, cumplimiento };
+}
+function actividadesRequierenAtencion(){
+  const lista = actividadesDelContrato();
+  const activas = a=> !['cancelada','ejecutada','ejecutada_con_novedades'].includes(a.estado);
+  return {
+    vencidas: lista.filter(esActividadVencida),
+    sinResponsable: lista.filter(a=> !a.responsable_principal_uid && activas(a)),
+    sinEvidencia: lista.filter(a=> ['ejecutada','ejecutada_con_novedades'].includes(a.estado) && a.requiere_evidencia && !a.evidencias_count),
+    informePendiente: lista.filter(a=> ['ejecutada','ejecutada_con_novedades'].includes(a.estado) && a.requiere_informe && !a.documentos_count)
+  };
+}
+function statsActividadesHTML(){
+  const s = indicadoresActividades();
+  return `<div class="stats cinco">
+    <div class="stat s-total"><div class="label">Programadas</div><div class="value">${s.programadas}</div></div>
+    <div class="stat s-asi"><div class="label">En ejecución</div><div class="value">${s.enEjecucion}</div></div>
+    <div class="stat s-act"><div class="label">Ejecutadas</div><div class="value">${s.ejecutadas}</div></div>
+    <div class="stat s-venc"><div class="label">Vencidas</div><div class="value">${s.vencidas}</div></div>
+    <div class="stat s-clo"><div class="label">% Cumplimiento</div><div class="value">${s.cumplimiento==null?'—':s.cumplimiento+'%'}</div></div>
+  </div>`;
+}
+function requierenAtencionHTML(){
+  const r = actividadesRequierenAtencion();
+  const grupos = [
+    { titulo:'Vencidas', lista:r.vencidas },
+    { titulo:'Sin responsable asignado', lista:r.sinResponsable },
+    { titulo:'Ejecutadas sin evidencia', lista:r.sinEvidencia },
+    { titulo:'Con informe pendiente', lista:r.informePendiente }
+  ].filter(g=> g.lista.length);
+  if(!grupos.length) return '';
+  return `<div class="panel-section" style="border-color:var(--danger)">
+    <div class="section-label" style="color:var(--danger)">${I.warn} Requieren atención</div>
+    ${grupos.map(g=>`
+      <div style="margin-bottom:10px">
+        <div style="font-weight:700;font-size:13px;margin:6px 0 8px">${g.titulo} <span class="badge venc">${g.lista.length}</span></div>
+        <div class="grid">${g.lista.slice(0,6).map(actividadCardHTML).join('')}</div>
+        ${g.lista.length>6?`<p class="muted-sm" style="margin-top:4px">+${g.lista.length-6} más — usa la pestaña Lista para verlas todas.</p>`:''}
+      </div>`).join('')}
+  </div>`;
+}
+
+/* ---------- Panel principal ---------- */
+async function renderActividadesAdmin(silent){
+  const scrollY = window.scrollY;
+  if(silent){ await loadActividadesState(); }
+  else { bloquear("Cargando Actividades…"); try{ await loadActividadesState(); } finally{ desbloquear(); } }
+
+  if(!ACTIVIDADES.contratos.length){
+    document.getElementById("app").innerHTML = MIPERFIL.esAdmin ? `${topbar('actividades')}
+      <div class="wrap"><div class="empty"><div class="ic">${I.cal}</div>
+        <h3>Crea tu primer contrato</h3>
+        <p>Cada contrato agrupa sus propias sedes, tipos de actividad y programación.</p>
+        <div style="margin-top:18px"><button class="btn btn-primary" id="btnPrimerContratoAct">${I.plus} Crear contrato</button></div>
+      </div></div>` : `${topbar('actividades')}
+      <div class="wrap"><div class="empty"><div class="ic">${I.cal}</div>
+        <h3>Aún no tienes ningún contrato asignado</h3>
+        <p>Pídele al administrador que te dé acceso a un contrato desde Configuración.</p>
+      </div></div>`;
+    wireLogout();
+    const bpc=document.getElementById("btnPrimerContratoAct"); if(bpc) bpc.onclick = ()=> abrirFormContratoAct(null, ()=>{ closeModal(); renderActividadesAdmin(); });
+    return;
+  }
+
+  const enTodos = actContratoActualId==='todos';
+  const lista = actividadesFiltradas();
+  const totalAct = actividadesDelContrato().length;
+
+  document.getElementById("app").innerHTML = `
+    ${topbar('actividades')}
+    <div class="wrap">
+      <div class="page-head">
+        <div><h1>Programación de actividades</h1><p>Programa, ejecuta y deja evidencia de cada actividad operativa — con historial completo de lo que pasó.</p></div>
+      </div>
+
+      ${statsActividadesHTML()}
+      ${requierenAtencionHTML()}
+
+      <div class="panel-section">
+        <div class="section-label">Contrato activo</div>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+          <div class="ph-icon">${I.building}</div>
+          <select id="selContratoAct" style="font-weight:700;font-size:13.5px;padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--brand-deep);width:240px;max-width:calc(100vw - 40px);box-sizing:border-box;text-overflow:ellipsis;white-space:nowrap;overflow:hidden">
+            ${MIPERFIL.esAdmin?`<option value="todos" ${enTodos?'selected':''}>— Todos los contratos —</option>`:''}
+            ${ACTIVIDADES.contratos.filter(x=>tieneContratoAct(x.id)).map(x=>`<option value="${x.id}" ${x.id===actContratoActualId?'selected':''}>${esc(x.nombre)}${x.activo?'':' (archivado)'}</option>`).join('')}
+          </select>
+          ${MIPERFIL.esAdmin?`<button class="btn btn-ghost" id="btnGestionContratosAct">${I.pen} Gestionar contratos</button>`:''}
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <div class="section-label">Herramientas</div>
+        <div class="action-grid">
+          ${(puedeEscribir() && !enTodos)?`<button class="action-card" id="btnNuevaActividad"><div class="ac-ic">${I.plus}</div><span class="ac-title">Nueva actividad</span><span class="ac-chevron">›</span></button>`:''}
+          ${(puedeEscribir() && !enTodos)?`<button class="action-card" id="btnGestionSedesAct"><div class="ac-ic">${I.building}</div><span class="ac-title">Sedes</span><span class="ac-chevron">›</span></button>`:''}
+          ${puedeEscribir()?`<button class="action-card" id="btnGestionTiposAct"><div class="ac-ic">${I.catalogo}</div><span class="ac-title">Tipos de actividad</span><span class="ac-chevron">›</span></button>`:''}
+          ${(puedeEscribir() && !enTodos)?`<button class="action-card" id="btnGestionSeriesAct"><div class="ac-ic">${I.cal}</div><span class="ac-title">Series recurrentes</span><span class="ac-chevron">›</span></button>`:''}
+        </div>
+      </div>
+
+      <div class="tabs" style="margin:16px 0 4px;display:inline-flex">
+        <button class="tab ${actTabActiva==='calendario'?'active':''}" data-act-tab="calendario">${I.cal} Calendario</button>
+        <button class="tab ${actTabActiva==='lista'?'active':''}" data-act-tab="lista">Lista</button>
+        <button class="tab ${actTabActiva==='resumen'?'active':''}" data-act-tab="resumen">Resumen ${enTodos?'por contrato':'por sede'}</button>
+      </div>
+
+      <div id="actTabBody" style="margin-top:12px">
+        ${actTabActiva==='calendario' ? `<div id="calWrap">${renderActividadesCalendario()}</div>` : actTabActiva==='resumen' ? `
+          <div class="sec-bar">
+            <h2>Resumen ${enTodos?'por contrato':'por sede'}</h2>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <span class="muted-sm">${totalAct} actividad(es) en total</span>
+              ${totalAct?`<button class="btn btn-ghost btn-sm" id="btnReporteActPdf">${I.cal} PDF</button>
+              <button class="btn btn-ghost btn-sm" id="btnReporteActExcel">Excel</button>
+              <button class="btn btn-ghost btn-sm" id="btnReporteActZip">ZIP con fichas</button>`:''}
+            </div>
+          </div>
+          ${renderDesgloseActividadesHTML()}
+          <div style="margin-top:16px">${statsActividadesHTML()}</div>
+        ` : `
+          <div class="toolbar">
+            <div class="search search-sm">
+              ${I.search}
+              <input type="text" id="actSearch" placeholder="Buscar por folio, descripción, tipo o sede…" value="${esc(actQuery)}">
+            </div>
+            <select id="selFiltroEstadoAct" style="padding:7px 10px;border:1px solid var(--line);border-radius:9px;font-weight:600">
+              <option value="todos" ${actFiltroEstado==='todos'?'selected':''}>Todos los estados</option>
+              <option value="vencidas" ${actFiltroEstado==='vencidas'?'selected':''}>Vencidas</option>
+              ${Object.entries(ACT_ESTADOS).map(([k,v])=>`<option value="${k}" ${actFiltroEstado===k?'selected':''}>${esc(v.label)}</option>`).join('')}
+            </select>
+            <button class="btn btn-ghost btn-sm" id="btnLimpiarFiltrosAct">${I.close} Limpiar</button>
+          </div>
+          <div class="sec-bar"><h2>Actividades</h2><span class="muted-sm">${lista.length} de ${totalAct}</span></div>
+          <div id="actLista">${renderListaActividadesHTML(lista)}</div>
+        `}
+      </div>
+    </div>`;
+
+  wireLogout();
+  document.getElementById("selContratoAct").onchange = (e)=>{
+    actContratoActualId = e.target.value;
+    localStorage.setItem('act_contrato_actual', actContratoActualId);
+    renderActividadesAdmin();
+  };
+  const bgc=document.getElementById("btnGestionContratosAct"); if(bgc) bgc.onclick = abrirGestionContratosAct;
+  const bna=document.getElementById("btnNuevaActividad"); if(bna) bna.onclick = ()=> location.hash="#/actividades/nueva";
+  const bgs=document.getElementById("btnGestionSedesAct"); if(bgs) bgs.onclick = abrirGestionSedesAct;
+  const bgt=document.getElementById("btnGestionTiposAct"); if(bgt) bgt.onclick = abrirGestionTiposAct;
+  const bgse=document.getElementById("btnGestionSeriesAct"); if(bgse) bgse.onclick = abrirGestionSeriesAct;
+  document.querySelectorAll('[data-act-tab]').forEach(b=> b.onclick = ()=>{ actTabActiva = b.dataset.actTab; renderActividadesAdmin(true); });
+  if(actTabActiva==='calendario'){ wireCalendarioActividades(); }
+  else if(actTabActiva==='lista'){
+    const refiltrarAct = ()=>{ document.getElementById('actLista').innerHTML = renderListaActividadesHTML(actividadesFiltradas()); wireListaActividades(); };
+    document.getElementById("actSearch").oninput = (e)=>{ actQuery = e.target.value; refiltrarAct(); };
+    document.getElementById("selFiltroEstadoAct").onchange = (e)=>{ actFiltroEstado = e.target.value; refiltrarAct(); };
+    document.getElementById("btnLimpiarFiltrosAct").onclick = ()=>{ actQuery=''; actFiltroEstado='todos'; renderActividadesAdmin(); };
+    wireListaActividades();
+  }
+  else if(actTabActiva==='resumen'){
+    const brp=document.getElementById("btnReporteActPdf"); if(brp) brp.onclick = ()=> generarReporteActividadesPDF(actividadesDelContrato(), etiquetaFiltroActividadesActual());
+    const bre=document.getElementById("btnReporteActExcel"); if(bre) bre.onclick = ()=> descargarExcelActividades(actividadesDelContrato(), etiquetaFiltroActividadesActual());
+    const brz=document.getElementById("btnReporteActZip"); if(brz) brz.onclick = ()=> descargarZipActividadesFiltrado(actividadesDelContrato(), etiquetaFiltroActividadesActual());
+  }
+  if(silent) window.scrollTo(0, scrollY);
+}
+
+function actividadesFiltradas(){
+  let lista = actividadesDelContrato();
+  if(actFiltroEstado==='vencidas') lista = lista.filter(esActividadVencida);
+  else if(actFiltroEstado!=='todos') lista = lista.filter(a=>a.estado===actFiltroEstado);
+  const q = actQuery.trim().toLowerCase();
+  if(q){
+    lista = lista.filter(a=>
+      folioActividadTexto(a.folio).toLowerCase().includes(q) ||
+      (a.descripcion||'').toLowerCase().includes(q) ||
+      nombreTipoAct(a.tipo_id).toLowerCase().includes(q) ||
+      (nombreSedeAct(a.sede_id)||'').toLowerCase().includes(q)
+    );
+  }
+  return lista;
+}
+
+/* ---------- Fase 5: vista de resumen por contrato (modo "todos", solo admin)
+   o por sede (contrato específico) — mismas fórmulas de indicadoresActividades()
+   pero desglosadas por grupo, para comparar de un vistazo dónde está el rezago. ---------- */
+function desgloseActividades(){
+  const lista = actividadesDelContrato();
+  const porContrato = actContratoActualId === 'todos';
+  const hoy = hoyLocal();
+  const grupos = {};
+  lista.forEach(a=>{
+    const key = porContrato ? a.contrato_id : (a.sede_id || '__sin_sede__');
+    (grupos[key] || (grupos[key]=[])).push(a);
+  });
+  return Object.entries(grupos).map(([key, items])=>{
+    const nombre = porContrato
+      ? nombreContratoAct(key)
+      : (key==='__sin_sede__' ? 'Sin sede asignada' : nombreSedeAct(key));
+    const programadas = items.filter(a=> a.estado==='programada'||a.estado==='reprogramada').length;
+    const ejecutadas = items.filter(a=> a.estado==='ejecutada'||a.estado==='ejecutada_con_novedades').length;
+    const vencidas = items.filter(esActividadVencida).length;
+    const base = items.filter(a=> a.estado!=='cancelada' && a.fecha_programada<=hoy).length;
+    const cumplimiento = base>0 ? Math.round((ejecutadas/base)*100) : null;
+    return { nombre, total:items.length, programadas, ejecutadas, vencidas, cumplimiento };
+  }).sort((a,b)=> b.total - a.total);
+}
+function renderDesgloseActividadesHTML(){
+  const porContrato = actContratoActualId === 'todos';
+  const filas = desgloseActividades();
+  if(!filas.length) return `<div class="empty"><div class="ic">${I.cal}</div><h3>Sin datos todavía</h3><p>Crea actividades para ver el resumen por ${porContrato?'contrato':'sede'}.</p></div>`;
+  return `<div class="table-wrap"><table class="dt">
+    <thead><tr><th>${porContrato?'Contrato':'Sede'}</th><th>Total</th><th>Programadas</th><th>Ejecutadas</th><th>Vencidas</th><th>% Cumplimiento</th></tr></thead>
+    <tbody>${filas.map(f=>`<tr>
+      <td>${esc(f.nombre)}</td>
+      <td>${f.total}</td>
+      <td>${f.programadas}</td>
+      <td>${f.ejecutadas}</td>
+      <td>${f.vencidas>0?`<b style="color:var(--danger)">${f.vencidas}</b>`:'0'}</td>
+      <td>${f.cumplimiento==null?'—':f.cumplimiento+'%'}</td>
+    </tr>`).join('')}</tbody>
+  </table></div>`;
+}
+function actividadCardHTML(a){
+  return `<div class="lcard" style="cursor:pointer" data-ir-actividad="${a.id}">
+      <div class="lcard-top">
+        <span class="tipo">${esc(nombreTipoAct(a.tipo_id))}</span>
+        ${badgeEstadoActividadHTML(a)}
+      </div>
+      <h3>${esc(folioActividadTexto(a.folio))}</h3>
+      <div class="meta">
+        <div>${I.building} ${esc(nombreSedeAct(a.sede_id) || 'Sin sede')}</div>
+        <div>${I.cal} ${fmtDate(a.fecha_programada)}</div>
+        <div>${esc(a.responsable_principal_uid?(PERFILES_NOMBRE[a.responsable_principal_uid]||'—'):'Sin responsable')}</div>
+      </div>
+    </div>`;
+}
+function renderListaActividadesHTML(lista){
+  if(!lista.length) return `<div class="empty"><div class="ic">${I.cal}</div><h3>Sin actividades</h3><p>Crea la primera actividad de este contrato con "Nueva actividad".</p></div>`;
+  return `<div class="grid">${lista.map(actividadCardHTML).join('')}</div>`;
+}
+
+/* ---------- Fase 2: calendario visual (mes/semana/día/agenda) — a mano, sin
+   librería, mismo criterio que el resto de la app (ver sección 7.190 de MEMORY.md) ---------- */
+function sumarDiasFecha(fechaISO, n){
+  const d = new Date(fechaISO+'T00:00:00');
+  d.setDate(d.getDate()+n);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function sumarMeses(fechaISO, n){
+  const [y,m] = fechaISO.split('-').map(Number);
+  const d = new Date(y, m-1+n, 1);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-01';
+}
+function diaSemanaISO(fechaISO){ const d = new Date(fechaISO+'T00:00:00'); return (d.getDay()+6)%7; }   // 0=lunes … 6=domingo
+function primerDiaVisibleMes(fechaISO){ const primero = fechaISO.slice(0,8)+'01'; return sumarDiasFecha(primero, -diaSemanaISO(primero)); }
+function ultimoDiaMes(fechaISO){ const [y,m] = fechaISO.split('-').map(Number); return fechaISO.slice(0,8)+String(new Date(y,m,0).getDate()).padStart(2,'0'); }
+function inicioSemana(fechaISO){ return sumarDiasFecha(fechaISO, -diaSemanaISO(fechaISO)); }
+function agruparActividadesPorFecha(lista){
+  const mapa = {};
+  lista.forEach(a=>{ (mapa[a.fecha_programada] = mapa[a.fecha_programada]||[]).push(a); });
+  Object.values(mapa).forEach(arr=> arr.sort((x,y)=> (x.hora_inicio_estimada||'').localeCompare(y.hora_inicio_estimada||'')));
+  return mapa;
+}
+function chipActividadHTML(a){
+  const tipo = ACTIVIDADES.tipos.find(t=>t.id===a.tipo_id);
+  const vencida = esActividadVencida(a);
+  const color = vencida ? '#d63b50' : (tipo?.color || '#1d33c7');
+  return `<div class="act-chip" data-ir-actividad="${a.id}" title="${esc(nombreTipoAct(a.tipo_id))}${nombreSedeAct(a.sede_id)?' · '+esc(nombreSedeAct(a.sede_id)):''}" style="border-left-color:${esc(color)}">
+    ${a.hora_inicio_estimada?`<span class="act-chip-hora">${esc(a.hora_inicio_estimada.slice(0,5))}</span>`:''}
+    <span class="act-chip-txt">${esc(nombreTipoAct(a.tipo_id))}</span>
+  </div>`;
+}
+function renderActividadesCalendario(){
+  const nombresVista = { mes:'Mes', semana:'Semana', dia:'Día', agenda:'Agenda' };
+  let titulo = '';
+  if(calVista==='mes') titulo = new Date(calFecha+'T00:00:00').toLocaleDateString('es-CO',{month:'long',year:'numeric'});
+  else if(calVista==='semana'){ const ini=inicioSemana(calFecha); titulo = fmtDate(ini)+' – '+fmtDate(sumarDiasFecha(ini,6)); }
+  else if(calVista==='dia') titulo = fmtDate(calFecha);
+  let cuerpo;
+  if(calVista==='mes') cuerpo = renderCalendarioMes(calFecha);
+  else if(calVista==='semana') cuerpo = renderCalendarioSemana(calFecha);
+  else if(calVista==='dia') cuerpo = renderCalendarioDia(calFecha);
+  else cuerpo = renderCalendarioAgenda();
+  return `
+    <div class="cal-toolbar">
+      ${calVista!=='agenda' ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" id="btnCalAnterior">${I.back}</button>
+        <button class="btn btn-ghost btn-sm" id="btnCalHoy">Hoy</button>
+        <button class="btn btn-ghost btn-sm" id="btnCalSiguiente" style="transform:scaleX(-1)">${I.back}</button>
+        <b style="margin-left:6px;text-transform:capitalize">${esc(titulo)}</b>
+      </div>` : `<b>Agenda completa</b>`}
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${Object.entries(nombresVista).map(([k,v])=>`<button type="button" class="btn btn-sm ${calVista===k?'btn-primary':'btn-ghost'}" data-cal-vista="${k}">${v}</button>`).join('')}
+      </div>
+    </div>
+    <div id="calCuerpo">${cuerpo}</div>`;
+}
+function renderCalendarioMes(fechaRef){
+  const finMes = ultimoDiaMes(fechaRef);
+  let dias = []; let cur = primerDiaVisibleMes(fechaRef); let guard=0;
+  while(guard++<49){ dias.push(cur); if(cur>=finMes && diaSemanaISO(cur)===6) break; cur = sumarDiasFecha(cur,1); }
+  const porFecha = agruparActividadesPorFecha(actividadesDelContrato());
+  const nombresDias = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+  const hoy = hoyLocal(); const mesActualNum = fechaRef.slice(0,7);
+  return `
+    <div class="cal-grid-head">${nombresDias.map(n=>`<div>${n}</div>`).join('')}</div>
+    <div class="cal-grid-mes">${dias.map(d=>{
+      const acts = porFecha[d]||[];
+      const visibles = acts.slice(0,3), resto = acts.length-3;
+      return `<div class="cal-dia ${d.slice(0,7)===mesActualNum?'':'cal-dia-fuera'} ${d===hoy?'cal-dia-hoy':''}" data-ir-dia="${d}">
+        <div class="cal-dia-num">${parseInt(d.slice(8,10),10)}</div>
+        <div class="cal-dia-chips">${visibles.map(chipActividadHTML).join('')}${resto>0?`<div class="act-chip-mas" data-ver-mas-dia="${d}">+${resto} más</div>`:''}</div>
+      </div>`;
+    }).join('')}</div>`;
+}
+function renderCalendarioSemana(fechaRef){
+  const inicio = inicioSemana(fechaRef);
+  const dias = Array.from({length:7},(_,i)=> sumarDiasFecha(inicio,i));
+  const porFecha = agruparActividadesPorFecha(actividadesDelContrato());
+  const nombresDias = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+  const hoy = hoyLocal();
+  return `<div class="cal-grid-semana">${dias.map((d,i)=>{
+    const acts = porFecha[d]||[];
+    return `<div class="cal-col-semana ${d===hoy?'cal-dia-hoy':''}">
+      <div class="cal-col-semana-head" data-ir-dia="${d}">${nombresDias[i]}<br><b>${parseInt(d.slice(8,10),10)}</b></div>
+      <div class="cal-col-semana-body">${acts.length?acts.map(chipActividadHTML).join(''):'<p class="muted-sm" style="padding:8px 4px">Sin actividades</p>'}</div>
+    </div>`;
+  }).join('')}</div>`;
+}
+function renderCalendarioDia(fechaRef){
+  const acts = (agruparActividadesPorFecha(actividadesDelContrato())[fechaRef])||[];
+  return `<div class="sec-bar" style="margin-top:14px"><h2>${fmtDate(fechaRef)}</h2><span class="muted-sm">${acts.length} actividad(es)</span></div>${renderListaActividadesHTML(acts)}`;
+}
+function renderCalendarioAgenda(){
+  const porFecha = agruparActividadesPorFecha(actividadesDelContrato());
+  const fechas = Object.keys(porFecha).sort();
+  if(!fechas.length) return `<div class="empty"><div class="ic">${I.cal}</div><h3>Sin actividades programadas</h3></div>`;
+  const hoy = hoyLocal();
+  return fechas.map(f=>`
+    <div class="sec-bar" style="margin-top:14px"><h2 style="font-size:14px">${fmtDate(f)}${f===hoy?' <span style="color:var(--brand)">· Hoy</span>':''}</h2></div>
+    <div class="grid">${porFecha[f].map(actividadCardHTML).join('')}</div>
+  `).join('');
+}
+function refrescarCalendarioActividades(){
+  const el = document.getElementById('calWrap'); if(!el) return;
+  el.innerHTML = renderActividadesCalendario();
+  wireCalendarioActividades();
+}
+function wireCalendarioActividades(){
+  const anterior = document.getElementById('btnCalAnterior');
+  if(anterior) anterior.onclick = ()=>{ calFecha = calVista==='mes'?sumarMeses(calFecha,-1):calVista==='semana'?sumarDiasFecha(calFecha,-7):sumarDiasFecha(calFecha,-1); refrescarCalendarioActividades(); };
+  const siguiente = document.getElementById('btnCalSiguiente');
+  if(siguiente) siguiente.onclick = ()=>{ calFecha = calVista==='mes'?sumarMeses(calFecha,1):calVista==='semana'?sumarDiasFecha(calFecha,7):sumarDiasFecha(calFecha,1); refrescarCalendarioActividades(); };
+  const hoyBtn = document.getElementById('btnCalHoy');
+  if(hoyBtn) hoyBtn.onclick = ()=>{ calFecha = hoyLocal(); refrescarCalendarioActividades(); };
+  document.querySelectorAll('[data-cal-vista]').forEach(b=> b.onclick = ()=>{ calVista = b.dataset.calVista; refrescarCalendarioActividades(); });
+  document.querySelectorAll('[data-ir-dia]').forEach(el=> el.onclick = ()=>{ calFecha = el.dataset.irDia; calVista='dia'; refrescarCalendarioActividades(); });
+  document.querySelectorAll('[data-ver-mas-dia]').forEach(el=> el.onclick = (e)=>{ e.stopPropagation(); abrirDiaCompletoAct(el.dataset.verMasDia); });
+  wireListaActividades();
+}
+function abrirDiaCompletoAct(fecha){
+  const acts = (agruparActividadesPorFecha(actividadesDelContrato())[fecha])||[];
+  openModal(`<div class="modal" style="max-width:520px">
+    <div class="modal-head"><div><h2>${fmtDate(fecha)}</h2><p>${acts.length} actividad(es)</p></div><button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">${acts.map(a=>`<div class="lcard" style="cursor:pointer;margin-bottom:8px" data-ir-actividad-modal="${a.id}">
+      <div class="lcard-top"><span class="tipo">${esc(nombreTipoAct(a.tipo_id))}</span>${badgeEstadoActividadHTML(a)}</div>
+      <h3 style="font-size:15px">${esc(folioActividadTexto(a.folio))}</h3>
+    </div>`).join('')}</div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
+  </div>`);
+  document.querySelectorAll('[data-ir-actividad-modal]').forEach(el=> el.onclick = ()=>{ closeModal(); location.hash = "#/actividades/"+encodeURIComponent(el.dataset.irActividadModal); });
+}
+function wireListaActividades(){
+  document.querySelectorAll('[data-ir-actividad]').forEach(el=>{
+    el.onclick = ()=> location.hash = "#/actividades/"+encodeURIComponent(el.dataset.irActividad);
+  });
+}
+
+/* ---------- Gestión: contratos / sedes / tipos ---------- */
+function abrirGestionContratosAct(){
+  openModal(`<div class="modal" style="max-width:480px">
+    <div class="modal-head"><div><h2>Contratos de Actividades</h2></div><button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <button class="btn btn-primary btn-sm" id="btnNuevoContratoAct" style="margin-bottom:12px">${I.plus} Nuevo contrato</button>
+      ${ACTIVIDADES.contratos.length ? ACTIVIDADES.contratos.map(c=>`
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line-2)">
+          <div><b>${esc(c.nombre)}</b>${c.activo?'':' <span class="muted-sm">(archivado)</span>'}</div>
+          <div style="display:flex;gap:6px">
+            <button class="icon-btn" title="Editar" data-editar-contrato-act="${c.id}">${I.pen}</button>
+            <button class="icon-btn" title="${c.activo?'Archivar':'Reactivar'}" data-archivar-contrato-act="${c.id}">${c.activo?I.close:I.check}</button>
+          </div>
+        </div>`).join('') : '<p class="muted-sm">Aún no hay contratos.</p>'}
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
+  </div>`);
+  document.getElementById('btnNuevoContratoAct').onclick = ()=> abrirFormContratoAct(null, ()=>{ closeModal(); abrirGestionContratosAct(); });
+  document.querySelectorAll('[data-editar-contrato-act]').forEach(b=> b.onclick = ()=> abrirFormContratoAct(b.dataset.editarContratoAct, ()=>{ closeModal(); abrirGestionContratosAct(); }));
+  document.querySelectorAll('[data-archivar-contrato-act]').forEach(b=> b.onclick = ()=> toggleActivoContratoAct(b.dataset.archivarContratoAct));
+}
+async function toggleActivoContratoAct(id){
+  const c = ACTIVIDADES.contratos.find(x=>x.id===id); if(!c) return;
+  const { error } = await sb.from("act_contratos").update({activo: !c.activo}).eq("id", id);
+  if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
+  await loadActividadesState();
+  closeModal(); abrirGestionContratosAct();
+}
+function abrirFormContratoAct(id, onDone){
+  const c = id ? ACTIVIDADES.contratos.find(x=>x.id===id) : null;
+  openModal(`<div class="modal" style="max-width:420px">
+    <div class="modal-head"><div><h2>${c?'Editar contrato':'Nuevo contrato'}</h2></div><button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body"><div class="field"><label>Nombre *</label><input id="acNombre" value="${esc(c?.nombre||'')}" placeholder="Ej. Comfenalco Antioquia"></div></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" id="btnGuardarContratoAct">${I.check} Guardar</button></div>
+  </div>`);
+  document.getElementById('btnGuardarContratoAct').onclick = async ()=>{
+    const nombre = document.getElementById('acNombre').value.trim();
+    if(!nombre){ toast("Falta el nombre","err"); return; }
+    const btn = document.getElementById('btnGuardarContratoAct'); btn.disabled=true; btn.innerHTML="Guardando…";
+    let error, data;
+    if(c){ ({error} = await sb.from("act_contratos").update({nombre}).eq("id",c.id)); }
+    else { ({data,error} = await sb.from("act_contratos").insert({nombre}).select().single()); }
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
+    if(!c && data){ actContratoActualId = data.id; localStorage.setItem('act_contrato_actual', data.id); }
+    await loadActividadesState();
+    toast(c?"Contrato actualizado":"Contrato creado","ok");
+    if(onDone) onDone(); else { closeModal(); renderActividadesAdmin(); }
+  };
+}
+
+function abrirGestionSedesAct(){
+  const contratoId = actContratoActualId;
+  const sedes = ACTIVIDADES.sedes.filter(s=>s.contrato_id===contratoId);
+  openModal(`<div class="modal" style="max-width:480px">
+    <div class="modal-head"><div><h2>Sedes</h2><p>${esc(nombreContratoAct(contratoId))}</p></div><button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <button class="btn btn-primary btn-sm" id="btnNuevaSedeAct" style="margin-bottom:12px">${I.plus} Nueva sede</button>
+      ${sedes.length ? sedes.map(s=>`
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line-2)">
+          <div><b>${esc(s.nombre)}</b>${s.activo?'':' <span class="muted-sm">(archivada)</span>'}${s.direccion?`<div class="muted-sm">${esc(s.direccion)}</div>`:''}</div>
+          <div style="display:flex;gap:6px">
+            <button class="icon-btn" title="Editar" data-editar-sede-act="${s.id}">${I.pen}</button>
+            <button class="icon-btn" title="${s.activo?'Archivar':'Reactivar'}" data-archivar-sede-act="${s.id}">${s.activo?I.close:I.check}</button>
+          </div>
+        </div>`).join('') : '<p class="muted-sm">Aún no hay sedes en este contrato.</p>'}
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
+  </div>`);
+  document.getElementById('btnNuevaSedeAct').onclick = ()=> abrirFormSedeAct(null, ()=>{ closeModal(); abrirGestionSedesAct(); });
+  document.querySelectorAll('[data-editar-sede-act]').forEach(b=> b.onclick = ()=> abrirFormSedeAct(b.dataset.editarSedeAct, ()=>{ closeModal(); abrirGestionSedesAct(); }));
+  document.querySelectorAll('[data-archivar-sede-act]').forEach(b=> b.onclick = ()=> toggleActivoSedeAct(b.dataset.archivarSedeAct));
+}
+async function toggleActivoSedeAct(id){
+  const s = ACTIVIDADES.sedes.find(x=>x.id===id); if(!s) return;
+  const { error } = await sb.from("act_sedes").update({activo: !s.activo}).eq("id", id);
+  if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
+  await loadActividadesState();
+  closeModal(); abrirGestionSedesAct();
+}
+function abrirFormSedeAct(id, onDone){
+  const s = id ? ACTIVIDADES.sedes.find(x=>x.id===id) : null;
+  openModal(`<div class="modal" style="max-width:420px">
+    <div class="modal-head"><div><h2>${s?'Editar sede':'Nueva sede'}</h2><p>${esc(nombreContratoAct(actContratoActualId))}</p></div><button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Nombre *</label><input id="asNombre" value="${esc(s?.nombre||'')}" placeholder="Ej. Sede Norte"></div>
+      <div class="field"><label>Dirección</label><input id="asDireccion" value="${esc(s?.direccion||'')}" placeholder="Opcional"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" id="btnGuardarSedeAct">${I.check} Guardar</button></div>
+  </div>`);
+  document.getElementById('btnGuardarSedeAct').onclick = async ()=>{
+    const nombre = document.getElementById('asNombre').value.trim();
+    const direccion = document.getElementById('asDireccion').value.trim() || null;
+    if(!nombre){ toast("Falta el nombre","err"); return; }
+    const btn = document.getElementById('btnGuardarSedeAct'); btn.disabled=true; btn.innerHTML="Guardando…";
+    let error;
+    if(s){ ({error} = await sb.from("act_sedes").update({nombre,direccion}).eq("id",s.id)); }
+    else { ({error} = await sb.from("act_sedes").insert({nombre,direccion,contrato_id:actContratoActualId})); }
+    if(error){
+      btn.disabled=false; btn.innerHTML=`${I.check} Guardar`;
+      const dup = /duplicate|unique/i.test(error.message||"");
+      toast(dup?"Ya existe una sede activa con ese nombre en este contrato":"No se pudo guardar: "+error.message,"err");
+      return;
+    }
+    await loadActividadesState();
+    toast(s?"Sede actualizada":"Sede creada","ok");
+    if(onDone) onDone(); else { closeModal(); renderActividadesAdmin(); }
+  };
+}
+
+function abrirGestionTiposAct(){
+  openModal(`<div class="modal" style="max-width:460px">
+    <div class="modal-head"><div><h2>Tipos de actividad</h2><p>Catálogo compartido entre todos los contratos.</p></div><button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <button class="btn btn-primary btn-sm" id="btnNuevoTipoAct" style="margin-bottom:12px">${I.plus} Nuevo tipo</button>
+      ${ACTIVIDADES.tipos.length ? ACTIVIDADES.tipos.map(t=>`
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line-2)">
+          <div style="display:flex;align-items:center;gap:8px">${t.color?`<span style="width:12px;height:12px;border-radius:50%;background:${esc(t.color)};display:inline-block"></span>`:''}<b>${esc(t.nombre)}</b>${t.activo?'':' <span class="muted-sm">(inactivo)</span>'}</div>
+          <div style="display:flex;gap:6px">
+            <button class="icon-btn" title="Editar" data-editar-tipo-act="${t.id}">${I.pen}</button>
+            <button class="icon-btn" title="${t.activo?'Desactivar':'Activar'}" data-archivar-tipo-act="${t.id}">${t.activo?I.close:I.check}</button>
+          </div>
+        </div>`).join('') : '<p class="muted-sm">Aún no hay tipos de actividad.</p>'}
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
+  </div>`);
+  document.getElementById('btnNuevoTipoAct').onclick = ()=> abrirFormTipoAct(null, ()=>{ closeModal(); abrirGestionTiposAct(); });
+  document.querySelectorAll('[data-editar-tipo-act]').forEach(b=> b.onclick = ()=> abrirFormTipoAct(b.dataset.editarTipoAct, ()=>{ closeModal(); abrirGestionTiposAct(); }));
+  document.querySelectorAll('[data-archivar-tipo-act]').forEach(b=> b.onclick = ()=> toggleActivoTipoAct(b.dataset.archivarTipoAct));
+}
+async function toggleActivoTipoAct(id){
+  const t = ACTIVIDADES.tipos.find(x=>x.id===id); if(!t) return;
+  const { error } = await sb.from("act_tipos_actividad").update({activo: !t.activo}).eq("id", id);
+  if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
+  await loadActividadesState();
+  closeModal(); abrirGestionTiposAct();
+}
+function abrirFormTipoAct(id, onDone){
+  const t = id ? ACTIVIDADES.tipos.find(x=>x.id===id) : null;
+  openModal(`<div class="modal" style="max-width:420px">
+    <div class="modal-head"><div><h2>${t?'Editar tipo':'Nuevo tipo de actividad'}</h2></div><button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Nombre *</label><input id="atNombre" value="${esc(t?.nombre||'')}" placeholder="Ej. Poda, Corte de césped, Visita a sede…"></div>
+      <div class="field"><label>Color (opcional, para el calendario más adelante)</label><input type="color" id="atColor" value="${esc(t?.color||'#1d33c7')}" style="height:38px;padding:2px"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" id="btnGuardarTipoAct">${I.check} Guardar</button></div>
+  </div>`);
+  document.getElementById('btnGuardarTipoAct').onclick = async ()=>{
+    const nombre = document.getElementById('atNombre').value.trim();
+    const color = document.getElementById('atColor').value || null;
+    if(!nombre){ toast("Falta el nombre","err"); return; }
+    const btn = document.getElementById('btnGuardarTipoAct'); btn.disabled=true; btn.innerHTML="Guardando…";
+    let error;
+    if(t){ ({error} = await sb.from("act_tipos_actividad").update({nombre,color}).eq("id",t.id)); }
+    else { ({error} = await sb.from("act_tipos_actividad").insert({nombre,color})); }
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
+    await loadActividadesState();
+    toast(t?"Tipo actualizado":"Tipo creado","ok");
+    if(onDone) onDone(); else { closeModal(); renderActividadesAdmin(); }
+  };
+}
+
+/* ---------- Crear / editar actividad (página completa, no modal — muchos campos) ---------- */
+let formActividadState = null;
+async function renderFormActividad(id){
+  bloquear(id?"Cargando actividad…":"Preparando formulario…");
+  let a, personalExistente=[];
+  try{
+    await loadActividadesState();
+    a = id ? ACTIVIDADES.actividades.find(x=>x.id===id) : null;
+    if(id && !a){ toast("Actividad no encontrada","err"); location.hash="#/actividades"; return; }
+    if(id){
+      const { data } = await sb.from("act_actividad_personal").select("id,nombre,cargo").eq("actividad_id", id).order("creado_en",{ascending:true});
+      personalExistente = (data||[]).map(p=>({nombre:p.nombre, cargo:p.cargo||''}));
+    }
+  } finally { desbloquear(); }
+
+  const contratosDisponibles = ACTIVIDADES.contratos.filter(c=> c.activo!==false && tieneContratoAct(c.id));
+  formActividadState = a ? {
+    personal: personalExistente
+  } : { personal: [] };
+  const valorInicial = a ? {
+    contrato_id: a.contrato_id, sede_id: a.sede_id||'', tipo_id: a.tipo_id, descripcion: a.descripcion||'',
+    area_detalle: a.area_detalle||'', prioridad: a.prioridad||'media', fecha_programada: a.fecha_programada,
+    hora_inicio_estimada: a.hora_inicio_estimada||'', hora_fin_estimada: a.hora_fin_estimada||'',
+    duracion_estimada_minutos: a.duracion_estimada_minutos||'', responsable_principal_uid: a.responsable_principal_uid||'',
+    requiere_evidencia: a.requiere_evidencia!==false, requiere_informe: !!a.requiere_informe, observaciones: a.observaciones||''
+  } : {
+    contrato_id: (actContratoActualId && actContratoActualId!=='todos') ? actContratoActualId : (contratosDisponibles[0]?.id||''),
+    sede_id:'', tipo_id:'', descripcion:'', area_detalle:'', prioridad:'media', fecha_programada: hoyLocal(),
+    hora_inicio_estimada:'', hora_fin_estimada:'', duracion_estimada_minutos:'', responsable_principal_uid:'',
+    requiere_evidencia:true, requiere_informe:false, observaciones:''
+  };
+  const responsables = Object.entries(PERFILES_NOMBRE);
+
+  document.getElementById("app").innerHTML = `
+    ${topbar('actividades')}
+    <div class="wrap" style="max-width:760px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" id="btnVolverFormAct">${I.back} Volver</button>
+      </div>
+      <div class="page-head"><div><h1>${a?'Editar actividad':'Nueva actividad'}</h1>${a?`<p>${esc(folioActividadTexto(a.folio))}</p>`:''}</div></div>
+
+      <div class="sec-bar"><h2>Información básica</h2></div>
+      <div class="field row2">
+        <div><label>Contrato *</label><select id="faContrato">${contratosDisponibles.map(c=>`<option value="${c.id}" ${c.id===valorInicial.contrato_id?'selected':''}>${esc(c.nombre)}</option>`).join('')}</select></div>
+        <div><label>Sede</label><select id="faSede"></select></div>
+      </div>
+      <div class="field row2">
+        <div><label>Tipo de actividad *</label><select id="faTipo">${tiposActivosAct().length?tiposActivosAct().map(t=>`<option value="${t.id}" ${t.id===valorInicial.tipo_id?'selected':''}>${esc(t.nombre)}</option>`).join(''):'<option value="">— Crea un tipo primero desde "Tipos de actividad" —</option>'}</select></div>
+        <div><label>Prioridad</label><select id="faPrioridad">${Object.entries(ACT_PRIORIDADES).map(([k,v])=>`<option value="${k}" ${k===valorInicial.prioridad?'selected':''}>${v}</option>`).join('')}</select></div>
+      </div>
+      <div class="field"><label>Área o ubicación específica</label><input id="faAreaDetalle" value="${esc(valorInicial.area_detalle)}" placeholder="Ej. Zona verde costado norte"></div>
+      <div class="field"><label>Descripción</label><textarea id="faDescripcion" rows="3" placeholder="Qué hay que hacer">${esc(valorInicial.descripcion)}</textarea></div>
+
+      <div class="sec-bar" style="margin-top:18px"><h2>Programación</h2></div>
+      <div class="field row2">
+        <div><label>Fecha programada *</label><input type="date" id="faFecha" value="${esc(valorInicial.fecha_programada)}"></div>
+        <div><label>Duración estimada (minutos)</label><input type="number" min="0" id="faDuracion" value="${esc(valorInicial.duracion_estimada_minutos)}"></div>
+      </div>
+      <div class="field row2">
+        <div><label>Hora de inicio estimada</label><input type="time" id="faHoraInicio" value="${esc(valorInicial.hora_inicio_estimada)}"></div>
+        <div><label>Hora de fin estimada</label><input type="time" id="faHoraFin" value="${esc(valorInicial.hora_fin_estimada)}"></div>
+      </div>
+      ${!a?`<div class="field"><label>Estado inicial</label><select id="faEstadoInicial">
+        <option value="programada">Programada</option>
+        <option value="pendiente">Pendiente</option>
+      </select></div>`:''}
+
+      <div class="sec-bar" style="margin-top:18px"><h2>Responsables</h2></div>
+      <div class="field"><label>Responsable principal</label><select id="faResponsable">
+        <option value="">— Sin asignar —</option>
+        ${responsables.map(([uid,nombre])=>`<option value="${uid}" ${uid===valorInicial.responsable_principal_uid?'selected':''}>${esc(nombre)}</option>`).join('')}
+      </select></div>
+      <div class="field"><label>Personal asignado / cuadrilla</label>
+        <div id="faPersonalLista"></div>
+        <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
+          <input id="faPersonalNombre" placeholder="Nombre" style="flex:2;min-width:140px">
+          <input id="faPersonalCargo" placeholder="Cargo (opcional)" style="flex:1;min-width:120px">
+          <button type="button" class="btn btn-ghost btn-sm" id="btnAgregarPersonalAct">${I.plus} Agregar</button>
+        </div>
+      </div>
+
+      <div class="sec-bar" style="margin-top:18px"><h2>Seguimiento</h2></div>
+      <label class="chk"><input type="checkbox" id="faRequiereEvidencia" ${valorInicial.requiere_evidencia?'checked':''}> Requiere evidencia fotográfica</label>
+      <label class="chk"><input type="checkbox" id="faRequiereInforme" ${valorInicial.requiere_informe?'checked':''}> Requiere informe</label>
+      <div class="field" style="margin-top:10px"><label>Observaciones</label><textarea id="faObservaciones" rows="2">${esc(valorInicial.observaciones)}</textarea></div>
+
+      <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end">
+        <button class="btn btn-ghost" id="btnCancelarFormAct">Cancelar</button>
+        <button class="btn btn-primary" id="btnGuardarActividad">${I.check} Guardar</button>
+      </div>
+    </div>`;
+  wireLogout();
+  document.getElementById('btnVolverFormAct').onclick = ()=> history.back();
+  document.getElementById('btnCancelarFormAct').onclick = ()=> history.back();
+
+  const pintarSedesForm = ()=>{
+    const contratoId = document.getElementById('faContrato').value;
+    const sedes = sedesDelContrato(contratoId);
+    document.getElementById('faSede').innerHTML = `<option value="">— Sin sede específica —</option>` + sedes.map(s=>`<option value="${s.id}" ${s.id===valorInicial.sede_id?'selected':''}>${esc(s.nombre)}</option>`).join('');
+  };
+  pintarSedesForm();
+  document.getElementById('faContrato').onchange = ()=>{ valorInicial.sede_id=''; pintarSedesForm(); };
+
+  const pintarPersonalForm = ()=>{
+    const cont = document.getElementById('faPersonalLista');
+    cont.innerHTML = formActividadState.personal.length ? formActividadState.personal.map((p,i)=>`
+      <div style="display:flex;align-items:center;gap:8px;padding:5px 0">
+        <span style="flex:1">${esc(p.nombre)}${p.cargo?' · '+esc(p.cargo):''}</span>
+        <button type="button" class="icon-btn danger" data-quitar-personal-act="${i}">${I.trash}</button>
+      </div>`).join('') : '<p class="muted-sm">Sin personal agregado todavía.</p>';
+    cont.querySelectorAll('[data-quitar-personal-act]').forEach(b=> b.onclick = ()=>{ formActividadState.personal.splice(+b.dataset.quitarPersonalAct,1); pintarPersonalForm(); });
+  };
+  pintarPersonalForm();
+  document.getElementById('btnAgregarPersonalAct').onclick = ()=>{
+    const nombre = document.getElementById('faPersonalNombre').value.trim();
+    if(!nombre){ toast("Escribe el nombre","err"); return; }
+    const cargo = document.getElementById('faPersonalCargo').value.trim();
+    formActividadState.personal.push({nombre, cargo});
+    document.getElementById('faPersonalNombre').value=''; document.getElementById('faPersonalCargo').value='';
+    pintarPersonalForm();
+  };
+
+  document.getElementById('btnGuardarActividad').onclick = ()=> guardarActividad(id);
+}
+
+async function guardarActividad(id){
+  const contrato_id = document.getElementById('faContrato').value;
+  const sede_id = document.getElementById('faSede').value || null;
+  const tipo_id = document.getElementById('faTipo').value;
+  const prioridad = document.getElementById('faPrioridad').value;
+  const area_detalle = document.getElementById('faAreaDetalle').value.trim() || null;
+  const descripcion = document.getElementById('faDescripcion').value.trim() || null;
+  const fecha_programada = document.getElementById('faFecha').value;
+  const duracion_estimada_minutos = document.getElementById('faDuracion').value ? parseInt(document.getElementById('faDuracion').value,10) : null;
+  const hora_inicio_estimada = document.getElementById('faHoraInicio').value || null;
+  const hora_fin_estimada = document.getElementById('faHoraFin').value || null;
+  const responsable_principal_uid = document.getElementById('faResponsable').value || null;
+  const requiere_evidencia = document.getElementById('faRequiereEvidencia').checked;
+  const requiere_informe = document.getElementById('faRequiereInforme').checked;
+  const observaciones = document.getElementById('faObservaciones').value.trim() || null;
+
+  if(!contrato_id){ toast("Selecciona el contrato","err"); return; }
+  if(!tipo_id){ toast("Selecciona el tipo de actividad","err"); return; }
+  if(!fecha_programada){ toast("Falta la fecha programada","err"); return; }
+
+  const btn = document.getElementById('btnGuardarActividad'); btn.disabled=true; btn.innerHTML="Guardando…";
+  bloquear("Guardando…");
+  try{
+    const payload = { contrato_id, sede_id, tipo_id, prioridad, area_detalle, descripcion, fecha_programada, duracion_estimada_minutos, hora_inicio_estimada, hora_fin_estimada, responsable_principal_uid, requiere_evidencia, requiere_informe, observaciones };
+    let error, actividadId = id;
+    if(id){
+      ({error} = await sb.from("act_actividades").update(payload).eq("id", id));
+    } else {
+      const estadoInicialEl = document.getElementById('faEstadoInicial');
+      payload.estado = estadoInicialEl ? estadoInicialEl.value : 'programada';
+      const r = await sb.from("act_actividades").insert(payload).select("id").single();
+      error = r.error; actividadId = r.data?.id || null;
+    }
+    if(error){ toast("No se pudo guardar: "+error.message,"err"); return; }
+
+    if(actividadId){
+      await sb.from("act_actividad_personal").delete().eq("actividad_id", actividadId);
+      if(formActividadState.personal.length){
+        const { error: ep } = await sb.from("act_actividad_personal").insert(formActividadState.personal.map(p=>({actividad_id:actividadId, nombre:p.nombre, cargo:p.cargo||null})));
+        if(ep) console.error(ep);
+      }
+    }
+    await loadActividadesState();
+    toast(id?"Actividad actualizada":"Actividad creada","ok");
+    location.hash = "#/actividades/"+encodeURIComponent(actividadId);
+  } finally {
+    desbloquear();
+    if(btn){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; }
+  }
+}
+
+/* ---------- Ficha de la actividad ---------- */
+async function renderFichaActividad(id){
+  bloquear("Cargando actividad…");
+  let a, personal, evidencias, documentos, historial;
+  try{
+    await loadActividadesState();
+    a = ACTIVIDADES.actividades.find(x=>x.id===id);
+    if(!a){ toast("Actividad no encontrada","err"); location.hash="#/actividades"; return; }
+    const [{data:pe},{data:ev},{data:doc},{data:hi}] = await Promise.all([
+      sb.from("act_actividad_personal").select("id,nombre,cargo").eq("actividad_id",id).order("creado_en",{ascending:true}),
+      sb.from("act_evidencias").select("id,tipo,imagen,descripcion,creado_en,creado_por").eq("actividad_id",id).order("creado_en",{ascending:true}),
+      sb.from("act_documentos").select("id,titulo,tipo,archivo,archivo_nombre,creado_en,creado_por").eq("actividad_id",id).order("creado_en",{ascending:false}),
+      sb.from("act_historial").select("id,ocurrido_en,actor_uid,tipo_evento,comentario").eq("actividad_id",id).order("ocurrido_en",{ascending:false})
+    ]);
+    personal = pe||[]; evidencias = ev||[]; documentos = doc||[]; historial = hi||[];
+  } finally { desbloquear(); }
+
+  const puedeTocar = puedeEscribir() && tieneContratoAct(a.contrato_id);
+  const vencida = esActividadVencida(a);
+
+  document.getElementById("app").innerHTML = `
+    ${topbar('actividades')}
+    <div class="wrap">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" id="btnVolverFichaAct">${I.back} Volver</button>
+      </div>
+      <div class="page-head">
+        <div>
+          <h1>${esc(folioActividadTexto(a.folio))} · ${esc(nombreTipoAct(a.tipo_id))}</h1>
+          <p>${esc(nombreContratoAct(a.contrato_id))}${nombreSedeAct(a.sede_id)?' · '+esc(nombreSedeAct(a.sede_id)):''}${a.serie_id?' · <span class="muted-sm">Generada por una serie recurrente</span>':''}</p>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          ${badgeEstadoActividadHTML(a)}
+          <button class="btn btn-ghost" id="btnDescargarPdfActividad">${I.cal} Descargar PDF</button>
+          ${puedeTocar?`<button class="btn btn-ghost" id="btnEditarActividad">${I.pen} Editar</button>`:''}
+        </div>
+      </div>
+
+      ${puedeTocar?`<div class="panel-section"><div class="section-label">Acciones</div><div style="display:flex;gap:10px;flex-wrap:wrap">${botonesEstadoActividadHTML(a)}</div></div>`:''}
+
+      <div class="panel-section">
+        <div class="section-label">Información</div>
+        <div class="field row2">
+          <div><b>Prioridad</b><p>${esc(ACT_PRIORIDADES[a.prioridad]||a.prioridad)}</p></div>
+          <div><b>Área/ubicación</b><p>${esc(a.area_detalle||'—')}</p></div>
+        </div>
+        <div class="field row2">
+          <div><b>Fecha programada</b><p>${fmtDate(a.fecha_programada)}${vencida?' <span style="color:var(--danger);font-weight:700">(vencida)</span>':''}</p></div>
+          <div><b>Responsable</b><p>${esc(a.responsable_principal_uid?(PERFILES_NOMBRE[a.responsable_principal_uid]||'—'):'Sin asignar')}</p></div>
+        </div>
+        ${a.descripcion?`<div class="field"><b>Descripción</b><p>${esc(a.descripcion)}</p></div>`:''}
+        ${a.fecha_inicio_real?`<div class="field row2"><div><b>Inicio real</b><p>${new Date(a.fecha_inicio_real).toLocaleString('es-CO')}</p></div><div><b>Fin real</b><p>${a.fecha_fin_real?new Date(a.fecha_fin_real).toLocaleString('es-CO'):'—'}</p></div></div>`:''}
+        ${a.observaciones?`<div class="field"><b>Observaciones</b><p>${esc(a.observaciones)}</p></div>`:''}
+        ${a.motivo_cancelacion?`<div class="field"><b>Motivo de cancelación</b><p>${esc(a.motivo_cancelacion)}</p></div>`:''}
+        ${personal.length?`<div class="field"><b>Personal asignado</b><p>${personal.map(p=>esc(p.nombre)+(p.cargo?' ('+esc(p.cargo)+')':'')).join(', ')}</p></div>`:''}
+      </div>
+
+      <div class="panel-section">
+        <div class="section-label">Evidencias fotográficas ${a.requiere_evidencia?'<span class="muted-sm">(requerida)</span>':''}</div>
+        ${puedeTocar?`<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" id="btnEvidenciaAntes">${I.plus} Antes</button>
+          <button class="btn btn-ghost btn-sm" id="btnEvidenciaDurante">${I.plus} Durante</button>
+          <button class="btn btn-ghost btn-sm" id="btnEvidenciaDespues">${I.plus} Después</button>
+        </div>`:''}
+        <input type="file" id="inputEvidenciaAct" accept="image/*" capture="environment" style="display:none">
+        ${evidencias.length ? ['antes','durante','despues'].map(tipo=>{
+          const del = evidencias.filter(e=>e.tipo===tipo);
+          if(!del.length) return '';
+          const etq = tipo==='antes'?'Antes':tipo==='durante'?'Durante':'Después';
+          return `<div style="margin-bottom:14px"><div class="muted-sm" style="margin-bottom:6px;font-weight:700">${etq} (${del.length})</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">${del.map(e=>`
+              <div style="position:relative">
+                <img src="${e.imagen}" style="width:92px;height:92px;object-fit:cover;border-radius:8px;cursor:pointer" data-ver-evidencia-act="${e.id}">
+                ${puedeTocar?`<button class="icon-btn danger" style="position:absolute;top:2px;right:2px;background:#fff" data-eliminar-evidencia-act="${e.id}" title="Eliminar">${I.trash}</button>`:''}
+              </div>`).join('')}</div>
+          </div>`;
+        }).join('') : '<p class="muted-sm">Sin evidencias todavía.</p>'}
+      </div>
+
+      <div class="panel-section">
+        <div class="section-label">Documentos ${a.requiere_informe?'<span class="muted-sm">(requiere informe)</span>':''}</div>
+        ${puedeTocar?`<button class="btn btn-ghost btn-sm" id="btnAdjuntarDocumentoAct" style="margin-bottom:12px">${I.plus} Adjuntar documento</button>`:''}
+        ${documentos.length ? documentos.map(d=>`
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line-2)">
+            <div><b>${esc(d.titulo)}</b> <span class="muted-sm">(${d.tipo==='informe'?'Informe':d.tipo==='acta'?'Acta':'Otro'})</span></div>
+            <div style="display:flex;gap:6px">
+              <button class="icon-btn" title="Ver" data-ver-documento-act="${d.id}">${I.eye}</button>
+              ${puedeTocar?`<button class="icon-btn danger" title="Eliminar" data-eliminar-documento-act="${d.id}">${I.trash}</button>`:''}
+            </div>
+          </div>`).join('') : '<p class="muted-sm">Sin documentos adjuntos.</p>'}
+      </div>
+
+      <div class="sec-bar"><h2>Historial</h2></div>
+      ${renderHistorialActividadHTML(historial)}
+    </div>`;
+
+  wireLogout();
+  document.getElementById('btnVolverFichaAct').onclick = ()=> location.hash="#/actividades";
+  const be=document.getElementById('btnEditarActividad'); if(be) be.onclick = ()=> location.hash="#/actividades/"+encodeURIComponent(id)+"/editar";
+  document.getElementById('btnDescargarPdfActividad').onclick = ()=> generarActividadPDF(id);
+  wireBotonesEstadoActividad(a);
+
+  const inputEv = document.getElementById('inputEvidenciaAct');
+  const armarBtnEvidencia = (btnId, tipo)=>{ const btn=document.getElementById(btnId); if(btn) btn.onclick=()=>{ inputEv.dataset.tipo=tipo; inputEv.click(); }; };
+  armarBtnEvidencia('btnEvidenciaAntes','antes');
+  armarBtnEvidencia('btnEvidenciaDurante','durante');
+  armarBtnEvidencia('btnEvidenciaDespues','despues');
+  if(inputEv) inputEv.onchange = (e)=>{ const f=e.target.files[0]; if(f) agregarEvidenciaActividad(id, inputEv.dataset.tipo, f); e.target.value=""; };
+  document.querySelectorAll('[data-ver-evidencia-act]').forEach(el=>{
+    el.onclick = ()=>{ const ev = evidencias.find(x=>x.id===el.dataset.verEvidenciaAct); if(ev) verFotoGrandeAct(ev.imagen); };
+  });
+  document.querySelectorAll('[data-eliminar-evidencia-act]').forEach(el=>{
+    el.onclick = ()=> eliminarEvidenciaActividad(el.dataset.eliminarEvidenciaAct, id);
+  });
+  const bad=document.getElementById('btnAdjuntarDocumentoAct'); if(bad) bad.onclick = ()=> abrirAdjuntarDocumentoActividad(id);
+  document.querySelectorAll('[data-ver-documento-act]').forEach(el=>{
+    el.onclick = ()=>{ const d = documentos.find(x=>x.id===el.dataset.verDocumentoAct); if(d) verDocumentoAct(d); };
+  });
+  document.querySelectorAll('[data-eliminar-documento-act]').forEach(el=>{
+    el.onclick = ()=> eliminarDocumentoActividad(el.dataset.eliminarDocumentoAct, id);
+  });
+}
+
+function botonesEstadoActividadHTML(a){
+  const b = [];
+  if(a.estado==='programada' || a.estado==='reprogramada'){
+    b.push(`<button class="btn btn-primary btn-sm" data-accion-estado="iniciar">${I.check} Iniciar ejecución</button>`);
+    b.push(`<button class="btn btn-ghost btn-sm" data-accion-estado="reprogramar">${I.cal} Reprogramar</button>`);
+    b.push(`<button class="btn btn-ghost btn-sm" data-accion-estado="pendiente">Marcar pendiente</button>`);
+    b.push(`<button class="btn btn-danger btn-sm" data-accion-estado="cancelar">${I.close} Cancelar</button>`);
+  } else if(a.estado==='pendiente'){
+    b.push(`<button class="btn btn-primary btn-sm" data-accion-estado="iniciar">${I.check} Iniciar ejecución</button>`);
+    b.push(`<button class="btn btn-ghost btn-sm" data-accion-estado="reprogramar">${I.cal} Reprogramar</button>`);
+    b.push(`<button class="btn btn-danger btn-sm" data-accion-estado="cancelar">${I.close} Cancelar</button>`);
+  } else if(a.estado==='en_ejecucion'){
+    b.push(`<button class="btn btn-primary btn-sm" data-accion-estado="ejecutada">${I.check} Marcar ejecutada</button>`);
+    b.push(`<button class="btn btn-ghost btn-sm" data-accion-estado="ejecutada_con_novedades">Ejecutada con novedades</button>`);
+    b.push(`<button class="btn btn-danger btn-sm" data-accion-estado="cancelar">${I.close} Cancelar</button>`);
+  } else if(a.estado==='ejecutada' || a.estado==='ejecutada_con_novedades'){
+    b.push(`<button class="btn btn-ghost btn-sm" data-accion-estado="reabrir">Reabrir (volver a en ejecución)</button>`);
+  }
+  return b.join('');
+}
+function wireBotonesEstadoActividad(a){
+  document.querySelectorAll('[data-accion-estado]').forEach(btn=>{
+    btn.onclick = ()=> abrirCambiarEstadoActividad(a.id, btn.dataset.accionEstado);
+  });
+}
+function abrirCambiarEstadoActividad(id, accion){
+  const a = ACTIVIDADES.actividades.find(x=>x.id===id);
+  if(!a) return;
+  if(['iniciar','ejecutada','ejecutada_con_novedades'].includes(accion) && !a.responsable_principal_uid){
+    toast("Esta actividad no tiene responsable — edítala primero para asignar uno","err"); return;
+  }
+  const titulos = { iniciar:'Iniciar ejecución', ejecutada:'Marcar como ejecutada', ejecutada_con_novedades:'Ejecutada con novedades', pendiente:'Marcar pendiente', reprogramar:'Reprogramar', cancelar:'Cancelar actividad', reabrir:'Reabrir actividad' };
+  let camposExtra = '';
+  if(accion==='reprogramar') camposExtra = `<div class="field"><label>Nueva fecha programada *</label><input type="date" id="cePFecha" value="${esc(a.fecha_programada)}"></div>`;
+  else if(accion==='ejecutada_con_novedades') camposExtra = `<div class="field"><label>Observaciones (obligatorio) *</label><textarea id="cePObs" rows="3" placeholder="Qué novedad se encontró"></textarea></div>`;
+  else if(accion==='cancelar') camposExtra = `<div class="field"><label>Motivo de cancelación (obligatorio) *</label><textarea id="cePMotivo" rows="3"></textarea></div>`;
+  else if(accion==='ejecutada') camposExtra = `<div class="field"><label>Observaciones (opcional)</label><textarea id="cePObs" rows="2">${esc(a.observaciones||'')}</textarea></div>`;
+
+  openModal(`<div class="modal" style="max-width:440px">
+    <div class="modal-head"><div><h2>${titulos[accion]||'Cambiar estado'}</h2><p>${esc(folioActividadTexto(a.folio))}</p></div><button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">${camposExtra || '<p class="muted-sm">¿Confirmas esta acción?</p>'}</div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" id="btnConfirmarCambioEstado">${I.check} Confirmar</button></div>
+  </div>`);
+  document.getElementById('btnConfirmarCambioEstado').onclick = ()=> guardarCambioEstadoActividad(id, accion);
+}
+async function guardarCambioEstadoActividad(id, accion){
+  const a = ACTIVIDADES.actividades.find(x=>x.id===id);
+  if(!a) return;
+  const payload = {};
+  if(accion==='iniciar'){ payload.estado='en_ejecucion'; payload.fecha_inicio_real = new Date().toISOString(); }
+  else if(accion==='ejecutada'){
+    payload.estado='ejecutada'; payload.fecha_fin_real = new Date().toISOString();
+    const obs = document.getElementById('cePObs')?.value.trim(); if(obs) payload.observaciones = obs;
+  } else if(accion==='ejecutada_con_novedades'){
+    const obs = document.getElementById('cePObs')?.value.trim();
+    if(!obs){ toast("Describe la novedad","err"); return; }
+    payload.estado='ejecutada_con_novedades'; payload.fecha_fin_real = new Date().toISOString(); payload.observaciones = obs;
+  } else if(accion==='pendiente'){ payload.estado='pendiente'; }
+  else if(accion==='reabrir'){ payload.estado='en_ejecucion'; }
+  else if(accion==='reprogramar'){
+    const nueva = document.getElementById('cePFecha')?.value;
+    if(!nueva){ toast("Elige la nueva fecha","err"); return; }
+    payload.estado='reprogramada';
+    payload.fecha_programada_original = a.fecha_programada_original || a.fecha_programada;
+    payload.veces_reprogramada = (a.veces_reprogramada||0) + 1;
+    payload.fecha_programada = nueva;
+  } else if(accion==='cancelar'){
+    const motivo = document.getElementById('cePMotivo')?.value.trim();
+    if(!motivo){ toast("Escribe el motivo de cancelación","err"); return; }
+    payload.estado='cancelada'; payload.motivo_cancelacion = motivo;
+  } else return;
+
+  const btn = document.getElementById('btnConfirmarCambioEstado'); if(btn){ btn.disabled=true; btn.innerHTML="Guardando…"; }
+  bloquear("Guardando…");
+  try{
+    const { error } = await sb.from("act_actividades").update(payload).eq("id", id);
+    if(error){ toast("No se pudo guardar: "+error.message,"err"); return; }
+    closeModal();
+    toast("Actividad actualizada","ok");
+    renderFichaActividad(id);
+  } finally { desbloquear(); }
+}
+
+/* ---------- Evidencias / documentos / historial ---------- */
+async function agregarEvidenciaActividad(actividadId, tipo, file){
+  bloquear("Subiendo foto…");
+  try{
+    const imagen = await comprimirImagen(file, 1280, 0.85);
+    const { error } = await sb.from("act_evidencias").insert({ actividad_id: actividadId, tipo, imagen });
+    if(error){ toast("No se pudo subir: "+error.message,"err"); return; }
+    await insertarHistorialAct(actividadId, 'evidencia', `Se agregó 1 fotografía (${tipo==='antes'?'antes':tipo==='durante'?'durante':'después'}).`);
+    toast("Evidencia agregada","ok");
+    renderFichaActividad(actividadId);
+  } finally { desbloquear(); }
+}
+async function eliminarEvidenciaActividad(evidenciaId, actividadId){
+  if(!confirm("¿Eliminar esta evidencia?")) return;
+  bloquear("Eliminando…");
+  try{
+    const { error } = await sb.from("act_evidencias").delete().eq("id", evidenciaId);
+    if(error){ toast("No se pudo eliminar: "+error.message,"err"); return; }
+    renderFichaActividad(actividadId);
+  } finally { desbloquear(); }
+}
+function verFotoGrandeAct(url){
+  openModal(`<div class="modal" style="max-width:640px">
+    <div class="modal-head"><div><h2>Evidencia</h2></div><button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body" style="text-align:center"><img src="${url}" style="max-width:100%;border-radius:10px"></div>
+  </div>`);
+}
+function abrirAdjuntarDocumentoActividad(actividadId){
+  openModal(`<div class="modal" style="max-width:440px">
+    <div class="modal-head"><div><h2>Adjuntar documento</h2></div><button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Título *</label><input id="adTitulo" placeholder="Ej. Informe de ejecución"></div>
+      <div class="field"><label>Tipo *</label><select id="adTipo"><option value="informe">Informe</option><option value="acta">Acta</option><option value="otro">Otro</option></select></div>
+      <div class="field"><label>Archivo (PDF o imagen) *</label><input type="file" id="adArchivo" accept="application/pdf,image/*"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" id="btnGuardarDocumentoAct">${I.check} Guardar</button></div>
+  </div>`);
+  document.getElementById('btnGuardarDocumentoAct').onclick = ()=> guardarDocumentoActividad(actividadId);
+}
+async function guardarDocumentoActividad(actividadId){
+  const titulo = document.getElementById('adTitulo').value.trim();
+  const tipo = document.getElementById('adTipo').value;
+  const file = document.getElementById('adArchivo').files[0];
+  if(!titulo){ toast("Falta el título","err"); return; }
+  if(!file){ toast("Elige un archivo","err"); return; }
+  const btn = document.getElementById('btnGuardarDocumentoAct'); btn.disabled=true; btn.innerHTML="Guardando…";
+  bloquear("Subiendo documento…");
+  try{
+    const esPdf = file.type==='application/pdf';
+    const archivo = esPdf
+      ? await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); })
+      : await comprimirImagen(file, 1400, 0.85);
+    const { error } = await sb.from("act_documentos").insert({ actividad_id: actividadId, titulo, tipo, archivo, archivo_nombre: file.name });
+    if(error){ toast("No se pudo guardar: "+error.message,"err"); return; }
+    await insertarHistorialAct(actividadId, 'documento', `Se adjuntó el documento "${titulo}" (${tipo==='informe'?'informe':tipo==='acta'?'acta':'otro'}).`);
+    closeModal();
+    toast("Documento adjuntado","ok");
+    renderFichaActividad(actividadId);
+  } finally { desbloquear(); }
+}
+async function eliminarDocumentoActividad(docId, actividadId){
+  if(!confirm("¿Eliminar este documento?")) return;
+  bloquear("Eliminando…");
+  try{
+    const { error } = await sb.from("act_documentos").delete().eq("id", docId);
+    if(error){ toast("No se pudo eliminar: "+error.message,"err"); return; }
+    renderFichaActividad(actividadId);
+  } finally { desbloquear(); }
+}
+function verDocumentoAct(d){
+  if(d.archivo.startsWith('data:application/pdf')){
+    try{
+      const bytes = atob(d.archivo.split(',')[1]);
+      const arr = new Uint8Array(bytes.length);
+      for(let i=0;i<bytes.length;i++) arr[i] = bytes.charCodeAt(i);
+      const blob = new Blob([arr], {type:'application/pdf'});
+      window.open(URL.createObjectURL(blob), '_blank');
+    }catch(e){ window.open(d.archivo, '_blank'); }
+  } else {
+    verFotoGrandeAct(d.archivo);
+  }
+}
+async function insertarHistorialAct(actividadId, tipoEvento, comentario){
+  const { data:{ session } } = await sb.auth.getSession();
+  await sb.from("act_historial").insert({ actividad_id: actividadId, actor_uid: session?.user?.id || null, tipo_evento: tipoEvento, comentario });
+}
+function renderHistorialActividadHTML(lista){
+  if(!lista.length) return '<p class="muted-sm">Sin movimientos todavía.</p>';
+  return `<div class="act-timeline">${lista.map(h=>`
+    <div class="act-timeline-item">
+      <div class="muted-sm">${new Date(h.ocurrido_en).toLocaleString('es-CO')} — ${esc(h.actor_uid?(PERFILES_NOMBRE[h.actor_uid]||'—'):'Sistema')}</div>
+      <div>${esc(h.comentario)}</div>
+    </div>`).join('')}</div>`;
+}
+
+/* ---------- Fase 3: series recurrentes — genera TODAS las instancias de
+   una sola vez al crearse (bulk insert), sin cron/generación diferida
+   (esta app no tiene pg_cron ni Edge Functions en ningún lado, ver
+   sección 7.190 de MEMORY.md). Cada instancia es una act_actividades
+   normal e independiente, solo con serie_id apuntando a su origen. ---------- */
+function sumarMesesPreservandoDia(fechaISO, n){
+  const [y,m,d] = fechaISO.split('-').map(Number);
+  const objetivo = new Date(y, m-1+n, 1);
+  const ultimoDiaObjetivo = new Date(objetivo.getFullYear(), objetivo.getMonth()+1, 0).getDate();
+  const diaFinal = Math.min(d, ultimoDiaObjetivo);
+  return objetivo.getFullYear()+'-'+String(objetivo.getMonth()+1).padStart(2,'0')+'-'+String(diaFinal).padStart(2,'0');
+}
+function calcularFechasSerie(serie){
+  const fechas = [];
+  const inicio = serie.fecha_inicio, fin = serie.fecha_fin;
+  if(serie.frecuencia==='diaria'){
+    let cur = inicio;
+    while(cur <= fin){ fechas.push(cur); cur = sumarDiasFecha(cur, serie.intervalo||1); }
+  } else if(serie.frecuencia==='semanal'){
+    let cur = inicio;
+    while(cur <= fin){ if((serie.dias_semana||[]).includes(diaSemanaISO(cur))) fechas.push(cur); cur = sumarDiasFecha(cur,1); }
+  } else if(serie.frecuencia==='quincenal'){
+    let cur = inicio;
+    while(cur <= fin){ fechas.push(cur); cur = sumarDiasFecha(cur,15); }
+  } else if(serie.frecuencia==='mensual'){
+    // recalcula siempre desde fecha_inicio (no encadena desde la fecha anterior) para que
+    // un mes recortado por falta de días (ej. 31 ene -> 28 feb) no arrastre el recorte a los
+    // meses siguientes que sí tienen ese día (ej. marzo debe volver a caer en 31, no en 28)
+    let i = 0;
+    while(true){
+      const f = sumarMesesPreservandoDia(inicio, i*(serie.intervalo||1));
+      if(f > fin) break;
+      fechas.push(f);
+      i++;
+    }
+  } else if(serie.frecuencia==='dias_especificos'){
+    fechas.push(...(serie.fechas_especificas||[]).filter(f=> f>=inicio && f<=fin).sort());
+  }
+  return fechas;
+}
+async function generarInstanciasSerie(serie, personalSerie){
+  const fechas = calcularFechasSerie(serie);
+  if(!fechas.length) return { ok:false, motivo:'Esa combinación no genera ninguna fecha dentro del rango elegido.' };
+  if(fechas.length > 730) return { ok:false, motivo:`Generaría ${fechas.length} actividades — reduce el rango (máximo 730 de una vez).` };
+  const filas = fechas.map(f=>({
+    contrato_id: serie.contrato_id, sede_id: serie.sede_id, tipo_id: serie.tipo_id, serie_id: serie.id,
+    descripcion: serie.descripcion, area_detalle: serie.area_detalle, prioridad: serie.prioridad,
+    responsable_principal_uid: serie.responsable_principal_uid,
+    requiere_evidencia: serie.requiere_evidencia, requiere_informe: serie.requiere_informe,
+    hora_inicio_estimada: serie.hora_inicio_estimada, hora_fin_estimada: serie.hora_fin_estimada,
+    duracion_estimada_minutos: serie.duracion_estimada_minutos,
+    fecha_programada: f, estado: 'programada'
+  }));
+  const { data: creadas, error } = await sb.from('act_actividades').insert(filas).select('id');
+  if(error) return { ok:false, motivo: error.message };
+  if(creadas?.length){
+    if(personalSerie.length){
+      const filasPersonal = [];
+      creadas.forEach(c=> personalSerie.forEach(p=> filasPersonal.push({ actividad_id:c.id, nombre:p.nombre, cargo:p.cargo||null })));
+      await sb.from('act_actividad_personal').insert(filasPersonal);
+    }
+    const { data:{ session } } = await sb.auth.getSession();
+    await sb.from('act_historial').insert(creadas.map(c=>({ actividad_id:c.id, actor_uid: session?.user?.id||null, tipo_evento:'creacion', comentario:'Generada automáticamente desde una serie recurrente.' })));
+  }
+  await sb.from('act_series').update({ instancias_generadas: fechas.length }).eq('id', serie.id);
+  return { ok:true, cantidad: fechas.length };
+}
+function abrirFormSerieActividad(){
+  const contratosDisponibles = ACTIVIDADES.contratos.filter(c=>c.activo!==false && tieneContratoAct(c.id));
+  const contratoDefault = (actContratoActualId && actContratoActualId!=='todos') ? actContratoActualId : (contratosDisponibles[0]?.id||'');
+  let personalSerie = [];
+  let fechasEspecificas = [];
+  const nombresDiasChk = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+  openModal(`<div class="modal" style="max-width:640px">
+    <div class="modal-head"><div><h2>Nueva serie recurrente</h2><p>Genera automáticamente varias actividades repetidas</p></div><button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="field row2">
+        <div><label>Contrato *</label><select id="fsContrato">${contratosDisponibles.map(c=>`<option value="${c.id}" ${c.id===contratoDefault?'selected':''}>${esc(c.nombre)}</option>`).join('')}</select></div>
+        <div><label>Sede</label><select id="fsSede"></select></div>
+      </div>
+      <div class="field row2">
+        <div><label>Tipo de actividad *</label><select id="fsTipo">${tiposActivosAct().length?tiposActivosAct().map(t=>`<option value="${t.id}">${esc(t.nombre)}</option>`).join(''):'<option value="">— Crea un tipo primero —</option>'}</select></div>
+        <div><label>Prioridad</label><select id="fsPrioridad">${Object.entries(ACT_PRIORIDADES).map(([k,v])=>`<option value="${k}" ${k==='media'?'selected':''}>${v}</option>`).join('')}</select></div>
+      </div>
+      <div class="field"><label>Área/ubicación</label><input id="fsAreaDetalle" placeholder="Opcional"></div>
+      <div class="field"><label>Descripción</label><textarea id="fsDescripcion" rows="2"></textarea></div>
+
+      <div class="sec-bar" style="margin-top:14px"><h2 style="font-size:14px">Recurrencia</h2></div>
+      <div class="field"><label>Frecuencia *</label><select id="fsFrecuencia">
+        <option value="diaria">Diaria</option>
+        <option value="semanal" selected>Semanal</option>
+        <option value="quincenal">Quincenal (cada 15 días)</option>
+        <option value="mensual">Mensual</option>
+        <option value="dias_especificos">Fechas específicas</option>
+      </select></div>
+      <div id="fsCampoDiasSemana" class="field">
+        <label>Días de la semana</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${nombresDiasChk.map((n,i)=>`<label class="chk" style="padding:6px 10px;border:1px solid var(--line);border-radius:8px"><input type="checkbox" data-dia-semana="${i}"> ${n}</label>`).join('')}</div>
+      </div>
+      <div id="fsCampoFechasEspecificas" class="field" style="display:none">
+        <label>Fechas específicas</label>
+        <div style="display:flex;gap:8px"><input type="date" id="fsFechaEspecificaNueva"><button type="button" class="btn btn-ghost btn-sm" id="btnAgregarFechaEspecifica">${I.plus} Agregar</button></div>
+        <div id="fsListaFechasEspecificas" style="margin-top:6px"></div>
+      </div>
+      <div class="field row2">
+        <div><label>Fecha de inicio *</label><input type="date" id="fsFechaInicio" value="${hoyLocal()}"></div>
+        <div><label>Fecha de fin *</label><input type="date" id="fsFechaFin"></div>
+      </div>
+      <div class="field row2">
+        <div><label>Hora de inicio estimada</label><input type="time" id="fsHoraInicio"></div>
+        <div><label>Hora de fin estimada</label><input type="time" id="fsHoraFin"></div>
+      </div>
+
+      <div class="sec-bar" style="margin-top:14px"><h2 style="font-size:14px">Responsables</h2></div>
+      <div class="field"><label>Responsable principal</label><select id="fsResponsable">
+        <option value="">— Sin asignar —</option>
+        ${Object.entries(PERFILES_NOMBRE).map(([uid,nombre])=>`<option value="${uid}">${esc(nombre)}</option>`).join('')}
+      </select></div>
+      <div class="field"><label>Personal asignado / cuadrilla</label>
+        <div id="fsPersonalLista"></div>
+        <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
+          <input id="fsPersonalNombre" placeholder="Nombre" style="flex:2;min-width:140px">
+          <input id="fsPersonalCargo" placeholder="Cargo (opcional)" style="flex:1;min-width:120px">
+          <button type="button" class="btn btn-ghost btn-sm" id="btnAgregarPersonalSerie">${I.plus} Agregar</button>
+        </div>
+      </div>
+      <label class="chk" style="margin-top:10px"><input type="checkbox" id="fsRequiereEvidencia" checked> Requiere evidencia fotográfica</label>
+      <label class="chk"><input type="checkbox" id="fsRequiereInforme"> Requiere informe</label>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" id="btnGenerarSerie">${I.check} Generar actividades</button></div>
+  </div>`);
+
+  const pintarSedesSerie = ()=>{
+    const sedes = sedesDelContrato(document.getElementById('fsContrato').value);
+    document.getElementById('fsSede').innerHTML = `<option value="">— Sin sede específica —</option>` + sedes.map(s=>`<option value="${s.id}">${esc(s.nombre)}</option>`).join('');
+  };
+  pintarSedesSerie();
+  document.getElementById('fsContrato').onchange = pintarSedesSerie;
+  document.getElementById('fsFrecuencia').onchange = (e)=>{
+    document.getElementById('fsCampoDiasSemana').style.display = e.target.value==='semanal' ? 'block' : 'none';
+    document.getElementById('fsCampoFechasEspecificas').style.display = e.target.value==='dias_especificos' ? 'block' : 'none';
+  };
+
+  const pintarFechasEspecificas = ()=>{
+    document.getElementById('fsListaFechasEspecificas').innerHTML = fechasEspecificas.length ? fechasEspecificas.map((f,i)=>`<span class="badge cerrada" style="margin:2px;cursor:pointer" data-quitar-fecha-especifica="${i}">${fmtDate(f)} ✕</span>`).join('') : '<p class="muted-sm">Ninguna todavía.</p>';
+    document.querySelectorAll('[data-quitar-fecha-especifica]').forEach(el=> el.onclick = ()=>{ fechasEspecificas.splice(+el.dataset.quitarFechaEspecifica,1); pintarFechasEspecificas(); });
+  };
+  pintarFechasEspecificas();
+  document.getElementById('btnAgregarFechaEspecifica').onclick = ()=>{
+    const f = document.getElementById('fsFechaEspecificaNueva').value;
+    if(!f){ toast("Elige una fecha","err"); return; }
+    if(!fechasEspecificas.includes(f)){ fechasEspecificas.push(f); fechasEspecificas.sort(); }
+    pintarFechasEspecificas();
+  };
+
+  const pintarPersonalSerie = ()=>{
+    document.getElementById('fsPersonalLista').innerHTML = personalSerie.length ? personalSerie.map((p,i)=>`
+      <div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+        <span style="flex:1">${esc(p.nombre)}${p.cargo?' · '+esc(p.cargo):''}</span>
+        <button type="button" class="icon-btn danger" data-quitar-personal-serie="${i}">${I.trash}</button>
+      </div>`).join('') : '<p class="muted-sm">Sin personal agregado todavía.</p>';
+    document.querySelectorAll('[data-quitar-personal-serie]').forEach(b=> b.onclick = ()=>{ personalSerie.splice(+b.dataset.quitarPersonalSerie,1); pintarPersonalSerie(); });
+  };
+  pintarPersonalSerie();
+  document.getElementById('btnAgregarPersonalSerie').onclick = ()=>{
+    const nombre = document.getElementById('fsPersonalNombre').value.trim();
+    if(!nombre){ toast("Escribe el nombre","err"); return; }
+    personalSerie.push({ nombre, cargo: document.getElementById('fsPersonalCargo').value.trim() });
+    document.getElementById('fsPersonalNombre').value=''; document.getElementById('fsPersonalCargo').value='';
+    pintarPersonalSerie();
+  };
+
+  document.getElementById('btnGenerarSerie').onclick = async ()=>{
+    const contrato_id = document.getElementById('fsContrato').value;
+    const tipo_id = document.getElementById('fsTipo').value;
+    const fecha_inicio = document.getElementById('fsFechaInicio').value;
+    const fecha_fin = document.getElementById('fsFechaFin').value;
+    const frecuencia = document.getElementById('fsFrecuencia').value;
+    if(!contrato_id){ toast("Selecciona el contrato","err"); return; }
+    if(!tipo_id){ toast("Selecciona el tipo de actividad","err"); return; }
+    if(!fecha_inicio || !fecha_fin){ toast("Completa la fecha de inicio y fin","err"); return; }
+    if(fecha_fin < fecha_inicio){ toast("La fecha de fin no puede ser antes que la de inicio","err"); return; }
+    const dias_semana = Array.from(document.querySelectorAll('[data-dia-semana]:checked')).map(el=>+el.dataset.diaSemana);
+    if(frecuencia==='semanal' && !dias_semana.length){ toast("Elige al menos un día de la semana","err"); return; }
+    if(frecuencia==='dias_especificos' && !fechasEspecificas.length){ toast("Agrega al menos una fecha específica","err"); return; }
+
+    const serieBase = {
+      contrato_id, sede_id: document.getElementById('fsSede').value||null, tipo_id,
+      descripcion: document.getElementById('fsDescripcion').value.trim()||null,
+      area_detalle: document.getElementById('fsAreaDetalle').value.trim()||null,
+      prioridad: document.getElementById('fsPrioridad').value,
+      responsable_principal_uid: document.getElementById('fsResponsable').value||null,
+      requiere_evidencia: document.getElementById('fsRequiereEvidencia').checked,
+      requiere_informe: document.getElementById('fsRequiereInforme').checked,
+      hora_inicio_estimada: document.getElementById('fsHoraInicio').value||null,
+      hora_fin_estimada: document.getElementById('fsHoraFin').value||null,
+      frecuencia, intervalo:1,
+      dias_semana: frecuencia==='semanal'?dias_semana:null,
+      fechas_especificas: frecuencia==='dias_especificos'?fechasEspecificas:null,
+      fecha_inicio, fecha_fin
+    };
+    const fechasCalculadas = calcularFechasSerie(serieBase);
+    if(!fechasCalculadas.length){ toast("Esa combinación no genera ninguna fecha — revisa el rango","err"); return; }
+    if(fechasCalculadas.length > 730){ toast(`Esa serie generaría ${fechasCalculadas.length} actividades — reduce el rango de fechas (máximo 730)`,"err"); return; }
+    if(!confirm(`Se van a crear ${fechasCalculadas.length} actividad(es). ¿Confirmas?`)) return;
+
+    const btn = document.getElementById('btnGenerarSerie'); btn.disabled=true; btn.innerHTML="Generando…";
+    bloquear("Generando actividades…");
+    try{
+      const { data: serie, error } = await sb.from('act_series').insert(serieBase).select().single();
+      if(error){ toast("No se pudo crear la serie: "+error.message,"err"); return; }
+      if(personalSerie.length){
+        await sb.from('act_series_personal').insert(personalSerie.map(p=>({ serie_id: serie.id, nombre:p.nombre, cargo:p.cargo||null })));
+      }
+      const resultado = await generarInstanciasSerie(serie, personalSerie);
+      if(!resultado.ok){ toast("La serie se creó pero no se pudieron generar las actividades: "+resultado.motivo,"err"); return; }
+      await loadActividadesState();
+      closeModal();
+      toast(`Serie creada — ${resultado.cantidad} actividad(es) generada(s)`,"ok");
+      renderActividadesAdmin();
+    } finally { desbloquear(); }
+  };
+}
+async function abrirGestionSeriesAct(){
+  bloquear("Cargando series…");
+  let series = [];
+  try{
+    const { data } = await sb.from('act_series').select('id,tipo_id,sede_id,frecuencia,fecha_inicio,fecha_fin,activa,instancias_generadas').eq('contrato_id', actContratoActualId).order('creado_en',{ascending:false});
+    series = data||[];
+  } finally { desbloquear(); }
+  const frecLabel = { diaria:'Diaria', semanal:'Semanal', quincenal:'Quincenal (cada 15 días)', mensual:'Mensual', dias_especificos:'Fechas específicas' };
+  openModal(`<div class="modal" style="max-width:560px">
+    <div class="modal-head"><div><h2>Series recurrentes</h2><p>${esc(nombreContratoAct(actContratoActualId))}</p></div><button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <button class="btn btn-primary btn-sm" id="btnNuevaSerieAct" style="margin-bottom:12px">${I.plus} Nueva serie</button>
+      ${series.length ? series.map(s=>`
+        <div style="padding:8px 0;border-bottom:1px solid var(--line-2)">
+          <b>${esc(nombreTipoAct(s.tipo_id))}</b>${nombreSedeAct(s.sede_id)?' · '+esc(nombreSedeAct(s.sede_id)):''}
+          <div class="muted-sm">${frecLabel[s.frecuencia]||s.frecuencia} · ${fmtDate(s.fecha_inicio)} – ${fmtDate(s.fecha_fin)} · ${s.instancias_generadas} actividad(es) generada(s)</div>
+        </div>`).join('') : '<p class="muted-sm">Aún no hay series recurrentes en este contrato.</p>'}
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
+  </div>`);
+  document.getElementById('btnNuevaSerieAct').onclick = ()=>{ closeModal(); abrirFormSerieActividad(); };
+}
+
+/* ---------- Fase 5: reportes — PDF de una actividad (mismo patrón ctx/asegurarEspacio
+   que construirInspeccionPDF), PDF/Excel/ZIP tabulares del listado filtrado (mismo
+   patrón tablaHead/rowH dinámico que construirKardexPDF). Ver sección 7.19x de
+   MEMORY.md para el detalle de estos patrones ya existentes en la app. ---------- */
+async function construirActividadPDF(actividadId){
+  const a = ACTIVIDADES.actividades.find(x=>x.id===actividadId);
+  if(!a) return null;
+  const [{data:personal}, {data:evidencias}, {data:documentos}, {data:historial}] = await Promise.all([
+    sb.from("act_actividad_personal").select("id,nombre,cargo").eq("actividad_id",actividadId).order("creado_en",{ascending:true}),
+    sb.from("act_evidencias").select("id,tipo,imagen,creado_en").eq("actividad_id",actividadId).order("creado_en",{ascending:true}),
+    sb.from("act_documentos").select("id,titulo,tipo,creado_en").eq("actividad_id",actividadId).order("creado_en",{ascending:true}),
+    sb.from("act_historial").select("id,ocurrido_en,tipo_evento,comentario").eq("actividad_id",actividadId).order("ocurrido_en",{ascending:true})
+  ]);
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:"mm", format:"a4", orientation:"portrait"});
+  const PW = 210, PH = 297, M = 10, RIGHT = PW - M;
+  const FOOTER_Y = PH-7, FOOTER_TOP = PH-19;
+  let pag = 1;
+  const colorAcento = hexToRgbInsp('#1d33c7');
+
+  function piePagina(){
+    doc.setFontSize(6.6); doc.setTextColor(140,140,160);
+    doc.text("Orden de trabajo generada por el Sistema de Evidencias Digitales.", PW/2, FOOTER_Y, {align:"center"});
+    doc.text("Generado el "+fmtDateTime(new Date())+" · Don Aseo Ltda. · Pág. "+pag, PW/2, FOOTER_Y+4, {align:"center"});
+  }
+  function nuevaPagina(){ piePagina(); doc.addPage(); pag++; return M+2; }
+  function asegurarEspacio(y, alto){ return (y+alto > FOOTER_TOP) ? nuevaPagina() : y; }
+
+  let y = M;
+  const hH = 24, logoW = 44;
+  doc.setDrawColor(150,160,190); doc.setLineWidth(0.3); doc.rect(M,y,RIGHT-M,hH);
+  doc.line(M+logoW,y,M+logoW,y+hH);
+  try{ doc.addImage(LOGO,"JPEG",M+4,y+2,36,36*315/570); }catch(e){}
+  doc.setTextColor(colorAcento[0],colorAcento[1],colorAcento[2]); doc.setFont("helvetica","bold"); doc.setFontSize(13);
+  doc.text(pdfTexto("ORDEN DE TRABAJO · "+folioActividadTexto(a.folio)), M+logoW+(RIGHT-M-logoW)/2, y+11, {align:"center"});
+  doc.setFont("helvetica","normal"); doc.setFontSize(8.5); doc.setTextColor(90,90,110);
+  doc.text(pdfTexto("Don Aseo Ltda. · "+nombreContratoAct(a.contrato_id)), M+logoW+(RIGHT-M-logoW)/2, y+20, {align:"center"});
+  y += hH + 6;
+
+  function campo(etiqueta, valor){
+    y = asegurarEspacio(y, 10);
+    doc.setFont("helvetica","bold"); doc.setFontSize(7); doc.setTextColor(90,90,110);
+    doc.text(pdfTexto(etiqueta.toUpperCase()), M, y);
+    y += 4;
+    doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor(20,20,20);
+    const wrapped = doc.splitTextToSize(pdfTexto(valor||'—'), RIGHT-M);
+    doc.text(wrapped, M, y);
+    y += wrapped.length*4.2 + 4;
+  }
+  function barraSeccion(titulo){
+    y = asegurarEspacio(y, 10);
+    doc.setFillColor(colorAcento[0],colorAcento[1],colorAcento[2]); doc.rect(M,y,RIGHT-M,7,"F");
+    doc.setFont("helvetica","bold"); doc.setFontSize(9.5); doc.setTextColor(255,255,255);
+    doc.text(pdfTexto(titulo), M+3, y+5);
+    y += 7+3;
+  }
+
+  barraSeccion("Información general");
+  campo("Tipo de actividad", nombreTipoAct(a.tipo_id));
+  campo("Sede", nombreSedeAct(a.sede_id) || 'Sin sede asignada');
+  campo("Prioridad", ACT_PRIORIDADES[a.prioridad] || a.prioridad);
+  campo("Estado", esActividadVencida(a) ? 'Vencida' : (ACT_ESTADOS[a.estado]?.label || a.estado));
+  campo("Fecha programada", fmtDate(a.fecha_programada) + (a.hora_inicio_estimada ? ' · '+String(a.hora_inicio_estimada).slice(0,5) : ''));
+  if(a.veces_reprogramada) campo("Reprogramada", a.veces_reprogramada + ' vez/veces (fecha original: ' + fmtDate(a.fecha_programada_original) + ')');
+  campo("Responsable principal", a.responsable_principal_uid ? (PERFILES_NOMBRE[a.responsable_principal_uid]||'—') : 'Sin asignar');
+  if(personal && personal.length) campo("Personal / cuadrilla", personal.map(p=> p.nombre+(p.cargo?' ('+p.cargo+')':'')).join(', '));
+  if(a.fecha_inicio_real) campo("Inicio real", fmtDateTime(a.fecha_inicio_real));
+  if(a.fecha_fin_real) campo("Fin real", fmtDateTime(a.fecha_fin_real));
+  if(a.area_detalle) campo("Área / ubicación", a.area_detalle);
+  if(a.descripcion) campo("Descripción", a.descripcion);
+  if(a.observaciones) campo("Observaciones", a.observaciones);
+  if(a.motivo_cancelacion) campo("Motivo de cancelación", a.motivo_cancelacion);
+
+  if(evidencias && evidencias.length){
+    barraSeccion("Evidencia fotográfica");
+    const grupos = { antes:'Antes', durante:'Durante', despues:'Después' };
+    for(const key of Object.keys(grupos)){
+      const fotos = evidencias.filter(e=>e.tipo===key);
+      if(!fotos.length) continue;
+      y = asegurarEspacio(y, 8);
+      doc.setFont("helvetica","bold"); doc.setFontSize(8); doc.setTextColor(60,60,80);
+      doc.text(pdfTexto(grupos[key]), M, y); y += 5;
+      const colW = (RIGHT-M-4)/2, maxH = 55, gap = 4;
+      let col = 0, rowStartY = y;
+      for(const f of fotos){
+        if(col===0){ rowStartY = asegurarEspacio(y, maxH+4); y = rowStartY; }
+        let w = colW, h = maxH;
+        try{
+          const dims = await getImageSize(f.imagen);
+          if(dims && dims.w>0 && dims.h>0){
+            h = colW * (dims.h/dims.w);
+            if(h > maxH){ h = maxH; w = maxH * (dims.w/dims.h); }
+          }
+        }catch(e){}
+        const cellX = M + col*(colW+gap);
+        const x = cellX + (colW-w)/2;
+        const yImg = y + (maxH-h)/2;
+        try{ doc.addImage(f.imagen, "JPEG", x, yImg, w, h); }catch(e){}
+        doc.setDrawColor(210,214,230); doc.rect(cellX, y, colW, maxH);
+        col = col===0 ? 1 : 0;
+        if(col===0) y = rowStartY + maxH + gap;
+      }
+      if(col===1) y = rowStartY + maxH + gap;
+      y += 2;
+    }
+  }
+
+  if(documentos && documentos.length){
+    barraSeccion("Documentos adjuntos");
+    const etiquetasDoc = { informe:'Informe', acta:'Acta', otro:'Otro' };
+    documentos.forEach(d=>{
+      y = asegurarEspacio(y, 6);
+      doc.setFont("helvetica","normal"); doc.setFontSize(8.5); doc.setTextColor(30,30,30);
+      doc.text(pdfTexto('• '+d.titulo+' ('+(etiquetasDoc[d.tipo]||d.tipo)+') — '+fmtDate(String(d.creado_en||'').slice(0,10))), M, y);
+      y += 5.5;
+    });
+    y += 2;
+  }
+
+  if(historial && historial.length){
+    barraSeccion("Historial");
+    const etiquetasEv = { creacion:'Creación', cambio_estado:'Cambio de estado', asignacion:'Asignación', evidencia:'Evidencia', documento:'Documento', edicion:'Edición', reprogramacion:'Reprogramación', cancelacion:'Cancelación', comentario:'Comentario' };
+    historial.forEach(h=>{
+      const texto = fmtDateTime(h.ocurrido_en)+' — '+(etiquetasEv[h.tipo_evento]||h.tipo_evento)+': '+h.comentario;
+      const wrapped = doc.splitTextToSize(pdfTexto(texto), RIGHT-M);
+      y = asegurarEspacio(y, wrapped.length*3.8 + 3);
+      doc.setFont("helvetica","normal"); doc.setFontSize(7.6); doc.setTextColor(50,50,70);
+      doc.text(wrapped, M, y);
+      y += wrapped.length*3.8 + 3;
+    });
+  }
+
+  piePagina();
+
+  const safe = (nombreTipoAct(a.tipo_id)||'actividad').replace(/[^\w\sáéíóúñ-]/gi,'').trim().replace(/\s+/g,'_').slice(0,40);
+  return { doc, nombreBase: 'OT'+String(a.folio).padStart(6,'0')+'_'+safe };
+}
+async function generarActividadPDF(id){
+  if(!window.jspdf || !window.jspdf.jsPDF){ toast("No se pudo cargar el generador de PDF (revisa tu conexión)","err"); return; }
+  bloquear("Generando PDF…");
+  try{
+    const r = await construirActividadPDF(id);
+    if(!r){ toast("No se encontró la actividad","err"); return; }
+    r.doc.save(r.nombreBase+".pdf");
+    toast("PDF generado","ok");
+  }catch(e){ console.error(e); toast("No se pudo generar el PDF: "+(e.message||''),"err"); }
+  finally{ desbloquear(); }
+}
+
+function etiquetaFiltroActividadesActual(){
+  const contrato = actContratoActualId==='todos' ? 'Todos los contratos' : nombreContratoAct(actContratoActualId);
+  return contrato+' · '+fmtDate(hoyLocal());
+}
+function construirReporteActividadesPDF(lista, etiquetaFiltro){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:"mm", format:"a4", orientation:"landscape"});
+  const PW = 297, PH = 210, M = 10, RIGHT = PW - M;
+  const colorAcento = hexToRgbInsp('#1d33c7');
+  const x0=M, x1=x0+20, x2=x1+45, x3=x2+40, x4=x3+24, x5=x4+30, x6=x5+45, x7=x6+23, x8=RIGHT;
+  const cols = [x0,x1,x2,x3,x4,x5,x6,x7,x8];
+
+  function grayHead(y,h){ doc.setFillColor(238,241,248); doc.rect(M,y,RIGHT-M,h,"F"); }
+  function tablaHead(y){
+    const h=8;
+    grayHead(y,h);
+    doc.setDrawColor(150,160,190);
+    cols.forEach(x=>doc.line(x,y,x,y+h));
+    doc.rect(M,y,RIGHT-M,h);
+    doc.setFont("helvetica","bold"); doc.setFontSize(7); doc.setTextColor(40,40,60);
+    const ct=(a,b,txt)=>doc.text(txt,(a+b)/2,y+5.2,{align:"center"});
+    ct(x0,x1,"FOLIO"); ct(x1,x2,"TIPO"); ct(x2,x3,"SEDE"); ct(x3,x4,"FECHA"); ct(x4,x5,"ESTADO"); ct(x5,x6,"RESPONSABLE"); ct(x6,x7,"PRIORIDAD"); ct(x7,x8,"DESCRIPCIÓN");
+    return y+h;
+  }
+
+  const FOOTER_Y = PH-7, FOOTER_TOP = PH-15;
+  let pag = 1;
+  function piePagina(){
+    doc.setFontSize(6.6); doc.setTextColor(140,140,160);
+    doc.text(pdfTexto("Reporte de actividades — "+(etiquetaFiltro||'')), PW/2, FOOTER_Y, {align:"center"});
+    doc.text("Generado el "+fmtDateTime(new Date())+" · Don Aseo Ltda. · Pág. "+pag, PW/2, FOOTER_Y+4, {align:"center"});
+  }
+
+  let y = M;
+  doc.setFont("helvetica","bold"); doc.setFontSize(14); doc.setTextColor(colorAcento[0],colorAcento[1],colorAcento[2]);
+  doc.text("Reporte de actividades", M, y+4);
+  doc.setFont("helvetica","normal"); doc.setFontSize(8.5); doc.setTextColor(90,90,110);
+  doc.text(pdfTexto(etiquetaFiltro||''), M, y+10);
+  y += 16;
+  y = tablaHead(y);
+
+  const etiquetasEstado = {}; Object.entries(ACT_ESTADOS).forEach(([k,v])=> etiquetasEstado[k]=v.label);
+  for(const a of lista){
+    const filaEstado = esActividadVencida(a) ? 'Vencida' : (etiquetasEstado[a.estado]||a.estado);
+    const wrapped = doc.splitTextToSize(pdfTexto(a.descripcion||''), x8-x7-3);
+    const rowH = Math.max(8, wrapped.length*3.4 + 3);
+    if(y + rowH > FOOTER_TOP){
+      piePagina(); doc.addPage(); pag++;
+      y = M+2; y = tablaHead(y);
+    }
+    doc.setDrawColor(180,188,210);
+    cols.forEach(x=>doc.line(x,y,x,y+rowH));
+    doc.line(M,y+rowH,RIGHT,y+rowH);
+    doc.setFont("helvetica","normal"); doc.setFontSize(7.4); doc.setTextColor(30,30,30);
+    const ct=(a2,b,txt)=>doc.text(pdfTexto(txt), (a2+b)/2, y+4.5, {align:"center"});
+    ct(x0,x1, folioActividadTexto(a.folio));
+    ct(x1,x2, nombreTipoAct(a.tipo_id));
+    ct(x2,x3, nombreSedeAct(a.sede_id) || '—');
+    ct(x3,x4, fmtDate(a.fecha_programada));
+    ct(x4,x5, filaEstado);
+    ct(x5,x6, a.responsable_principal_uid ? (PERFILES_NOMBRE[a.responsable_principal_uid]||'—') : '—');
+    ct(x6,x7, ACT_PRIORIDADES[a.prioridad]||a.prioridad);
+    doc.text(wrapped, x7+2, y+4.5);
+    y += rowH;
+  }
+  piePagina();
+  const safe = (etiquetaFiltro||'reporte').replace(/[^\w\sáéíóúñ-]/gi,'').trim().replace(/\s+/g,'_').slice(0,50);
+  return { doc, nombreBase: 'Actividades_'+safe };
+}
+function generarReporteActividadesPDF(lista, etiquetaFiltro){
+  if(!window.jspdf || !window.jspdf.jsPDF){ toast("No se pudo cargar el generador de PDF (revisa tu conexión)","err"); return; }
+  if(!lista.length){ toast("No hay actividades para incluir en el reporte","err"); return; }
+  bloquear("Generando reporte PDF…");
+  try{
+    const r = construirReporteActividadesPDF(lista, etiquetaFiltro);
+    r.doc.save(r.nombreBase+".pdf");
+    toast("Reporte generado","ok");
+  }catch(e){ console.error(e); toast("No se pudo generar el reporte: "+(e.message||''),"err"); }
+  finally{ desbloquear(); }
+}
+function descargarExcelActividades(lista, etiquetaFiltro){
+  if(!window.XLSX){ toast("No se pudo cargar el generador de Excel (revisa tu conexión)","err"); return; }
+  if(!lista.length){ toast("No hay actividades para exportar","err"); return; }
+  bloquear("Generando Excel…");
+  try{
+    const etiquetasEstado = {}; Object.entries(ACT_ESTADOS).forEach(([k,v])=> etiquetasEstado[k]=v.label);
+    const filas = lista.map(a=>({
+      Folio: folioActividadTexto(a.folio),
+      Contrato: nombreContratoAct(a.contrato_id),
+      Sede: nombreSedeAct(a.sede_id) || '',
+      Tipo: nombreTipoAct(a.tipo_id),
+      Prioridad: ACT_PRIORIDADES[a.prioridad] || a.prioridad,
+      Estado: esActividadVencida(a) ? 'Vencida' : (etiquetasEstado[a.estado]||a.estado),
+      'Fecha programada': fmtDate(a.fecha_programada),
+      'Fecha inicio real': a.fecha_inicio_real ? fmtDateTime(a.fecha_inicio_real) : '',
+      'Fecha fin real': a.fecha_fin_real ? fmtDateTime(a.fecha_fin_real) : '',
+      Responsable: a.responsable_principal_uid ? (PERFILES_NOMBRE[a.responsable_principal_uid]||'') : '',
+      'Descripción': a.descripcion || '',
+      'Área o ubicación': a.area_detalle || '',
+      Observaciones: a.observaciones || '',
+      Evidencias: a.evidencias_count||0,
+      Documentos: a.documentos_count||0
+    }));
+    const ws = XLSX.utils.json_to_sheet(filas);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Actividades');
+    const safe = (etiquetaFiltro||'reporte').replace(/[^\w\sáéíóúñ-]/gi,'').trim().replace(/\s+/g,'_').slice(0,40);
+    XLSX.writeFile(wb, 'Actividades_'+safe+'.xlsx');
+    toast("Excel generado","ok");
+  }catch(e){ console.error(e); toast("No se pudo generar el Excel: "+(e.message||''),"err"); }
+  finally{ desbloquear(); }
+}
+async function descargarZipActividadesFiltrado(lista, etiquetaFiltro){
+  if(!window.jspdf || !window.jspdf.jsPDF){ toast("No se pudo cargar el generador de PDF (revisa tu conexión)","err"); return; }
+  if(!window.JSZip){ toast("No se pudo cargar el compresor ZIP (revisa tu conexión)","err"); return; }
+  if(!lista.length){ toast("No hay actividades para exportar","err"); return; }
+  bloquear("Preparando ZIP…");
+  try{
+    const zip = new JSZip();
+    const usados = {};
+    let incluidos = 0;
+    for(let i=0;i<lista.length;i++){
+      const a = lista[i];
+      bloquearMsg(`Generando actividad ${i+1} de ${lista.length}…`);
+      try{
+        const r = await construirActividadPDF(a.id);
+        if(!r) continue;
+        const carpeta = nombreTipoAct(a.tipo_id) || 'Otros';
+        const clave = carpeta+'/'+r.nombreBase;
+        let base = r.nombreBase;
+        if(usados[clave]!=null){ usados[clave]++; base = base+'_'+usados[clave]; } else usados[clave]=0;
+        zip.folder(carpeta).file(base+'.pdf', r.doc.output('arraybuffer'));
+        incluidos++;
+      }catch(e){ console.warn('actividad zip', a.id, e); }
+    }
+    if(!incluidos){ toast("No se pudo generar ningún PDF","err"); return; }
+    bloquearMsg("Comprimiendo ZIP…");
+    const blob = await zip.generateAsync({ type:'blob', compression:'DEFLATE' });
+    const url = URL.createObjectURL(blob);
+    const safe = (etiquetaFiltro||'actividades').replace(/[^\w\sáéíóúñ-]/gi,'').trim().replace(/\s+/g,'_').slice(0,40);
+    const linkEl = document.createElement('a'); linkEl.href=url;
+    linkEl.download = 'Actividades_'+safe+'.zip';
+    document.body.appendChild(linkEl); linkEl.click(); linkEl.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 6000);
+    toast(`ZIP generado con ${incluidos} actividad(es)`,"ok");
+  }catch(e){ console.error(e); toast("No se pudo generar el ZIP: "+(e.message||''),"err"); }
+  finally{ desbloquear(); }
+}
+
+/* ============================================================
    MÓDULO AUDITORÍA · Bitácora de movimientos (solo administradores)
    Los registros los crean SOLOS los triggers de la base de datos
    (CAMBIOS_SQL_25.sql) en cuanto pasa algo en dot_entregas/dtl_entregas/
@@ -14016,9 +15719,9 @@ async function toggleActivoPerfil(id, activo){
 
 async function abrirPermisosUsuario(perfilId){
   bloquear("Cargando permisos…");
-  let perfil, modulos, contratosMarcados, catalogoMarcados, trabajadoresDotMarcados, todosLosContratos, entidadesMarcadas, trabajadoresDtlMarcados, todasLasEntidades, contratosInspMarcados, todosLosContratosInsp;
+  let perfil, modulos, contratosMarcados, catalogoMarcados, trabajadoresDotMarcados, todosLosContratos, entidadesMarcadas, trabajadoresDtlMarcados, todasLasEntidades, contratosInspMarcados, todosLosContratosInsp, contratosActMarcados, todosLosContratosAct;
   try{
-    const [{ data:p }, { data:pm }, { data:pc }, { data:cs }, { data:pe }, { data:es }, { data:pi }, { data:ci }] = await Promise.all([
+    const [{ data:p }, { data:pm }, { data:pc }, { data:cs }, { data:pe }, { data:es }, { data:pi }, { data:ci }, { data:pa }, { data:ca }] = await Promise.all([
       sb.from("acc_perfiles").select("id,email,nombre,es_admin,activo,rol").eq("id",perfilId).maybeSingle(),
       sb.from("acc_perfil_modulos").select("modulo").eq("perfil_id",perfilId),
       sb.from("acc_perfil_contratos").select("contrato_id,puede_agregar_catalogo,puede_agregar_trabajadores").eq("perfil_id",perfilId),
@@ -14026,7 +15729,9 @@ async function abrirPermisosUsuario(perfilId){
       sb.from("acc_perfil_entidades").select("entidad_id,puede_agregar_trabajadores").eq("perfil_id",perfilId),
       sb.from("dtl_entidades").select("id,nombre").order("nombre",{ascending:true}),
       sb.from("acc_perfil_contratos_insp").select("contrato_id").eq("perfil_id",perfilId),
-      sb.from("insp_contratos").select("id,nombre").order("nombre",{ascending:true})
+      sb.from("insp_contratos").select("id,nombre").order("nombre",{ascending:true}),
+      sb.from("acc_perfil_contratos_act").select("contrato_id").eq("perfil_id",perfilId),
+      sb.from("act_contratos").select("id,nombre").order("nombre",{ascending:true})
     ]);
     perfil = p; modulos = (pm||[]).map(x=>x.modulo); contratosMarcados = (pc||[]).map(x=>x.contrato_id); todosLosContratos = cs||[];
     catalogoMarcados = (pc||[]).filter(x=>x.puede_agregar_catalogo).map(x=>x.contrato_id);
@@ -14034,6 +15739,7 @@ async function abrirPermisosUsuario(perfilId){
     entidadesMarcadas = (pe||[]).map(x=>x.entidad_id); todasLasEntidades = es||[];
     trabajadoresDtlMarcados = (pe||[]).filter(x=>x.puede_agregar_trabajadores).map(x=>x.entidad_id);
     contratosInspMarcados = (pi||[]).map(x=>x.contrato_id); todosLosContratosInsp = ci||[];
+    contratosActMarcados = (pa||[]).map(x=>x.contrato_id); todosLosContratosAct = ca||[];
   } finally { desbloquear(); }
   if(!perfil){ toast("Usuario no encontrado","err"); return; }
 
@@ -14087,6 +15793,13 @@ async function abrirPermisosUsuario(perfilId){
             ? todosLosContratosInsp.map(c=>`<label class="chk" style="padding:3px 0"><input type="checkbox" data-pf-contratoinsp="${c.id}" ${contratosInspMarcados.includes(c.id)?'checked':''}> ${esc(c.nombre)}</label>`).join('')
             : '<p class="muted-sm">Aún no hay contratos creados.</p>'}
         </div>
+        <label class="chk" style="margin-top:8px"><input type="checkbox" data-pf-mod="actividades" ${modulos.includes('actividades')?'checked':''}> Programación de actividades</label>
+        <div id="permisosActividades" style="margin-top:10px;padding:12px 14px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;${modulos.includes('actividades')?'':'display:none'}">
+          <div class="sec-bar" style="margin:0 0 8px"><h2 style="font-size:13px">Contratos permitidos (Actividades)</h2>${todosLosContratosAct.length?`<button type="button" class="btn btn-ghost btn-sm" id="btnPfContratoActTodos">Marcar todos</button>`:''}</div>
+          ${todosLosContratosAct.length
+            ? todosLosContratosAct.map(c=>`<label class="chk" style="padding:3px 0"><input type="checkbox" data-pf-contratoact="${c.id}" ${contratosActMarcados.includes(c.id)?'checked':''}> ${esc(c.nombre)}</label>`).join('')
+            : '<p class="muted-sm">Aún no hay contratos creados.</p>'}
+        </div>
       </div>
     </div>
     <div class="modal-foot">
@@ -14126,6 +15839,11 @@ async function abrirPermisosUsuario(perfilId){
       const nombres = ids.map(id=>todosLosContratosInsp.find(x=>x.id===id)?.nombre).filter(Boolean);
       partes.push(`Inspecciones (${nombres.length?esc(nombres.join(', ')):'<span style="color:var(--danger)">ningún contrato marcado</span>'})`);
     }
+    if(modulosSel.includes('actividades')){
+      const ids = Array.from(document.querySelectorAll('[data-pf-contratoact]:checked')).map(x=>x.dataset.pfContratoact);
+      const nombres = ids.map(id=>todosLosContratosAct.find(x=>x.id===id)?.nombre).filter(Boolean);
+      partes.push(`Actividades (${nombres.length?esc(nombres.join(', ')):'<span style="color:var(--danger)">ningún contrato marcado</span>'})`);
+    }
     const rol = document.querySelector('input[name="pfRol"]:checked')?.value || 'editor';
     const rolTxt = rol==='visualizador' ? 'solo puede ver (Visualizador)' : 'puede crear/editar lo suyo (Editor)';
     el.innerHTML = `Podrá entrar a: <b>${partes.join(' · ')}</b>. Rol: ${rolTxt}.`;
@@ -14142,6 +15860,8 @@ async function abrirPermisosUsuario(perfilId){
   if(chkDtl) chkDtl.onchange = (e)=>{ document.getElementById('permisosDotacionLegal').style.display = e.target.checked ? 'block' : 'none'; };
   const chkInsp = document.querySelector('[data-pf-mod="inspecciones"]');
   if(chkInsp) chkInsp.onchange = (e)=>{ document.getElementById('permisosInspecciones').style.display = e.target.checked ? 'block' : 'none'; };
+  const chkAct = document.querySelector('[data-pf-mod="actividades"]');
+  if(chkAct) chkAct.onchange = (e)=>{ document.getElementById('permisosActividades').style.display = e.target.checked ? 'block' : 'none'; };
   /* "Marcar todos"/"Quitar todos": evita tener que darle clic contrato por contrato
      cuando alguien necesita ver, por ejemplo, TODA la Dotación de todos los contratos. */
   // Los sub-checkboxes ("puede agregar al catálogo"/"puede agregar trabajadores nuevos")
@@ -14188,8 +15908,15 @@ async function abrirPermisosUsuario(perfilId){
     btnPfContratoInspTodos.textContent = marcar ? 'Quitar todos' : 'Marcar todos';
     actualizarResumenAccesoUI();
   };
+  const btnPfContratoActTodos = document.getElementById('btnPfContratoActTodos');
+  if(btnPfContratoActTodos) btnPfContratoActTodos.onclick = ()=>{
+    const marcar = btnPfContratoActTodos.textContent.trim()==='Marcar todos';
+    document.querySelectorAll('[data-pf-contratoact]').forEach(chk=> chk.checked = marcar);
+    btnPfContratoActTodos.textContent = marcar ? 'Quitar todos' : 'Marcar todos';
+    actualizarResumenAccesoUI();
+  };
   document.querySelectorAll('input[name="pfRol"]').forEach(r=> r.addEventListener('change', actualizarResumenAccesoUI));
-  document.querySelectorAll('[data-pf-mod],[data-pf-contrato],[data-pf-entidad],[data-pf-contratoinsp]').forEach(chk=>{
+  document.querySelectorAll('[data-pf-mod],[data-pf-contrato],[data-pf-entidad],[data-pf-contratoinsp],[data-pf-contratoact]').forEach(chk=>{
     chk.addEventListener('change', actualizarResumenAccesoUI);
   });
   document.getElementById('btnGuardarPermisos').onclick = ()=> guardarPermisosUsuario(perfilId);
@@ -14204,6 +15931,7 @@ async function guardarPermisosUsuario(perfilId){
   const entidadesMarcadas = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-entidad]:checked')).map(el=>el.dataset.pfEntidad);
   const trabajadoresDtlMarcados = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-entidad-trabajadores]:checked')).map(el=>el.dataset.pfEntidadTrabajadores);
   const contratosInspMarcados = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-contratoinsp]:checked')).map(el=>el.dataset.pfContratoinsp);
+  const contratosActMarcados = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-contratoact]:checked')).map(el=>el.dataset.pfContratoact);
   const rolSeleccionado = document.querySelector('input[name="pfRol"]:checked');
   const rol = rolSeleccionado ? rolSeleccionado.value : 'editor';
   const nombre = document.getElementById('pfNombre').value.trim();
@@ -14237,6 +15965,11 @@ async function guardarPermisosUsuario(perfilId){
       const { error:e5 } = await sb.from("acc_perfil_contratos_insp").insert(contratosInspMarcados.map(c=>({perfil_id:perfilId, contrato_id:c})));
       if(e5){ toast("Se guardó parcialmente, error en contratos: "+e5.message,"err"); }
     }
+    await sb.from("acc_perfil_contratos_act").delete().eq("perfil_id", perfilId);
+    if(contratosActMarcados.length){
+      const { error:e6 } = await sb.from("acc_perfil_contratos_act").insert(contratosActMarcados.map(c=>({perfil_id:perfilId, contrato_id:c})));
+      if(e6){ toast("Se guardó parcialmente, error en contratos: "+e6.message,"err"); }
+    }
     toast("Permisos actualizados","ok");
     closeModal();
     if(perfilId === MIPERFIL.uid){ await cargarMiPerfil(); }   // si te editaste a ti mismo, refresca tus propios permisos
@@ -14266,7 +15999,7 @@ sb.auth.onAuthStateChange((event)=>{
     // Igual que en "Salir" (wireLogout): si la sesión se cerró sola (ej. token expirado) en vez
     // de por el botón, hay que limpiar MIPERFIL/STATE aquí también — si no, quedan con los datos
     // del usuario anterior y el siguiente que inicie sesión en esta misma pestaña los hereda.
-    MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], entidadesDtl:[], contratosInsp:[], nombre:"", uid:null };
+    MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], catalogoDot:[], trabajadoresDot:[], entidadesDtl:[], trabajadoresDtl:[], contratosInsp:[], contratosAct:[], nombre:"", uid:null };
     PERFILES_NOMBRE = {}; PERFILES_CORREO = {};
     STATE.listas = []; STATE.userEmail = "";
     renderLogin();
