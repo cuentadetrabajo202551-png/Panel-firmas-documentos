@@ -11209,6 +11209,7 @@ function preopEnlaceRowHTML(en){
     <h3>${esc(titulo)}</h3>
     <div class="meta">
       <div>${I.cal}<span>Enlace creado ${fmtDate((en.creado_en||'').slice(0,10))}</span></div>
+      ${en.pdf_codigo && String(en.pdf_codigo).trim() ? `<div>${I.tag}<span>${esc(en.pdf_codigo)}${en.pdf_version?' · v'+esc(en.pdf_version):''}${en.pdf_fecha_creacion?' · '+fmtDate(en.pdf_fecha_creacion):''}</span></div>` : ''}
       ${estadoBancoCard==='ok' ? `<div>${I.firma}<span>Firma guardada asignada${nombresFirmaBancoCard.length?` (${nombresFirmaBancoCard.map(esc).join(', ')})`:''}</span></div>` : ''}
       ${estadoBancoCard==='falta' ? `<div>${I.warn}<span style="color:var(--danger);font-weight:700">Falta asignar firma guardada</span></div>` : ''}
     </div>
