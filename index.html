@@ -505,13 +505,30 @@ table.dt tr:hover td{background:#fafbfe}
 .herr-foto-vacia{display:flex;align-items:center;justify-content:center;background:var(--brand-soft);color:var(--brand)}
 .herr-foto-vacia svg{width:44px;height:44px}
 
-/* ---------- Bloque de preoperacional en la tarjeta de herramienta — AISLADO a propósito de
-   .card-actions/.grid-herr (que ya tienen su propia historia de overflow resuelta con
-   nowrap intencional, sección 7.159/7.160 de MEMORY.md). Su propio flex-wrap no interactúa
-   nunca con esas reglas. ---------- */
-.herr-preop-block{border-top:1px dashed var(--line-2);padding-top:12px;margin-top:10px;display:flex;flex-direction:column;gap:8px}
-.herr-preop-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.herr-preop-actions{display:flex;gap:7px;flex-wrap:wrap;row-gap:6px}
+/* ---------- Herramientas y equipos: fila horizontal de 2 columnas (identidad de la
+   herramienta a la izquierda, preoperacional a la derecha) — pedido explícito del usuario
+   mostrando una imagen de referencia. El lado derecho reusa las reglas .lcard-top/h3/.meta/
+   .lcard-foot/.attn/.card-actions de siempre (siguen aplicando por descendencia aunque haya
+   un nivel extra de anidado) — solo hace falta el layout de la fila en sí y los contenedores
+   nuevos. Nota histórica (sección 7.159/7.160 de MEMORY.md): .card-actions es nowrap a
+   propósito y .grid-herr resolvía su overflow haciendo wrap en .lcard-foot — acá no aplica
+   porque la columna derecha es mucho más ancha (ya no hay que apretar 5+ íconos en 260px). */
+.herr-lista{display:flex;flex-direction:column;gap:16px}
+.herr-row{flex-direction:row;padding:0;gap:0;overflow:hidden}
+.herr-row-id{width:230px;flex:none;padding:20px;display:flex;flex-direction:column;gap:14px;border-right:1px solid var(--line-2);cursor:pointer}
+.herr-row-id .card-actions{gap:5px;flex-wrap:wrap}
+.herr-row-id .icon-btn{width:30px;height:30px;border-radius:8px}
+.herr-row-id .icon-btn svg{width:15px;height:15px}
+.herr-row-foto{width:100%;height:120px;border-radius:12px;background-size:cover;background-position:center;background-color:var(--brand-soft)}
+.herr-row-preop{flex:1;min-width:0;padding:20px;display:flex;flex-direction:column;gap:18px}
+.herr-preop-item{display:flex;flex-direction:column;gap:12px}
+.herr-preop-item + .herr-preop-item{padding-top:18px;border-top:1px solid var(--line-2)}
+.herr-preop-item .card-actions{flex-wrap:wrap;row-gap:6px}
+.herr-preop-vacio{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+@media(max-width:760px){
+  .herr-row{flex-direction:column}
+  .herr-row-id{width:100%;border-right:none;border-bottom:1px solid var(--line-2)}
+}
 .preop-huerfanos-box{border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:16px}
 .preop-huerfanos-box summary{cursor:pointer;font-weight:700;font-size:13.5px}
 
@@ -10975,7 +10992,7 @@ async function renderInspeccionesAdmin(modo){
           <div class="subtab-list">
             ${!enTodos?`<button type="button" class="subtab-item ${tabInspActiva==='insp'?'active':''}" data-subtab="insp">Inspecciones</button>
             <button type="button" class="subtab-item ${tabInspActiva==='inventario'?'active':''}" data-subtab="inventario">Inventario</button>
-            <button type="button" class="subtab-item ${tabInspActiva==='herramientas'?'active':''}" data-subtab="herramientas">Herramientas y equipos</button>`:''}
+            <button type="button" class="subtab-item ${tabInspActiva==='herramientas'?'active':''}" data-subtab="herramientas">Preoperacionales</button>`:''}
             ${MIPERFIL.esAdmin?`<button type="button" class="subtab-item ${tabInspActiva==='formatos'?'active':''}" data-subtab="formatos">Formatos</button>`:''}
           </div>
           <div class="subtab-content">
@@ -11123,37 +11140,64 @@ function renderEnlacesInspPorTipo(tipo, hostId, soloSinHerramienta){
 /* ---------- Herramientas y equipos: tarjetas grandes con foto (mismo tamaño/estilo que
    los enlaces de Inspecciones — grid grid-insp + .lcard) y ficha técnica completa ---------- */
 /* ---------- Preoperacional integrado en la tarjeta de herramienta (reemplaza la antigua
-   pestaña "Inspección preoperacional") — ver plan del cambio. Una herramienta puede tener 0,
-   1 o varios insp_enlaces de tipo='preoperacional' colgando de su herramienta_id (ej. un
-   checklist básico y uno reforzado sobre el mismo arnés) — se soporta lista, no un casillero
-   único, para no esconder datos reales. ---------- */
+   pestaña "Inspección preoperacional") — fila horizontal de 2 columnas (identidad de la
+   herramienta a la izquierda, preoperacional a la derecha), pedido explícito del usuario con
+   una imagen de referencia tras ver la primera versión (tarjetas cuadradas apiladas, que no
+   le gustaron). El lado derecho reusa el contenido EXACTO de la tarjeta vieja de
+   renderEnlacesInspPorTipo (mismos badges/meta/pie con TODOS los íconos en línea, nada
+   escondido detrás de "Ver detalle") — solo se le quitó su propio wrapper .lcard porque ahora
+   vive anidado dentro de la fila de su herramienta. Una herramienta puede tener 0, 1 o varios
+   insp_enlaces de tipo='preoperacional' (ej. checklist básico + reforzado) — se soporta
+   lista, no un casillero único, para no esconder datos reales. ---------- */
+function preopEnlaceRowHTML(en){
+  const firmantesEn = Array.isArray(en.firmantes) ? en.firmantes : FIRMANTES_DEFAULT_INSP;
+  const bancoSlotsCard = firmantesEn.filter(f=>f.origen==='banco');
+  const bancoAsignadosCard = bancoSlotsCard.filter(f=> (en.firmantes_banco||{})[f.id] || (f.id==='responsable' && en.predeterminado_id));
+  const estadoBancoCard = !bancoSlotsCard.length ? null : (bancoAsignadosCard.length===bancoSlotsCard.length ? 'ok' : 'falta');
+  const n = INSPECCIONES.inspecciones.filter(i=>i.enlace_id===en.id).length;
+  const titulo = en.nombre || en.formato_nombre || 'Formulario';
+  return `<div class="herr-preop-item">
+    <div class="lcard-top">
+      <span class="tipo">${etiquetaTipoInsp('preoperacional')}</span>
+      <span class="badge ${en.activo?'activa':'cerrada'}"><span class="dot"></span>${en.activo?'Activo':'Inactivo'}</span>
+    </div>
+    <h3>${esc(titulo)}</h3>
+    <div class="meta">
+      <div>${I.cal}<span>Enlace creado ${fmtDate((en.creado_en||'').slice(0,10))}</span></div>
+      ${estadoBancoCard==='ok' ? `<div>${I.firma}<span>Firma guardada asignada</span></div>` : ''}
+      ${estadoBancoCard==='falta' ? `<div>${I.warn}<span style="color:var(--danger);font-weight:700">Falta asignar firma guardada</span></div>` : ''}
+    </div>
+    <div class="lcard-foot">
+      <div class="attn" title="${n} registro${n===1?'':'s'} guardado${n===1?'':'s'}"><span class="num">${n}</span></div>
+      <div class="card-actions">
+        <button class="icon-btn" title="${en.activo?'Registrar aquí':'Enlace desactivado'}" data-eit="registrar" data-id="${en.id}" ${en.activo?'':'disabled'}>${I.plus}</button>
+        <button class="icon-btn" title="Ver detalle" data-eit="ver" data-id="${en.id}">${I.eye}</button>
+        <button class="icon-btn" title="Copiar enlace" data-eit="link" data-id="${en.id}">${I.link}</button>
+        <button class="icon-btn" title="Compartir QR" data-eit="qr" data-id="${en.id}">${I.qr}</button>
+        ${MIPERFIL.esAdmin?`<button class="icon-btn" title="Editar nombre" data-eit="nombre" data-id="${en.id}">${I.tag}</button>
+        <button class="icon-btn" title="Editar" data-eit="editar" data-id="${en.id}">${I.pen}</button>
+        <button class="icon-btn" title="Cambiar herramienta" data-eit="herramienta" data-id="${en.id}">${I.catalogo}</button>`:''}
+        ${puedeEscribir() && firmantesEn.length?`<button class="icon-btn" title="Firmantes" data-eit="firma" data-id="${en.id}">${I.firma}</button>`:''}
+        ${MIPERFIL.esAdmin?`<button class="icon-btn" title="${en.activo?'Desactivar':'Activar'} enlace" data-eit="toggle" data-id="${en.id}">${en.activo?I.lock:I.check}</button>
+        <button class="icon-btn danger" title="Eliminar enlace" data-eit="eliminar" data-id="${en.id}">${I.trash}</button>`:''}
+      </div>
+    </div>
+  </div>`;
+}
 function preopHerramientaHTML(h, preopsPorHerramienta){
   const preops = preopsPorHerramienta[h.id] || [];
+  const botonNuevo = puedeEscribir()?`<button class="btn btn-ghost btn-sm" data-herr-preop-crear="${h.id}" style="align-self:flex-start">${I.plus} ${preops.length?'Agregar otro':'Configurar'}</button>`:'';
   if(!preops.length){
-    return `<div class="herr-preop-block">
+    return `<div class="herr-preop-vacio">
       <span class="muted-sm">${etiquetaTipoInsp('preoperacional')}: no configurado</span>
-      ${puedeEscribir()?`<button class="btn btn-ghost btn-sm" data-herr-preop-crear="${h.id}">${I.plus} Configurar</button>`:''}
+      ${botonNuevo}
     </div>`;
   }
-  return `<div class="herr-preop-block">
-    <div class="muted-sm">${etiquetaTipoInsp('preoperacional')}${preops.length>1?` · ${preops.length}`:''}</div>
-    ${preops.map(en=>`
-      <div class="herr-preop-row">
-        ${preops.length>1?`<span>${esc(en.nombre||en.formato_nombre||'Formulario')}</span>`:''}
-        <span class="badge ${en.activo?'activa':'cerrada'}"><span class="dot"></span>${en.activo?'Activo':'Inactivo'}</span>
-        <div class="herr-preop-actions">
-          <button class="icon-btn" title="${en.activo?'Registrar aquí':'Enlace desactivado'}" data-herr-preop="registrar" data-id="${en.id}" ${en.activo?'':'disabled'}>${I.plus}</button>
-          <button class="icon-btn" title="Ver historial" data-herr-preop="ver" data-id="${en.id}">${I.eye}</button>
-          <button class="icon-btn" title="Copiar enlace" data-herr-preop="link" data-id="${en.id}">${I.link}</button>
-          <button class="icon-btn" title="Compartir QR" data-herr-preop="qr" data-id="${en.id}">${I.qr}</button>
-        </div>
-      </div>`).join('')}
-    ${puedeEscribir()?`<button class="btn btn-ghost btn-sm" data-herr-preop-crear="${h.id}">${I.plus} Agregar otro</button>`:''}
-  </div>`;
+  return preops.map(preopEnlaceRowHTML).join('') + botonNuevo;
 }
 function renderHerramientasInspGrid(){
   const host = document.getElementById('herramientasInspGrid'); if(!host) return;
-  const lista = INSPECCIONES.herramientas;
+  const lista = [...INSPECCIONES.herramientas].sort((a,b)=> (a.nombre||'').localeCompare(b.nombre||'', 'es', {sensitivity:'base'}));
   const enlacesPreop = enlacesDelContrato().filter(e=>e.tipo==='preoperacional');
   const huerfanos = enlacesPreop.filter(e=>!e.herramienta_id);
   const preopsPorHerramienta = {};
@@ -11174,30 +11218,32 @@ function renderHerramientasInspGrid(){
     if(huerfanos.length) renderEnlacesInspPorTipo('preoperacional', 'preopHuerfanosInsp', true);
     return;
   }
-  host.innerHTML = bloqueHuerfanos + '<div class="grid grid-insp grid-herr">' + lista.map(h=>{
+  host.innerHTML = bloqueHuerfanos + '<div class="herr-lista">' + lista.map(h=>{
     const sub = [h.fabricante, h.modelo].filter(Boolean).join(' · ');
     return `
-      <div class="lcard" data-herr-card="${h.id}" style="cursor:pointer">
-        ${h.foto ? `<div class="herr-foto" style="background-image:url('${h.foto}')"></div>` : `<div class="herr-foto herr-foto-vacia">${I.catalogo||I.box}</div>`}
-        <div class="lcard-top">
-          <span class="badge ${h.activo?'activa':'cerrada'}"><span class="dot"></span>${h.activo?'Activa':'Inactiva'}</span>
-        </div>
-        <h3>${esc(h.nombre)}</h3>
-        <div class="meta">
-          ${sub ? `<div>${I.catalogo}<span>${esc(sub)}</span></div>` : ''}
-          ${h.ubicacion ? `<div>${I.pin}<span>${esc(h.ubicacion)}</span></div>` : ''}
-          ${h.codigo ? `<div>${I.tag}<span>${esc(h.codigo)}</span></div>` : ''}
-        </div>
-        ${preopHerramientaHTML(h, preopsPorHerramienta)}
-        <div class="lcard-foot">
-          <div class="card-actions">
-            <button class="icon-btn" title="Ver hoja de vida" data-herr="hv" data-id="${h.id}">${I.doc}</button>
-            <button class="icon-btn" title="Gestionar mantenimiento" data-herr="mant" data-id="${h.id}">${I.gear}</button>
-            ${puedeEscribir()?`<button class="icon-btn" title="Editar" data-herr="editar" data-id="${h.id}">${I.pen}</button>`:''}
-            ${MIPERFIL.esAdmin?`<button class="icon-btn" title="${h.activo?'Desactivar':'Activar'}" data-herr="toggle" data-id="${h.id}">${h.activo?I.lock:I.check}</button>
-            <button class="icon-btn danger" title="Eliminar" data-herr="eliminar" data-id="${h.id}">${I.trash}</button>`:''}
+      <div class="lcard herr-row">
+        <div class="herr-row-id" data-herr-card="${h.id}">
+          ${h.foto ? `<div class="herr-row-foto" style="background-image:url('${h.foto}')"></div>` : `<div class="herr-row-foto herr-foto-vacia">${I.catalogo||I.box}</div>`}
+          <div class="lcard-top">
+            <span class="badge ${h.activo?'activa':'cerrada'}"><span class="dot"></span>${h.activo?'Activa':'Inactiva'}</span>
+          </div>
+          <h3>${esc(h.nombre)}</h3>
+          <div class="meta">
+            ${sub ? `<div>${I.catalogo}<span>${esc(sub)}</span></div>` : ''}
+            ${h.ubicacion ? `<div>${I.pin}<span>${esc(h.ubicacion)}</span></div>` : ''}
+            ${h.codigo ? `<div>${I.tag}<span>${esc(h.codigo)}</span></div>` : ''}
+          </div>
+          <div class="lcard-foot">
+            <div class="card-actions">
+              <button class="icon-btn" title="Ver hoja de vida" data-herr="hv" data-id="${h.id}">${I.doc}</button>
+              <button class="icon-btn" title="Gestionar mantenimiento" data-herr="mant" data-id="${h.id}">${I.gear}</button>
+              ${puedeEscribir()?`<button class="icon-btn" title="Editar" data-herr="editar" data-id="${h.id}">${I.pen}</button>`:''}
+              ${MIPERFIL.esAdmin?`<button class="icon-btn" title="${h.activo?'Desactivar':'Activar'}" data-herr="toggle" data-id="${h.id}">${h.activo?I.lock:I.check}</button>
+              <button class="icon-btn danger" title="Eliminar" data-herr="eliminar" data-id="${h.id}">${I.trash}</button>`:''}
+            </div>
           </div>
         </div>
+        <div class="herr-row-preop">${preopHerramientaHTML(h, preopsPorHerramienta)}</div>
       </div>`;
   }).join('') + '</div>';
 
@@ -11217,14 +11263,20 @@ function renderHerramientasInspGrid(){
       else if(act==='eliminar') eliminarHerramientaInsp(id);
     };
   });
-  host.querySelectorAll('[data-herr-preop]').forEach(b=>{
+  host.querySelectorAll('[data-eit]').forEach(b=>{
     b.onclick = (e)=>{
       e.stopPropagation();
-      const id = b.dataset.id, act = b.dataset.herrPreop;
+      const id = b.dataset.id, act = b.dataset.eit;
       if(act==='registrar') window.open(linkInspeccion(id), '_blank');
-      else if(act==='ver') abrirDetalleEnlaceInsp(id, true);
+      else if(act==='ver') abrirDetalleEnlaceInsp(id);
       else if(act==='link') copyText(linkInspeccion(id), "Enlace de inspección copiado");
       else if(act==='qr') mostrarQR(linkInspeccion(id), "Enlace de inspección");
+      else if(act==='nombre') renombrarEnlaceInsp(id);
+      else if(act==='editar') location.hash = "#/inspecciones/enlace/"+id+"/editar";
+      else if(act==='herramienta') cambiarHerramientaEnlaceInsp(id);
+      else if(act==='firma') cambiarFirmaEnlaceInsp(id);
+      else if(act==='toggle') toggleActivoEnlaceInsp(id);
+      else if(act==='eliminar') eliminarEnlaceInsp(id);
     };
   });
   host.querySelectorAll('[data-herr-preop-crear]').forEach(b=>{
@@ -11727,43 +11779,14 @@ function cambiarFirmaEnlaceInsp(enlaceId){
 }
 
 /* ---------- Detalle de un enlace: lista de inspecciones hechas a través de él ---------- */
-async function abrirDetalleEnlaceInsp(enlaceId, mostrarGestion){
+async function abrirDetalleEnlaceInsp(enlaceId){
   const en = INSPECCIONES.enlaces.find(x=>x.id===enlaceId);
-  // mostrarGestion: true SOLO cuando se llama desde la tarjeta de una herramienta (Fase
-  // "Herramientas y equipos") — ahí "Ver detalle" es el único camino a las acciones
-  // administrativas del enlace, porque ya no vive en su propia pestaña con esos botones al
-  // lado. Se preserva el gate exacto de cada botón (sección 7.181 de MEMORY.md): 5 de los 6
-  // son MIPERFIL.esAdmin, "Firmantes" es puedeEscribir().
-  const firmantesEn = Array.isArray(en?.firmantes) ? en.firmantes : FIRMANTES_DEFAULT_INSP;
   openModal(`<div class="modal lg">
     <div class="modal-head"><div><h2>${esc(en?.nombre || en?.formato_nombre || 'Enlace')}</h2><p>${esc(en?.formato_nombre||'')}</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body" id="detalleEnlaceInspBody"><div class="empty"><h3>Cargando…</h3></div></div>
-    <div class="modal-foot">
-      <button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
-      ${mostrarGestion ? `
-        ${MIPERFIL.esAdmin?`<button class="icon-btn" title="Editar nombre" data-deit-foot="nombre">${I.tag}</button>
-        <button class="icon-btn" title="Editar" data-deit-foot="editar">${I.pen}</button>
-        <button class="icon-btn" title="Cambiar herramienta" data-deit-foot="herramienta">${I.catalogo}</button>`:''}
-        ${puedeEscribir() && firmantesEn.length?`<button class="icon-btn" title="Firmantes" data-deit-foot="firma">${I.firma}</button>`:''}
-        ${MIPERFIL.esAdmin?`<button class="icon-btn" title="${en?.activo?'Desactivar':'Activar'} enlace" data-deit-foot="toggle">${en?.activo?I.lock:I.check}</button>
-        <button class="icon-btn danger" title="Eliminar enlace" data-deit-foot="eliminar">${I.trash}</button>`:''}
-      ` : ''}
-    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
   </div>`);
-  if(mostrarGestion){
-    document.querySelectorAll('[data-deit-foot]').forEach(b=>{
-      b.onclick = ()=>{
-        const act = b.dataset.deitFoot;
-        if(act==='nombre') renombrarEnlaceInsp(enlaceId);
-        else if(act==='editar') location.hash = "#/inspecciones/enlace/"+enlaceId+"/editar";
-        else if(act==='herramienta') cambiarHerramientaEnlaceInsp(enlaceId);
-        else if(act==='firma') cambiarFirmaEnlaceInsp(enlaceId);
-        else if(act==='toggle') toggleActivoEnlaceInsp(enlaceId);
-        else if(act==='eliminar') eliminarEnlaceInsp(enlaceId);
-      };
-    });
-  }
   const host = document.getElementById('detalleEnlaceInspBody');
   const { data, error } = await sb.from("insp_inspecciones")
     .select("id,formato_nombre,inspector_nombre,responsable_nombre,creado_en,ip_address,dispositivo_ua")
@@ -15861,7 +15884,7 @@ async function renderConfiguracion(silent){
               </div>
               <div class="sec-bar"><h2>Inspecciones: catálogo de herramientas, preoperacional y hoja de vida</h2></div>
               <div style="margin-bottom:20px;padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
-                <p style="margin-bottom:8px">Cada contrato tiene su propio catálogo de herramientas/equipos (botón "Herramientas y equipos"). Al crear un enlace en "Inspecciones"/"Inventario" se le puede asociar una herramienta específica — así cada QR queda ligado a un equipo en particular.</p>
+                <p style="margin-bottom:8px">Cada contrato tiene su propio catálogo de herramientas/equipos (botón "Preoperacionales"). Al crear un enlace en "Inspecciones"/"Inventario" se le puede asociar una herramienta específica — así cada QR queda ligado a un equipo en particular.</p>
                 <p style="margin-bottom:8px">El <b>preoperacional</b> de cada herramienta se configura directo desde su propia tarjeta ahí mismo, en vez de una pestaña aparte: "Configurar" la primera vez (elige la plantilla de "Formatos" que aplica), y desde ahí "Registrar aquí"/"Ver historial"/"Copiar enlace"/"Compartir QR" quedan siempre a la mano. Se puede agregar más de un preoperacional a la misma herramienta con "Agregar otro" (ej. un checklist básico y uno reforzado).</p>
                 <p style="margin:0"><b>"Hoja de vida"</b> muestra, para la herramienta que elijas, todo lo que se le ha registrado (inspecciones y preoperacionales juntos, de más reciente a más antigua).</p>
               </div>
