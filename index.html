@@ -387,6 +387,10 @@ input[type="date"], input[type="time"]{background:#fff;color:var(--ink)}
 .act-chip{display:flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:3px 6px;border-radius:5px;background:var(--brand-soft);border-left:3px solid var(--brand);color:var(--ink);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;cursor:pointer}
 .act-chip-hora{opacity:.7;font-weight:800;flex:none}
 .act-chip-txt{overflow:hidden;text-overflow:ellipsis}
+.act-chip-check{flex:none;display:flex}
+.act-chip-check svg{width:11px;height:11px;stroke-width:3}
+.act-chip-check-ok{color:var(--green)}
+.act-chip-check-warn{color:#854f0b}
 .act-chip-mas{font-size:10.5px;font-weight:800;color:var(--brand-deep);cursor:pointer;padding:2px 4px}
 .cal-grid-semana{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}
 .cal-col-semana{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--card);min-height:220px}
@@ -14220,9 +14224,13 @@ function chipActividadHTML(a){
   const tipo = ACTIVIDADES.tipos.find(t=>t.id===a.tipo_id);
   const vencida = esActividadVencida(a);
   const color = vencida ? '#d63b50' : (tipo?.color || '#1d33c7');
-  return `<div class="act-chip" data-ir-actividad="${a.id}" title="${esc(nombreTipoAct(a.tipo_id))}${nombreSedeAct(a.sede_id)?' · '+esc(nombreSedeAct(a.sede_id)):''}" style="border-left-color:${esc(color)}">
+  const completada = a.estado==='ejecutada';
+  const conNovedades = a.estado==='ejecutada_con_novedades';
+  const tituloEstado = completada?' · Ejecutada':conNovedades?' · Ejecutada con novedades':'';
+  return `<div class="act-chip" data-ir-actividad="${a.id}" title="${esc(nombreTipoAct(a.tipo_id))}${nombreSedeAct(a.sede_id)?' · '+esc(nombreSedeAct(a.sede_id)):''}${tituloEstado}" style="border-left-color:${esc(color)}">
     ${a.hora_inicio_estimada?`<span class="act-chip-hora">${esc(a.hora_inicio_estimada.slice(0,5))}</span>`:''}
     <span class="act-chip-txt">${esc(nombreTipoAct(a.tipo_id))}</span>
+    ${completada?`<span class="act-chip-check act-chip-check-ok" title="Ejecutada">${I.check}</span>`:conNovedades?`<span class="act-chip-check act-chip-check-warn" title="Ejecutada con novedades">${I.check}</span>`:''}
   </div>`;
 }
 function renderActividadesCalendario(){
