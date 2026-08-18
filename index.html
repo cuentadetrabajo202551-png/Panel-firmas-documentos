@@ -2631,11 +2631,20 @@ function hayDropdownAbierto(){
   const el = document.activeElement;
   return !!(el && el.tagName === 'SELECT');
 }
+/* Reemplazar de golpe el HTML del panel (cientos de KB) justo cuando el usuario está
+   scrolleando o acaba de tocar/hacer clic algo se sentía como un salto/lag de milisegundos
+   (reportado 2026-08-18) — hayDropdownAbierto() ya cubría un <select> enfocado, pero no
+   scroll ni el instante de un clic. Ventana corta (500ms): si hubo actividad, este ciclo de
+   20s simplemente no refresca — el siguiente lo vuelve a intentar, no hace falta reprogramar. */
+let _ultimaActividadUI = 0;
+['scroll','pointerdown','touchstart'].forEach(ev=> window.addEventListener(ev, ()=>{ _ultimaActividadUI = Date.now(); }, {passive:true, capture:true}));
+function huboActividadReciente(){ return Date.now() - _ultimaActividadUI < 500; }
 let _docsTimer = null;
 function _tickDocs(){
   if(location.hash!=="#/docs"){ if(_docsTimer){ clearInterval(_docsTimer); _docsTimer=null; } return; }
   if(document.hidden) return;              // no refrescar en segundo plano
   if(hayDropdownAbierto()) return;
+  if(huboActividadReciente()) return;
   renderDocsAdmin(true);                   // refresco silencioso (sin reloj de arena)
 }
 /* Mismo patrón que _tickDocs, replicado para los otros 3 módulos (Asistencia,
@@ -2646,6 +2655,7 @@ function _tickAsis(){
   if(!(location.hash===""||location.hash==="#"||location.hash==="#/")){ if(_asisTimer){ clearInterval(_asisTimer); _asisTimer=null; } return; }
   if(document.hidden) return;
   if(hayDropdownAbierto()) return;
+  if(huboActividadReciente()) return;
   loadState().then(()=> renderAdmin(true));
 }
 let _dotTimer = null;
@@ -2653,6 +2663,7 @@ function _tickDot(){
   if(location.hash!=="#/dotacion"){ if(_dotTimer){ clearInterval(_dotTimer); _dotTimer=null; } return; }
   if(document.hidden) return;
   if(hayDropdownAbierto()) return;
+  if(huboActividadReciente()) return;
   renderDotacionAdmin(true);
 }
 let _dtlTimer = null;
@@ -2660,6 +2671,7 @@ function _tickDtl(){
   if(location.hash!=="#/dotacionlegal"){ if(_dtlTimer){ clearInterval(_dtlTimer); _dtlTimer=null; } return; }
   if(document.hidden) return;
   if(hayDropdownAbierto()) return;
+  if(huboActividadReciente()) return;
   renderDtlAdmin(true);
 }
 let _inspTimer = null;
@@ -2667,6 +2679,7 @@ function _tickInsp(){
   if(location.hash!=="#/inspecciones"){ if(_inspTimer){ clearInterval(_inspTimer); _inspTimer=null; } return; }
   if(document.hidden) return;
   if(hayDropdownAbierto()) return;
+  if(huboActividadReciente()) return;
   renderInspeccionesAdmin(true);
 }
 
@@ -2674,6 +2687,10 @@ async function renderDocsAdmin(silent){
   const scrollY = window.scrollY;
   if(silent){ await loadDocsState(); }
   else { bloquear("Cargando documentos…"); try{ await loadDocsState(); } finally{ desbloquear(); } }
+  // Mientras loadDocsState() esperaba la red, el usuario pudo haber navegado a otra pantalla
+  // (ej. "Editar plantilla"/"Nuevo documento") — no pisar #app con el panel si ya no está acá
+  // (mismo bug real de Inspecciones, sección 7.196 de MEMORY.md).
+  if(location.hash!=="#/docs"){ return; }
   const docs = DOCSTATE.documentos, firmas = DOCSTATE.firmantes, plantillas = DOCSTATE.plantillas;
   const hoy = hoyLocal();
   const creados    = docs.length;
@@ -4827,6 +4844,10 @@ async function renderDotacionAdmin(silent){
   const scrollY = window.scrollY;
   if(silent){ await loadDotacionState(); }
   else { bloquear("Cargando EPP…"); try{ await loadDotacionState(); } finally{ desbloquear(); } }
+  // Mientras loadDotacionState() esperaba la red, el usuario pudo haber navegado a otra
+  // pantalla (ej. la ficha de un trabajador) — no pisar #app con el panel si ya no está acá
+  // (mismo bug real de Inspecciones, sección 7.196 de MEMORY.md).
+  if(location.hash!=="#/dotacion"){ return; }
 
   if(!DOTACION.contratos.length){
     document.getElementById("app").innerHTML = MIPERFIL.esAdmin ? `${topbar('dotacion')}
@@ -7481,6 +7502,10 @@ async function renderDtlAdmin(silent){
   const scrollY = window.scrollY;
   if(silent){ await loadDtlState(); }
   else { bloquear("Cargando Dotación…"); try{ await loadDtlState(); } finally{ desbloquear(); } }
+  // Mientras loadDtlState() esperaba la red, el usuario pudo haber navegado a otra pantalla
+  // (ej. la ficha de un trabajador) — no pisar #app con el panel si ya no está acá (mismo
+  // bug real de Inspecciones, sección 7.196 de MEMORY.md).
+  if(location.hash!=="#/dotacionlegal"){ return; }
 
   if(!DTL.entidades.length){
     document.getElementById("app").innerHTML = MIPERFIL.esAdmin ? `${topbar('dotacionlegal')}
@@ -10915,6 +10940,12 @@ async function renderInspeccionesAdmin(modo){
   else if(modo){ await loadInspeccionesState(); }
   else { bloquear("Cargando Inspecciones…"); try{ await loadInspeccionesState(); } finally{ desbloquear(); } }
 
+  // Mientras loadInspeccionesState() esperaba la red, el usuario pudo haber navegado a otra
+  // pantalla (ej. "Editar formato"/"Editar enlace", u otro módulo) — si no se revisa esto acá,
+  // esta llamada vieja pisa #app con el panel apenas resuelve, aunque el hash ya haya cambiado
+  // (el hash queda bien, pero el contenido "se cierra solo" — bug real reportado 2026-08-18).
+  if(modo!=='norecarga' && location.hash!=="#/inspecciones"){ return; }
+
   if(!INSPECCIONES.contratos.length){
     document.getElementById("app").innerHTML = MIPERFIL.esAdmin ? `${topbar('inspecciones')}
       <div class="wrap"><div class="empty"><div class="ic">${I.box}</div>
@@ -11597,6 +11628,11 @@ function renderFormatosInspGrid(){
           <span class="badge ${act?'activa':'cerrada'}"><span class="dot"></span>${act?'Activo':'Inactivo'}</span>
         </div>
         <h3>${esc(f.nombre)}</h3>
+        <div class="meta">
+          ${f.pdf_codigo && String(f.pdf_codigo).trim()
+            ? `<div>${I.tag}<span>${esc(f.pdf_codigo)}${f.pdf_version?' · v'+esc(f.pdf_version):''}${f.pdf_fecha_creacion?' · '+fmtDate(f.pdf_fecha_creacion):''}</span></div>`
+            : `<div>${I.tag}<span class="muted-sm">Sin codificar</span></div>`}
+        </div>
         <div class="lcard-foot">
           <div class="attn">
             <span class="num">${n}</span>
