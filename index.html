@@ -296,7 +296,7 @@ input[type="date"], input[type="time"]{background:#fff;color:var(--ink)}
 .search-sm{flex:none!important;width:320px;max-width:calc(100vw - 40px)}
 /* Pestañas verticales dentro de un panel-section (lista de secciones a la izquierda,
    contenido de la seleccionada a la derecha) — para agrupar apartados relacionados
-   (ej. Inspecciones: preoperacional/inspección/hoja de vida/formatos) sin apilarlos
+   (ej. Inspecciones: inspección/inventario/herramientas/formatos) sin apilarlos
    todos como panel-section sueltos, y que escale bien si se agregan más a futuro. */
 .subtab-wrap{display:flex;gap:14px;align-items:flex-start}
 .subtab-list{display:flex;flex-direction:column;gap:6px;width:220px;flex:none}
@@ -504,6 +504,16 @@ table.dt tr:hover td{background:#fafbfe}
 .herr-foto{margin:-20px -20px 0 -20px;height:160px;background-size:contain;background-repeat:no-repeat;background-position:center;background-color:var(--brand-soft);border-radius:var(--radius) var(--radius) 0 0}
 .herr-foto-vacia{display:flex;align-items:center;justify-content:center;background:var(--brand-soft);color:var(--brand)}
 .herr-foto-vacia svg{width:44px;height:44px}
+
+/* ---------- Bloque de preoperacional en la tarjeta de herramienta — AISLADO a propósito de
+   .card-actions/.grid-herr (que ya tienen su propia historia de overflow resuelta con
+   nowrap intencional, sección 7.159/7.160 de MEMORY.md). Su propio flex-wrap no interactúa
+   nunca con esas reglas. ---------- */
+.herr-preop-block{border-top:1px dashed var(--line-2);padding-top:12px;margin-top:10px;display:flex;flex-direction:column;gap:8px}
+.herr-preop-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.herr-preop-actions{display:flex;gap:7px;flex-wrap:wrap;row-gap:6px}
+.preop-huerfanos-box{border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:16px}
+.preop-huerfanos-box summary{cursor:pointer;font-weight:700;font-size:13.5px}
 
 /* ---------- Public form ---------- */
 .pub-wrap{max-width:660px;margin:0 auto;padding:30px 20px 80px}
@@ -10914,14 +10924,17 @@ async function renderInspeccionesAdmin(modo){
   const inspecc = inspeccionesDelContrato();
   const mesActual = hoyLocal().slice(0,7);
   const inspeccMes = inspecc.filter(x=>(x.creado_en||'').slice(0,7)===mesActual).length;
-  // Qué pestaña (preop/insp/hv/formatos) mostrar activa — respeta la que el usuario ya
-  // había elegido (inspSubtabActiva) para que un refresco silencioso (cada 20s) no lo
-  // regrese siempre a la primera; solo se resetea si esa pestaña ya no aplica (ej. pasó
+  // Qué pestaña (insp/inventario/herramientas/formatos) mostrar activa — respeta la que el
+  // usuario ya había elegido (inspSubtabActiva) para que un refresco silencioso (cada 20s) no
+  // lo regrese siempre a la primera; solo se resetea si esa pestaña ya no aplica (ej. pasó
   // a "Todos los contratos", donde solo existe "Formatos").
   // "Formatos" quedó exclusivo de administradores (sección 7.181 de MEMORY.md) — un editor
   // nunca debe poder caer ahí, ni siquiera si "Todos los contratos" (que antes SOLO mostraba
   // Formatos) queda seleccionado desde antes.
-  const tabsDisponibles = (enTodos ? ['formatos'] : ['preop','insp','inventario','formatos','herramientas']).filter(t=> t!=='formatos' || MIPERFIL.esAdmin);
+  // "Inspección preoperacional" dejó de ser una pestaña propia — cada tarjeta de
+  // "Herramientas y equipos" trae su propia acción de preoperacional integrada (ver
+  // renderHerramientasInspGrid).
+  const tabsDisponibles = (enTodos ? ['formatos'] : ['insp','inventario','formatos','herramientas']).filter(t=> t!=='formatos' || MIPERFIL.esAdmin);
   const tabInspActiva = tabsDisponibles.includes(inspSubtabActiva) ? inspSubtabActiva : (tabsDisponibles[0] || '');
 
   document.getElementById("app").innerHTML = `
@@ -10960,17 +10973,13 @@ async function renderInspeccionesAdmin(modo){
       <div class="panel-section">
         <div class="subtab-wrap">
           <div class="subtab-list">
-            ${!enTodos?`<button type="button" class="subtab-item ${tabInspActiva==='preop'?'active':''}" data-subtab="preop">Inspección preoperacional</button>
-            <button type="button" class="subtab-item ${tabInspActiva==='insp'?'active':''}" data-subtab="insp">Inspecciones</button>
+            ${!enTodos?`<button type="button" class="subtab-item ${tabInspActiva==='insp'?'active':''}" data-subtab="insp">Inspecciones</button>
             <button type="button" class="subtab-item ${tabInspActiva==='inventario'?'active':''}" data-subtab="inventario">Inventario</button>
             <button type="button" class="subtab-item ${tabInspActiva==='herramientas'?'active':''}" data-subtab="herramientas">Herramientas y equipos</button>`:''}
             ${MIPERFIL.esAdmin?`<button type="button" class="subtab-item ${tabInspActiva==='formatos'?'active':''}" data-subtab="formatos">Formatos</button>`:''}
           </div>
           <div class="subtab-content">
             ${!enTodos?`
-            <div class="subtab-pane ${tabInspActiva==='preop'?'active':''}" data-pane="preop">
-              <div id="enlacesInspPreop"></div>
-            </div>
             <div class="subtab-pane ${tabInspActiva==='insp'?'active':''}" data-pane="insp">
               <div id="enlacesInspInsp"></div>
             </div>
@@ -11024,7 +11033,6 @@ async function renderInspeccionesAdmin(modo){
   const bfirmas = document.getElementById("btnFirmasInsp"); if(bfirmas) bfirmas.onclick = abrirPredeterminadosInsp;
   const bnh = document.getElementById("btnNuevaHerramientaInsp"); if(bnh) bnh.onclick = ()=> abrirFormHerramientaInsp(null);
   if(!enTodos){
-    renderEnlacesInspPorTipo('preoperacional', 'enlacesInspPreop');
     renderEnlacesInspPorTipo('inspeccion', 'enlacesInspInsp');
     renderEnlacesInspPorTipo('inventario', 'enlacesInspInventario');
     renderHerramientasInspGrid();
@@ -11035,10 +11043,14 @@ async function renderInspeccionesAdmin(modo){
 }
 
 /* ---------- Grillas de enlaces por tipo (preoperacional/inspección), y hoja de vida ---------- */
-function renderEnlacesInspPorTipo(tipo, hostId){
+function renderEnlacesInspPorTipo(tipo, hostId, soloSinHerramienta){
   const host = document.getElementById(hostId); if(!host) return;
-  const enlaces = enlacesDelContrato().filter(e=> e.tipo === tipo);
-  const botonNuevo = MIPERFIL.esAdmin ? `<button class="btn btn-ghost btn-sm" data-nuevo-enlace-tipo="${tipo}" style="margin-top:10px">${I.plus} Crear formulario</button>` : '';
+  const enlaces = enlacesDelContrato().filter(e=> e.tipo === tipo && (!soloSinHerramienta || !e.herramienta_id));
+  // soloSinHerramienta=true (usado para el bloque de "huérfanos" de Herramientas y equipos)
+  // suprime "Crear formulario" a propósito — de aquí en adelante, un preoperacional nuevo
+  // solo se crea desde la tarjeta de una herramienta específica (herramientaFija en
+  // abrirNuevoEnlaceInsp), para no seguir generando huérfanos nuevos.
+  const botonNuevo = (MIPERFIL.esAdmin && !soloSinHerramienta) ? `<button class="btn btn-ghost btn-sm" data-nuevo-enlace-tipo="${tipo}" style="margin-top:10px">${I.plus} Crear formulario</button>` : '';
   if(!enlaces.length){
     const copiaVacia = tipo==='preoperacional' ? 'Crea uno para que un trabajador registre el preoperacional de una herramienta.'
       : tipo==='inventario' ? 'Crea uno para registrar la revisión periódica de inventario de maquinaria/herramienta.'
@@ -11110,14 +11122,59 @@ function renderEnlacesInspPorTipo(tipo, hostId){
 
 /* ---------- Herramientas y equipos: tarjetas grandes con foto (mismo tamaño/estilo que
    los enlaces de Inspecciones — grid grid-insp + .lcard) y ficha técnica completa ---------- */
+/* ---------- Preoperacional integrado en la tarjeta de herramienta (reemplaza la antigua
+   pestaña "Inspección preoperacional") — ver plan del cambio. Una herramienta puede tener 0,
+   1 o varios insp_enlaces de tipo='preoperacional' colgando de su herramienta_id (ej. un
+   checklist básico y uno reforzado sobre el mismo arnés) — se soporta lista, no un casillero
+   único, para no esconder datos reales. ---------- */
+function preopHerramientaHTML(h, preopsPorHerramienta){
+  const preops = preopsPorHerramienta[h.id] || [];
+  if(!preops.length){
+    return `<div class="herr-preop-block">
+      <span class="muted-sm">${etiquetaTipoInsp('preoperacional')}: no configurado</span>
+      ${puedeEscribir()?`<button class="btn btn-ghost btn-sm" data-herr-preop-crear="${h.id}">${I.plus} Configurar</button>`:''}
+    </div>`;
+  }
+  return `<div class="herr-preop-block">
+    <div class="muted-sm">${etiquetaTipoInsp('preoperacional')}${preops.length>1?` · ${preops.length}`:''}</div>
+    ${preops.map(en=>`
+      <div class="herr-preop-row">
+        ${preops.length>1?`<span>${esc(en.nombre||en.formato_nombre||'Formulario')}</span>`:''}
+        <span class="badge ${en.activo?'activa':'cerrada'}"><span class="dot"></span>${en.activo?'Activo':'Inactivo'}</span>
+        <div class="herr-preop-actions">
+          <button class="icon-btn" title="${en.activo?'Registrar aquí':'Enlace desactivado'}" data-herr-preop="registrar" data-id="${en.id}" ${en.activo?'':'disabled'}>${I.plus}</button>
+          <button class="icon-btn" title="Ver historial" data-herr-preop="ver" data-id="${en.id}">${I.eye}</button>
+          <button class="icon-btn" title="Copiar enlace" data-herr-preop="link" data-id="${en.id}">${I.link}</button>
+          <button class="icon-btn" title="Compartir QR" data-herr-preop="qr" data-id="${en.id}">${I.qr}</button>
+        </div>
+      </div>`).join('')}
+    ${puedeEscribir()?`<button class="btn btn-ghost btn-sm" data-herr-preop-crear="${h.id}">${I.plus} Agregar otro</button>`:''}
+  </div>`;
+}
 function renderHerramientasInspGrid(){
   const host = document.getElementById('herramientasInspGrid'); if(!host) return;
   const lista = INSPECCIONES.herramientas;
+  const enlacesPreop = enlacesDelContrato().filter(e=>e.tipo==='preoperacional');
+  const huerfanos = enlacesPreop.filter(e=>!e.herramienta_id);
+  const preopsPorHerramienta = {};
+  enlacesPreop.forEach(e=>{ if(e.herramienta_id){ (preopsPorHerramienta[e.herramienta_id] = preopsPorHerramienta[e.herramienta_id]||[]).push(e); } });
+  // Bloque colapsable, visible SOLO si existen huérfanos (herramienta_id=null) — llegan hoy
+  // por 3 caminos: crear/reasignar sin herramienta, o eliminar la herramienta que tenían
+  // asociada. Reusa renderEnlacesInspPorTipo(..., true) tal cual (misma tarjeta ancha
+  // probada, con "Cambiar herramienta" entre sus botones admin) en vez de markup nuevo.
+  const bloqueHuerfanos = huerfanos.length ? `
+    <details class="preop-huerfanos-box">
+      <summary>${huerfanos.length} formulario${huerfanos.length===1?'':'s'} preoperacional${huerfanos.length===1?'':'es'} sin herramienta asignada</summary>
+      <p class="muted-sm">Asígnales una herramienta con "Cambiar herramienta", o revísalos/actívalos aquí mismo.</p>
+      <div id="preopHuerfanosInsp"></div>
+    </details>` : '';
+
   if(!lista.length){
-    host.innerHTML = `<div class="empty" style="padding:24px 20px"><div class="ic">${I.catalogo||I.box}</div><h3>Sin herramientas todavía</h3><p>Crea la primera para armar su ficha técnica y su hoja de vida.</p></div>`;
+    host.innerHTML = bloqueHuerfanos + `<div class="empty" style="padding:24px 20px"><div class="ic">${I.catalogo||I.box}</div><h3>Sin herramientas todavía</h3><p>Crea la primera para armar su ficha técnica y su hoja de vida.</p></div>`;
+    if(huerfanos.length) renderEnlacesInspPorTipo('preoperacional', 'preopHuerfanosInsp', true);
     return;
   }
-  host.innerHTML = '<div class="grid grid-insp grid-herr">' + lista.map(h=>{
+  host.innerHTML = bloqueHuerfanos + '<div class="grid grid-insp grid-herr">' + lista.map(h=>{
     const sub = [h.fabricante, h.modelo].filter(Boolean).join(' · ');
     return `
       <div class="lcard" data-herr-card="${h.id}" style="cursor:pointer">
@@ -11131,6 +11188,7 @@ function renderHerramientasInspGrid(){
           ${h.ubicacion ? `<div>${I.pin}<span>${esc(h.ubicacion)}</span></div>` : ''}
           ${h.codigo ? `<div>${I.tag}<span>${esc(h.codigo)}</span></div>` : ''}
         </div>
+        ${preopHerramientaHTML(h, preopsPorHerramienta)}
         <div class="lcard-foot">
           <div class="card-actions">
             <button class="icon-btn" title="Ver hoja de vida" data-herr="hv" data-id="${h.id}">${I.doc}</button>
@@ -11142,6 +11200,9 @@ function renderHerramientasInspGrid(){
         </div>
       </div>`;
   }).join('') + '</div>';
+
+  if(huerfanos.length) renderEnlacesInspPorTipo('preoperacional', 'preopHuerfanosInsp', true);
+
   host.querySelectorAll('[data-herr-card]').forEach(c=>{
     c.onclick = (e)=>{ if(e.target.closest('button')) return; abrirDetalleHerramientaInsp(c.dataset.herrCard); };
   });
@@ -11155,6 +11216,19 @@ function renderHerramientasInspGrid(){
       else if(act==='toggle') toggleActivoHerramientaInsp(id, !INSPECCIONES.herramientas.find(x=>x.id===id).activo);
       else if(act==='eliminar') eliminarHerramientaInsp(id);
     };
+  });
+  host.querySelectorAll('[data-herr-preop]').forEach(b=>{
+    b.onclick = (e)=>{
+      e.stopPropagation();
+      const id = b.dataset.id, act = b.dataset.herrPreop;
+      if(act==='registrar') window.open(linkInspeccion(id), '_blank');
+      else if(act==='ver') abrirDetalleEnlaceInsp(id, true);
+      else if(act==='link') copyText(linkInspeccion(id), "Enlace de inspección copiado");
+      else if(act==='qr') mostrarQR(linkInspeccion(id), "Enlace de inspección");
+    };
+  });
+  host.querySelectorAll('[data-herr-preop-crear]').forEach(b=>{
+    b.onclick = (e)=>{ e.stopPropagation(); abrirNuevoEnlaceInsp('preoperacional', b.dataset.herrPreopCrear); };
   });
 }
 
@@ -11653,14 +11727,43 @@ function cambiarFirmaEnlaceInsp(enlaceId){
 }
 
 /* ---------- Detalle de un enlace: lista de inspecciones hechas a través de él ---------- */
-async function abrirDetalleEnlaceInsp(enlaceId){
+async function abrirDetalleEnlaceInsp(enlaceId, mostrarGestion){
   const en = INSPECCIONES.enlaces.find(x=>x.id===enlaceId);
+  // mostrarGestion: true SOLO cuando se llama desde la tarjeta de una herramienta (Fase
+  // "Herramientas y equipos") — ahí "Ver detalle" es el único camino a las acciones
+  // administrativas del enlace, porque ya no vive en su propia pestaña con esos botones al
+  // lado. Se preserva el gate exacto de cada botón (sección 7.181 de MEMORY.md): 5 de los 6
+  // son MIPERFIL.esAdmin, "Firmantes" es puedeEscribir().
+  const firmantesEn = Array.isArray(en?.firmantes) ? en.firmantes : FIRMANTES_DEFAULT_INSP;
   openModal(`<div class="modal lg">
     <div class="modal-head"><div><h2>${esc(en?.nombre || en?.formato_nombre || 'Enlace')}</h2><p>${esc(en?.formato_nombre||'')}</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body" id="detalleEnlaceInspBody"><div class="empty"><h3>Cargando…</h3></div></div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
+      ${mostrarGestion ? `
+        ${MIPERFIL.esAdmin?`<button class="icon-btn" title="Editar nombre" data-deit-foot="nombre">${I.tag}</button>
+        <button class="icon-btn" title="Editar" data-deit-foot="editar">${I.pen}</button>
+        <button class="icon-btn" title="Cambiar herramienta" data-deit-foot="herramienta">${I.catalogo}</button>`:''}
+        ${puedeEscribir() && firmantesEn.length?`<button class="icon-btn" title="Firmantes" data-deit-foot="firma">${I.firma}</button>`:''}
+        ${MIPERFIL.esAdmin?`<button class="icon-btn" title="${en?.activo?'Desactivar':'Activar'} enlace" data-deit-foot="toggle">${en?.activo?I.lock:I.check}</button>
+        <button class="icon-btn danger" title="Eliminar enlace" data-deit-foot="eliminar">${I.trash}</button>`:''}
+      ` : ''}
+    </div>
   </div>`);
+  if(mostrarGestion){
+    document.querySelectorAll('[data-deit-foot]').forEach(b=>{
+      b.onclick = ()=>{
+        const act = b.dataset.deitFoot;
+        if(act==='nombre') renombrarEnlaceInsp(enlaceId);
+        else if(act==='editar') location.hash = "#/inspecciones/enlace/"+enlaceId+"/editar";
+        else if(act==='herramienta') cambiarHerramientaEnlaceInsp(enlaceId);
+        else if(act==='firma') cambiarFirmaEnlaceInsp(enlaceId);
+        else if(act==='toggle') toggleActivoEnlaceInsp(enlaceId);
+        else if(act==='eliminar') eliminarEnlaceInsp(enlaceId);
+      };
+    });
+  }
   const host = document.getElementById('detalleEnlaceInspBody');
   const { data, error } = await sb.from("insp_inspecciones")
     .select("id,formato_nombre,inspector_nombre,responsable_nombre,creado_en,ip_address,dispositivo_ua")
@@ -11698,28 +11801,31 @@ async function abrirDetalleEnlaceInsp(enlaceId){
    DESPUÉS, editando el formulario ya creado (agregar/quitar firmantes) y, para los de
    firma guardada, con "Firmantes" en su tarjeta — así crear un
    formulario es un solo paso: elegir la plantilla. */
-function abrirNuevoEnlaceInsp(tipoFiltro){
+function abrirNuevoEnlaceInsp(tipoFiltro, herramientaFija){
   if(contratoInspActualId==='todos'){ toast("Elige un contrato específico primero","err"); return; }
   const formatos = INSPECCIONES.formatos.filter(f=>f.activo && (!tipoFiltro || f.tipo===tipoFiltro));
-  const herramientas = INSPECCIONES.herramientas.filter(h=>h.activo);
   if(!formatos.length){ toast('No hay formatos activos de este tipo — créalo primero desde "Formatos"',"err"); return; }
+  const herrFija = herramientaFija ? INSPECCIONES.herramientas.find(h=>h.id===herramientaFija) : null;
+  const herramientas = herramientaFija ? [] : INSPECCIONES.herramientas.filter(h=>h.activo);
   openModal(`<div class="modal" style="max-width:480px">
-    <div class="modal-head"><div><h2>Crear formulario</h2><p>Elige la plantilla de "Formatos" que quieres usar — queda una copia independiente, lista para compartir.</p></div>
+    <div class="modal-head"><div><h2>${herramientaFija?'Configurar preoperacional':'Crear formulario'}</h2><p>Elige la plantilla de "Formatos" que quieres usar — queda una copia independiente, lista para compartir.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
       <div class="field"><label>Formato *</label><select id="neFormato">${formatos.map(f=>`<option value="${f.id}">${esc(f.nombre)}</option>`).join('')}</select></div>
-      ${herramientas.length ? `<div class="field"><label>Herramienta/equipo <span class="opt">(opcional)</span></label>
-        <select id="neHerramienta"><option value="">— Sin herramienta específica —</option>${herramientas.map(h=>`<option value="${h.id}">${esc(h.nombre)}</option>`).join('')}</select></div>` : ''}
+      ${herramientaFija
+        ? `<div class="field"><label>Herramienta/equipo</label><div class="info-item"><div class="v">${esc(herrFija?.nombre||'')}</div></div></div>`
+        : (herramientas.length ? `<div class="field"><label>Herramienta/equipo <span class="opt">(opcional)</span></label>
+        <select id="neHerramienta"><option value="">— Sin herramienta específica —</option>${herramientas.map(h=>`<option value="${h.id}">${esc(h.nombre)}</option>`).join('')}</select></div>` : '')}
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" id="btnGuardarEnlaceInsp">${I.check} Crear formulario</button>
+      <button class="btn btn-primary" id="btnGuardarEnlaceInsp">${I.check} ${herramientaFija?'Crear':'Crear formulario'}</button>
     </div></div>`);
   const btn = document.getElementById('btnGuardarEnlaceInsp');
   btn.onclick = async ()=>{
     const formato_id = document.getElementById('neFormato').value;
     const selHerr = document.getElementById('neHerramienta');
-    const herramienta_id = (selHerr && selHerr.value) || null;
+    const herramienta_id = herramientaFija || (selHerr && selHerr.value) || null;
     btn.disabled = true; btn.innerHTML = "Creando…";
     // Bloqueo de pantalla a prueba de clic (sección 8.1) mientras se copia el formato y se
     // crea el enlace — son 2 idas y vueltas al servidor, sin esto el usuario podía cerrar
@@ -11744,7 +11850,7 @@ function abrirNuevoEnlaceInsp(tipoFiltro){
       mostrarEnlaceCreadoInsp(data.id);
     } finally {
       desbloquear();
-      btn.disabled = false; btn.innerHTML = `${I.check} Crear formulario`;
+      btn.disabled = false; btn.innerHTML = `${I.check} ${herramientaFija?'Crear':'Crear formulario'}`;
     }
   };
 }
@@ -15746,16 +15852,17 @@ async function renderConfiguracion(silent){
               <div style="margin-bottom:20px;padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
                 <p style="margin:0"><b>Entregas remotas (enlace/QR):</b> las que un trabajador registra solo por el enlace o código QR (sin que un supervisor haya iniciado sesión) no quedan asociadas a ningún editor como "creador". Por eso son la única excepción a la regla de arriba: <b>cualquier editor con acceso a ese contrato/entidad puede editarlas o eliminarlas</b> (no hace falta ser administrador) — así el supervisor que comparte el enlace con su trabajador puede corregirlo después si hace falta. Un editor sigue sin poder tocar una entrega que registró un compañero desde el panel (con sesión iniciada) — esa sí sigue siendo intocable para él.</p>
               </div>
-              <div class="sec-bar"><h2>Inspecciones: "Formatos" vs. "Inspecciones"/"Inspección preoperacional"</h2></div>
+              <div class="sec-bar"><h2>Inspecciones: "Formatos" vs. "Inspecciones"/"Inventario"</h2></div>
               <div style="margin-bottom:20px;padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
                 <p style="margin-bottom:8px"><b>"Formatos"</b> es una biblioteca de plantillas — checklist, colores, firmantes — sin contrato ni responsable asociado. Ahí solo se crean/editan/duplican/activan/eliminan plantillas. <b>Exclusivo de administrador</b> — un editor ni siquiera ve la pestaña.</p>
-                <p style="margin-bottom:8px">Al ir a <b>"Inspecciones"</b> o <b>"Inspección preoperacional"</b> y tomar una plantilla ("Usar este formato"), se crea un <b>enlace independiente</b>: desde ese momento tiene su propia copia del contenido, editable ahí mismo (botón "Editar" de esa tarjeta) sin afectar ni ser afectado por la plantilla original. Una misma plantilla se puede tomar varias veces — una copia nueva por cada toma (ej. una por cada herramienta física).</p>
+                <p style="margin-bottom:8px">Al ir a <b>"Inspecciones"</b> o <b>"Inventario"</b> y tomar una plantilla ("Crear formulario"), se crea un <b>enlace independiente</b>: desde ese momento tiene su propia copia del contenido, editable ahí mismo (botón "Editar" de esa tarjeta) sin afectar ni ser afectado por la plantilla original. Una misma plantilla se puede tomar varias veces — una copia nueva por cada toma (ej. una por cada herramienta física). Para preoperacionales, este mismo mecanismo vive ahora dentro de "Herramientas y equipos" (ver más abajo), no en una pestaña aparte.</p>
                 <p style="margin:0">Por eso <b>borrar una plantilla en "Formatos" nunca borra los enlaces</b> que ya se crearon a partir de ella — siguen funcionando exactamente igual.</p>
                 <p style="margin:8px 0 0">El botón <b>"Firmas"</b> (banco de firmas guardadas) funciona igual: es único para todos los contratos, no uno por contrato — una firma que crees ahí se puede usar en cualquier enlace de cualquier contrato.</p>
               </div>
-              <div class="sec-bar"><h2>Inspecciones: catálogo de herramientas y hoja de vida</h2></div>
+              <div class="sec-bar"><h2>Inspecciones: catálogo de herramientas, preoperacional y hoja de vida</h2></div>
               <div style="margin-bottom:20px;padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
-                <p style="margin-bottom:8px">Cada contrato tiene su propio catálogo de herramientas/equipos (botón "Herramientas y equipos"). Al crear un enlace en "Inspecciones"/"Inspección preoperacional" se le puede asociar una herramienta específica — así cada QR queda ligado a un equipo en particular.</p>
+                <p style="margin-bottom:8px">Cada contrato tiene su propio catálogo de herramientas/equipos (botón "Herramientas y equipos"). Al crear un enlace en "Inspecciones"/"Inventario" se le puede asociar una herramienta específica — así cada QR queda ligado a un equipo en particular.</p>
+                <p style="margin-bottom:8px">El <b>preoperacional</b> de cada herramienta se configura directo desde su propia tarjeta ahí mismo, en vez de una pestaña aparte: "Configurar" la primera vez (elige la plantilla de "Formatos" que aplica), y desde ahí "Registrar aquí"/"Ver historial"/"Copiar enlace"/"Compartir QR" quedan siempre a la mano. Se puede agregar más de un preoperacional a la misma herramienta con "Agregar otro" (ej. un checklist básico y uno reforzado).</p>
                 <p style="margin:0"><b>"Hoja de vida"</b> muestra, para la herramienta que elijas, todo lo que se le ha registrado (inspecciones y preoperacionales juntos, de más reciente a más antigua).</p>
               </div>
               <div class="sec-bar"><h2>EPP: permiso "puede agregar al catálogo"</h2></div>
