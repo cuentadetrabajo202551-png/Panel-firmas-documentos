@@ -5301,13 +5301,30 @@ function trabajadorCard(t){
    vacía "Crea tu primer contrato") — la X/Cancelar debe cerrar de una, no intentar
    volver a ningún lado. Sin esto, openSubModal deja pendiente un "volver" que la
    primera X consume sin cerrar nada (hay que darle una segunda vez). */
-function abrirFormContrato(id, alGuardar, comoRaiz){
+async function abrirFormContrato(id, alGuardar, comoRaiz){
   const c = id ? DOTACION.contratos.find(x=>x.id===id) : null;
+  // Al crear un contrato nuevo, se ofrece enlazarlo a uno que YA existe en Dotación (mismo
+  // criterio de nombre que usa el espejo automático, CAMBIOS_SQL_73.sql) — si el cliente es
+  // viejo y ya tenía trabajadores ahí, evita tener que repetir la carga masiva en EPP.
+  let entidadesDtl = [];
+  if(!c){
+    const { data } = await sb.from("dtl_entidades").select("id,nombre,activo").order("nombre",{ascending:true});
+    entidadesDtl = data || [];
+  }
   const html = `<div class="modal" style="max-width:440px">
     <div class="modal-head"><div><h2>${c?'Renombrar contrato':'Nuevo contrato'}</h2><p>Ej. "Hospital de Medellín", "Colegio San José"…</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
       <div class="field"><label>Nombre del contrato *</label><input id="ctNombre" value="${esc(c?.nombre||'')}" placeholder="Nombre del cliente o contrato"></div>
+      ${!c && entidadesDtl.length ? `
+      <div class="field">
+        <label>¿Ya existe en Dotación? <span class="opt">(opcional)</span></label>
+        <select id="ctEntidadDtlOrigen">
+          <option value="">— No, es un contrato nuevo —</option>
+          ${entidadesDtl.map(e=>`<option value="${e.id}">${esc(e.nombre)}${e.activo?'':' (archivado)'}</option>`).join('')}
+        </select>
+        <p class="muted-sm" style="margin-top:6px">Si lo eliges, el nombre de arriba se ajusta para coincidir exacto y se traen automáticamente sus trabajadores activos — no hace falta cargarlos de nuevo.</p>
+      </div>` : ''}
       <div class="field">
         <label>Modo de registro</label>
         <select id="ctModoRegistro">
@@ -5322,10 +5339,20 @@ function abrirFormContrato(id, alGuardar, comoRaiz){
       <button class="btn btn-primary" id="btnGuardarContrato">${I.check} Guardar</button>
     </div></div>`;
   if(comoRaiz) openModal(html); else openSubModal(html, ()=>{ if(alGuardar) alGuardar(); else abrirGestionContratos(); });
+  const selOrigen = document.getElementById('ctEntidadDtlOrigen');
+  if(selOrigen){
+    selOrigen.onchange = ()=>{
+      const e = entidadesDtl.find(x=>x.id===selOrigen.value);
+      const inputNombre = document.getElementById('ctNombre');
+      inputNombre.readOnly = !!e;
+      if(e) inputNombre.value = e.nombre;
+    };
+  }
   document.getElementById('btnGuardarContrato').onclick = async ()=>{
     const nombre = document.getElementById('ctNombre').value.trim();
     if(!nombre){ toast("Escribe el nombre del contrato","err"); return; }
     const modo_registro = document.getElementById('ctModoRegistro').value;
+    const entidadOrigenId = selOrigen ? selOrigen.value : '';
     const btn = document.getElementById('btnGuardarContrato'); btn.disabled=true; btn.innerHTML="Guardando…";
     let error, data;
     if(c){ ({error} = await sb.from("dot_contratos").update({nombre,modo_registro}).eq("id",c.id)); }
@@ -5333,10 +5360,46 @@ function abrirFormContrato(id, alGuardar, comoRaiz){
     if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
     await loadDotacionState();
     if(!c && data) { contratoActualId = data.id; localStorage.setItem('dot_contrato_actual', data.id); }
-    toast(c?"Contrato actualizado":"Contrato creado","ok");
+    let msgFinal = c?"Contrato actualizado":"Contrato creado";
+    if(!c && data && entidadOrigenId){ msgFinal += await traerTrabajadoresDesdeDtl(entidadOrigenId); }
+    toast(msgFinal,"ok");
     closeModal(); // no-comoRaiz: vuelve a "alGuardar" (gestión de contratos) solo por el _modalVolver
     if(comoRaiz && alGuardar) alGuardar(); // comoRaiz no deja _modalVolver puesto, así que aquí se llama directo
   };
+}
+
+/* Trae de una sola vez a EPP los trabajadores que ya existían en un contrato/entidad de
+   Dotación creado antes que este de EPP (contrato recién enlazado por nombre en
+   abrirFormContrato). Reusa dtl_espejo_en_dot (CAMBIOS_SQL_73.sql) trabajador por
+   trabajador — la MISMA función que ya mueve uno nuevo entre módulos — en vez de duplicar su
+   lógica de permisos/duplicados por cédula; así el resultado es idéntico a si cada uno se
+   hubiera dado de alta a mano. Solo trabajadores ACTIVOS en Dotación (uno inactivo no debería
+   aparecer como "actual" en el contrato recién creado). El espejo automático de ahí en
+   adelante (al agregar alguien nuevo en cualquiera de los dos) sigue funcionando solo, porque
+   el nombre del contrato ya quedó igual al de la entidad. */
+async function traerTrabajadoresDesdeDtl(entidadId){
+  const { data: trabs, error } = await sb.from("dtl_trabajadores").select("id").eq("entidad_id", entidadId).eq("activo", true);
+  if(error || !trabs || !trabs.length) return '';
+  let creados = 0, yaExistian = 0, sinPermiso = 0, otros = 0;
+  bloquear(`Trayendo trabajadores de Dotación… (0/${trabs.length})`);
+  try{
+    for(let i=0;i<trabs.length;i++){
+      bloquearMsg(`Trayendo trabajadores de Dotación… (${i+1}/${trabs.length})`);
+      const { data: espejo, error: errEspejo } = await sb.rpc('dtl_espejo_en_dot', { p_trabajador_id: trabs[i].id });
+      if(errEspejo){ otros++; continue; }
+      if(espejo?.ok) creados++;
+      else if(espejo?.motivo==='ya_existe') yaExistian++;
+      else if(espejo?.motivo==='sin_permiso_destino') sinPermiso++;
+      else otros++;
+    }
+  } finally { desbloquear(); }
+  if(creados) await loadDotacionState();
+  const partes = [];
+  if(creados) partes.push(`${creados} traído${creados===1?'':'s'} de Dotación`);
+  if(yaExistian) partes.push(`${yaExistian} ya existía${yaExistian===1?'':'n'} (misma cédula en otro contrato)`);
+  if(sinPermiso) partes.push(`${sinPermiso} sin permiso para agregarlos`);
+  if(otros) partes.push(`${otros} con error`);
+  return partes.length ? ` · ${partes.join(', ')}` : '';
 }
 
 /* ---------- Corregir cargos en bloque — útil cuando la carga masiva trajo el mismo
@@ -9985,28 +10048,32 @@ function renderDtlPublicoNuevoFormulario(entidadId, nombreEntidad, catalogoUnico
    celular por un inspector logueado, con firma del inspector y del
    responsable del área — por contrato, mismo patrón que EPP/Dotación.
    ============================================================ */
-let INSPECCIONES = { contratos: [], formatos: [], predeterminados: [], herramientas: [], mantenimientos: [], enlaces: [], inspecciones: [] };
+let INSPECCIONES = { contratos: [], formatos: [], predeterminados: [], herramientas: [], mantenimientos: [], enlaces: [], inspecciones: [], config: {} };
 let contratoInspActualId = localStorage.getItem('insp_contrato_actual') || null;
 let inspSubtabActiva = null; // recuerda la pestaña elegida (preop/insp/inventario/herramientas/formatos) entre refrescos silenciosos
 let formatosInspFiltroTipo = 'todos'; // filtro de "Formatos": todos/inspeccion/preoperacional
 let herrInspQuery = ''; // buscador de "Preoperacionales" (filtra por nombre de herramienta)
 
 async function loadInspeccionesState(){
-  const [co, fo, en, ins, pd] = await Promise.all([
+  const [co, fo, en, ins, pd, cf] = await Promise.all([
     sb.from("insp_contratos").select("id,nombre,activo,creado_en").order("creado_en",{ascending:true}),
     sb.from("insp_formatos").select("id,nombre,activo,tiene_fotos,firmantes,color_acento,mostrar_cumplimiento,pdf_horizontal,pdf_codigo,pdf_fecha_creacion,pdf_version,tipo").order("nombre",{ascending:true}),
     sb.from("insp_enlaces").select("id,contrato_id,formato_id,predeterminado_id,firmantes_banco,herramienta_id,nombre,formato_nombre,tiene_fotos,firmantes,color_acento,mostrar_cumplimiento,pdf_horizontal,pdf_codigo,pdf_fecha_creacion,pdf_version,tipo,activo,creado_en").order("creado_en",{ascending:true}),
     cargarTodasFilas(()=> sb.from("insp_inspecciones").select("id,enlace_id,contrato_id,formato_nombre,creado_en,creado_por,inspector_nombre").order("creado_en",{ascending:false}).order("id",{ascending:true})),
     // Banco de firmas GLOBAL (igual que "Formatos") — no por contrato, ver [[CAMBIOS_SQL_63]].
-    sb.from("insp_predeterminados").select("id,nombre,responsable_nombre,responsable_cargo,firma").order("nombre",{ascending:true})
+    sb.from("insp_predeterminados").select("id,nombre,responsable_nombre,responsable_cargo,firma").order("nombre",{ascending:true}),
+    // Codificación GLOBAL del PDF de "Hoja de vida" (igual que Formatos/Firmas) — 1 sola
+    // fila para todas las herramientas, ver [[CAMBIOS_SQL_78]].
+    sb.from("insp_config").select("hv_pdf_codigo,hv_pdf_fecha_creacion,hv_pdf_version").eq("id",1).maybeSingle()
   ]);
-  const err = co.error || fo.error || en.error || ins.error || pd.error;
+  const err = co.error || fo.error || en.error || ins.error || pd.error || cf.error;
   if(err){ console.warn(err); toast("Error cargando Inspecciones: "+err.message,"err"); }
   INSPECCIONES.contratos = co.data || [];
   INSPECCIONES.formatos = fo.data || [];
   INSPECCIONES.enlaces = en.data || [];
   INSPECCIONES.inspecciones = ins.data || [];
   INSPECCIONES.predeterminados = pd.data || [];
+  INSPECCIONES.config = cf.data || {};
   // Si el contrato guardado ya no existe (o nunca se eligió uno), cae al primero activo, o al primero que haya
   const existe = contratoInspActualId==='todos' || INSPECCIONES.contratos.some(x=>x.id===contratoInspActualId);
   if(!existe){
@@ -11016,6 +11083,7 @@ async function renderInspeccionesAdmin(modo){
           <button class="action-card" id="btnHistorialInsp" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.cal}</div><span class="ac-title">Historial de inspecciones</span><span class="ac-chevron">›</span></button>
           ${MIPERFIL.esAdmin?`<button class="action-card" id="btnCrearFormatoInsp"><div class="ac-ic">${I.plus}</div><span class="ac-title">Crear formato</span><span class="ac-chevron">›</span></button>`:''}
           ${MIPERFIL.esAdmin?`<button class="action-card" id="btnFirmasInsp"><div class="ac-ic">${I.firma}</div><span class="ac-title">Firmas</span><span class="ac-chevron">›</span></button>`:''}
+          ${MIPERFIL.esAdmin?`<button class="action-card" id="btnCodifHvInsp"><div class="ac-ic">${I.tag}</div><span class="ac-title">Codificación de hoja de vida</span><span class="ac-chevron">›</span></button>`:''}
         </div>
       </div>
 
@@ -11083,6 +11151,7 @@ async function renderInspeccionesAdmin(modo){
   const bhi = document.getElementById("btnHistorialInsp"); if(bhi) bhi.onclick = ()=> abrirHistorialInspecciones();
   const bcf = document.getElementById("btnCrearFormatoInsp"); if(bcf) bcf.onclick = ()=>{ location.hash = "#/inspecciones/formato/nueva"; };
   const bfirmas = document.getElementById("btnFirmasInsp"); if(bfirmas) bfirmas.onclick = abrirPredeterminadosInsp;
+  const bcodifhv = document.getElementById("btnCodifHvInsp"); if(bcodifhv) bcodifhv.onclick = abrirCodificacionHojaVidaInsp;
   const bnh = document.getElementById("btnNuevaHerramientaInsp"); if(bnh) bnh.onclick = ()=> abrirFormHerramientaInsp(null);
   const herrSearch = document.getElementById("herrInspSearch");
   if(herrSearch) herrSearch.oninput = (e)=>{ herrInspQuery = e.target.value; renderHerramientasInspGrid(); };
@@ -11136,6 +11205,7 @@ function renderEnlacesInspPorTipo(tipo, hostId, soloSinHerramienta){
           <div class="meta">
             ${herr ? `<div>${I.catalogo}<span>${esc(herr.nombre||'')}</span></div>` : ''}
             <div>${I.cal}<span>Enlace creado ${fmtDate((en.creado_en||'').slice(0,10))}</span></div>
+            ${en.pdf_codigo && String(en.pdf_codigo).trim() ? `<div>${I.tag}<span>${esc(en.pdf_codigo)}${en.pdf_version?' · v'+esc(en.pdf_version):''}${en.pdf_fecha_creacion?' · '+fmtDate(en.pdf_fecha_creacion):''}</span></div>` : ''}
             ${estadoBancoCard==='ok' ? `<div>${I.firma}<span>Firma guardada asignada${nombresFirmaBancoCard.length?` (${nombresFirmaBancoCard.map(esc).join(', ')})`:''}</span></div>` : ''}
             ${estadoBancoCard==='falta' ? `<div>${I.warn}<span style="color:var(--danger);font-weight:700">Falta asignar firma guardada</span></div>` : ''}
           </div>
@@ -11448,13 +11518,29 @@ async function construirHojaVidaInspPDF(herramientaId){
   function encabezado(){
     let y=M;
     const hH=24, logoW=44;
+    // Codificación GLOBAL del PDF de hoja de vida (insp_config, sección 7.198 de MEMORY.md) —
+    // misma esquina superior derecha que usa construirInspeccionPDF para la codificación POR
+    // FORMATO; acá es una sola, para todas las herramientas. h.codigo (código de INVENTARIO
+    // de esta herramienta puntual) sigue en la fila de abajo, sin chocar con esto.
+    const cfg = INSPECCIONES.config || {};
+    const tieneCod = !!(cfg.hv_pdf_codigo && String(cfg.hv_pdf_codigo).trim());
+    const codW = tieneCod ? 50 : 0;
+    const contentRight = RIGHT - codW;
     doc.setDrawColor(150,160,190); doc.setLineWidth(0.3); doc.rect(M,y,RIGHT-M,hH);
     doc.line(M+logoW,y,M+logoW,y+hH);
     try{ doc.addImage(LOGO,"JPEG",M+4,y+2,36,36*315/570); }catch(e){}
     doc.setTextColor(20,33,90); doc.setFont("helvetica","bold"); doc.setFontSize(14);
-    doc.text("HOJA DE VIDA — HERRAMIENTA/EQUIPO", M+logoW+(RIGHT-M-logoW)/2, y+13, {align:"center"});
+    doc.text("HOJA DE VIDA — HERRAMIENTA/EQUIPO", M+logoW+(contentRight-M-logoW)/2, y+13, {align:"center"});
     doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(90,90,110);
-    doc.text(pdfTexto((nombreContrato?nombreContrato+" · ":"")+"Don Aseo Ltda."), M+logoW+(RIGHT-M-logoW)/2, y+19, {align:"center"});
+    doc.text(pdfTexto((nombreContrato?nombreContrato+" · ":"")+"Don Aseo Ltda."), M+logoW+(contentRight-M-logoW)/2, y+19, {align:"center"});
+    if(tieneCod){
+      doc.line(contentRight,y,contentRight,y+hH);
+      doc.setFont("helvetica","bold"); doc.setFontSize(7.3); doc.setTextColor(40,40,40);
+      doc.text(pdfTexto("Código: "+cfg.hv_pdf_codigo), RIGHT-47, y+6);
+      doc.setFont("helvetica","normal");
+      doc.text("Fecha de creación: "+(cfg.hv_pdf_fecha_creacion ? fmtDate(cfg.hv_pdf_fecha_creacion) : "—"), RIGHT-47, y+11.5);
+      doc.text(pdfTexto("Versión: "+(cfg.hv_pdf_version || "—")), RIGHT-47, y+17);
+    }
     y += hH;
 
     const fh=14;
@@ -12007,6 +12093,42 @@ async function abrirPredeterminadosInsp(){
   </div>`);
   document.getElementById('btnNuevoPredetInsp').onclick = ()=> abrirFormPredeterminadoInsp(null);
   renderPredeterminadosInspLista();
+}
+
+/* Codificación (código/fecha de creación/versión) del PDF de "Hoja de vida" — a diferencia
+   de la de Formatos/enlaces (una copia independiente por documento, sección 7.186 de
+   MEMORY.md), acá hay un solo "tipo" de documento (la hoja de vida), así que es UNA sola fila
+   global (insp_config, [[CAMBIOS_SQL_78]]) en vez de un campo por herramienta — al guardar se
+   lee de nuevo el estado y cualquier hoja de vida que se genere de ahí en adelante, de
+   cualquier herramienta, ya sale con lo nuevo. */
+function abrirCodificacionHojaVidaInsp(){
+  const c = INSPECCIONES.config || {};
+  openModal(`<div class="modal" style="max-width:420px">
+    <div class="modal-head"><div><h2>Codificación de la hoja de vida</h2><p>Código, fecha de creación y versión del PDF de "Hoja de vida" — una sola vez para todas las herramientas y equipos, no por herramienta.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Código</label><input id="cfHvCodigo" value="${esc(c.hv_pdf_codigo||'')}" placeholder="Ej. SST-FRT-030"></div>
+      <div class="field row2">
+        <div><label>Fecha de creación</label><input type="date" id="cfHvFecha" value="${esc(c.hv_pdf_fecha_creacion||'')}"></div>
+        <div><label>Versión</label><input id="cfHvVersion" value="${esc(c.hv_pdf_version||'')}" placeholder="Ej. 001"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardarCodifHv">${I.check} Guardar</button>
+    </div></div>`);
+  document.getElementById('btnGuardarCodifHv').onclick = async ()=>{
+    const hv_pdf_codigo = document.getElementById('cfHvCodigo').value.trim() || null;
+    const hv_pdf_fecha_creacion = document.getElementById('cfHvFecha').value || null;
+    const hv_pdf_version = document.getElementById('cfHvVersion').value.trim() || null;
+    const btn = document.getElementById('btnGuardarCodifHv'); btn.disabled=true; btn.innerHTML="Guardando…";
+    const { error } = await sb.from("insp_config").update({ hv_pdf_codigo, hv_pdf_fecha_creacion, hv_pdf_version }).eq("id",1);
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
+    await loadInspeccionesState();
+    toast("Codificación actualizada — se aplica a todas las hojas de vida","ok");
+    closeModal();
+    renderInspeccionesAdmin('norecarga');
+  };
 }
 
 function renderPredeterminadosInspLista(){
