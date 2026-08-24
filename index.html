@@ -689,10 +689,10 @@ table.dt tr:hover td{background:#fafbfe}
 .cat-row input[type="text"]{flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13.5px}
 .cat-row input[type="text"].cat-unidad{flex:0 0 90px}
 .trab-summary{background:#f6f8fd;border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:16px}
-.dp-tipo-card{display:flex;align-items:center;gap:14px;width:100%;text-align:left;padding:14px 16px;border:2px solid var(--line);border-radius:14px;margin-bottom:12px;background:#fff;transition:.15s;cursor:pointer}
+.dp-tipo-card{display:flex;flex-direction:column;align-items:center;text-align:center;width:100%;padding:22px 18px;border:2px solid var(--line);border-radius:16px;margin-bottom:14px;background:#fff;transition:.15s;cursor:pointer}
 .dp-tipo-card:hover,.dp-tipo-card:active{border-color:var(--brand);background:var(--brand-soft)}
-.dp-tipo-img{width:56px;height:56px;flex:none;border-radius:50%;object-fit:cover}
-.dp-tipo-title{font-family:var(--display);font-weight:700;font-size:16px;color:var(--ink);margin-bottom:4px}
+.dp-tipo-img{width:100px;height:100px;flex:none;border-radius:50%;object-fit:cover;margin-bottom:12px}
+.dp-tipo-title{font-family:var(--display);font-weight:700;font-size:17.5px;color:var(--ink);margin-bottom:5px}
 .dp-tipo-desc{font-size:13px;color:var(--ink-3);line-height:1.45}
 .aviso-cedula{background:#fff9e6;border:1px solid #f0d580;border-radius:12px;padding:12px 14px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;font-size:13.5px;color:#7a5c00;line-height:1.4}
 .aviso-cedula button{flex:none}
@@ -9892,17 +9892,13 @@ function renderDtlPublicoTipoEntrega(){
       <label style="font-weight:700;font-size:15px;display:block;margin-bottom:12px;text-align:center">¿Qué tipo de entrega es esta?</label>
       <button type="button" class="dp-tipo-card" id="dpTipoLegal">
         <img src="${ICONO_DOTACION_LEGAL}" alt="" class="dp-tipo-img">
-        <div>
-          <div class="dp-tipo-title">Entrega legal</div>
-          <div class="dp-tipo-desc">Es la dotación normal que te dan cada cierto tiempo, por ley.</div>
-        </div>
+        <div class="dp-tipo-title">Entrega legal</div>
+        <div class="dp-tipo-desc">Es la dotación normal que te dan cada cierto tiempo, por ley.</div>
       </button>
       <button type="button" class="dp-tipo-card" id="dpTipoReposicion">
         <img src="${ICONO_REPOSICION}" alt="" class="dp-tipo-img">
-        <div>
-          <div class="dp-tipo-title">Reposición</div>
-          <div class="dp-tipo-desc">Es un cambio puntual porque algo se dañó, se perdió o ya no sirve — no es tu entrega periódica.</div>
-        </div>
+        <div class="dp-tipo-title">Reposición</div>
+        <div class="dp-tipo-desc">Es un cambio puntual porque algo se dañó, se perdió o ya no sirve — no es tu entrega periódica.</div>
       </button>
     </div></div></div>`;
   document.getElementById('dpTipoLegal').onclick = ()=>{ dtlPublicoState.tipoEntrega='legal'; renderDtlPublicoFormulario(); };
@@ -9948,9 +9944,15 @@ async function renderDtlPublicoFormulario(){
     dtlPublicoState.seleccion = {};
     dtlPublicoState.catalogo.forEach(c=> dtlPublicoState.seleccion[c.id] = { incluido:false, cantidad:1, talla:'' });
   }
+  const esRepoForm = dtlPublicoState.tipoEntrega==='reposicion';
   document.getElementById("app").innerHTML = `
     <div class="pub-wrap"><div class="pub-card"><div class="pub-body">
       <img src="${LOGO}" alt="Don Aseo Ltda." style="height:40px;display:block;margin:0 auto 14px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <button type="button" class="icon-btn" id="dpVolverTipo" title="Cambiar tipo de entrega">${I.back}</button>
+        <div style="flex:1;text-align:center;font-family:var(--display);font-weight:700;font-size:16px;color:${esRepoForm?'var(--danger)':'var(--brand)'}">${esRepoForm?'Reposición':'Entrega legal'}</div>
+        <div style="width:38px;flex:none"></div>
+      </div>
       <div class="trab-summary" style="margin-bottom:16px">
         <div class="tk">Recibe</div>
         <div class="tv">${esc(t.nombre)} — C.C. ${esc(t.identificacion)}</div>
@@ -10006,6 +10008,7 @@ async function renderDtlPublicoFormulario(){
     wireIncluirItemDtl('dpBotasInc','dpBotasFields','dpBotasCant',1);
   }
   document.getElementById('dpConfirmarBtn').onclick = confirmarEntregaDtlPublica;
+  document.getElementById('dpVolverTipo').onclick = ()=> renderDtlPublicoTipoEntrega();
 }
 
 function dpFotoPreviewHTML(){
