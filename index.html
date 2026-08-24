@@ -689,6 +689,10 @@ table.dt tr:hover td{background:#fafbfe}
 .cat-row input[type="text"]{flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13.5px}
 .cat-row input[type="text"].cat-unidad{flex:0 0 90px}
 .trab-summary{background:#f6f8fd;border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:16px}
+.dp-tipo-card{display:block;width:100%;text-align:left;padding:16px 18px;border:2px solid var(--line);border-radius:14px;margin-bottom:12px;background:#fff;transition:.15s;cursor:pointer}
+.dp-tipo-card:hover,.dp-tipo-card:active{border-color:var(--brand);background:var(--brand-soft)}
+.dp-tipo-title{font-family:var(--display);font-weight:700;font-size:16px;color:var(--ink);margin-bottom:4px}
+.dp-tipo-desc{font-size:13px;color:var(--ink-3);line-height:1.45}
 .aviso-cedula{background:#fff9e6;border:1px solid #f0d580;border-radius:12px;padding:12px 14px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;font-size:13.5px;color:#7a5c00;line-height:1.4}
 .aviso-cedula button{flex:none}
 .chip-predet{padding:6px 4px;border:1.5px solid var(--line);border-radius:8px;background:#fff;font-size:12px;font-weight:700;color:var(--ink-2);cursor:pointer;max-width:58px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -8686,6 +8690,7 @@ async function abrirNuevaEntregaDtl(trabajadorId){
   dtlEntregaDraft = {
     trabajadorId: trabajadorId,
     fecha: hoyLocal(),
+    tipoEntrega: 'legal',
     catalogoUnico: !!entidad?.catalogo_unico,
     items: [{ catalogoId:'', cantidad:1, talla:'' }],
     pantalonCantidad: 2, pantalonTalla: '',
@@ -8799,6 +8804,14 @@ function renderPasoDtl1(){
               <div class="muted-sm" style="margin-top:6px">¿No aparece? Créalo primero desde "Nuevo trabajador" en el panel.</div>
             </div>`}
       <div class="field"><label>Fecha de entrega</label><input type="date" id="dtlFecha" value="${dtlEntregaDraft.fecha}"></div>
+      <div class="field">
+        <label>Tipo de entrega</label>
+        <div style="display:flex;gap:6px" id="dtlTipoEntregaBtns">
+          <button type="button" class="tipo-estado-btn ${dtlEntregaDraft.tipoEntrega==='legal'?'active bien':''}" data-tipo-entrega="legal">Dotación legal</button>
+          <button type="button" class="tipo-estado-btn ${dtlEntregaDraft.tipoEntrega==='reposicion'?'active bien':''}" data-tipo-entrega="reposicion">Reposición</button>
+        </div>
+        <div class="muted-sm" style="margin-top:6px">"Reposición" es un reemplazo puntual (dañado, perdido) fuera del ciclo legal — queda marcado así en el historial y en el kárdex.</div>
+      </div>
 
       ${dtlEntregaDraft.catalogoUnico ? `
       <div style="display:flex;justify-content:space-between;align-items:center;margin:16px 0 10px">
@@ -8846,6 +8859,15 @@ function renderPasoDtl1(){
   </div>`);
   actualizarQuienFirmaDtl();
   wireDtlPredetChips();
+  document.querySelectorAll('#dtlTipoEntregaBtns [data-tipo-entrega]').forEach(b=>{
+    b.onclick = ()=>{
+      dtlEntregaDraft.tipoEntrega = b.dataset.tipoEntrega;
+      document.querySelectorAll('#dtlTipoEntregaBtns [data-tipo-entrega]').forEach(x=>{
+        const activo = x.dataset.tipoEntrega===dtlEntregaDraft.tipoEntrega;
+        x.classList.toggle('active', activo); x.classList.toggle('bien', activo);
+      });
+    };
+  });
   if(dtlEntregaDraft.catalogoUnico){
     renderItemsListDtl();
     document.getElementById('btnAddItemDtl').onclick = ()=>{ dtlEntregaDraft.items.push({catalogoId:'',cantidad:1,talla:''}); renderItemsListDtl(); };
@@ -9105,7 +9127,8 @@ async function guardarEntregaDtlFinal(firmaResponsable){
         p_firma_trabajador: dtlEntregaDraft.firmaTrabajador,
         p_firma_responsable: firmaResponsable,
         p_foto_trabajador: dtlEntregaDraft.fotoTrabajador,
-        p_items: items
+        p_items: items,
+        p_tipo_entrega: dtlEntregaDraft.tipoEntrega || 'legal'
       }));
     } else {
       ({ error } = await sb.rpc('dtl_entrega_presencial_registrar', {
@@ -9119,7 +9142,8 @@ async function guardarEntregaDtlFinal(firmaResponsable){
         p_responsable_cargo: dtlEntregaDraft.responsableCargo || null,
         p_firma_trabajador: dtlEntregaDraft.firmaTrabajador,
         p_firma_responsable: firmaResponsable,
-        p_foto_trabajador: dtlEntregaDraft.fotoTrabajador
+        p_foto_trabajador: dtlEntregaDraft.fotoTrabajador,
+        p_tipo_entrega: dtlEntregaDraft.tipoEntrega || 'legal'
       }));
     }
     if(error){ toast("No se pudo guardar la entrega: "+error.message,"err"); return; }
@@ -9144,7 +9168,7 @@ async function renderFichaTrabajadorDtl(id){
     const entidadDelTrab = DTL.entidades.find(en=>en.id===t.entidad_id);
     const esContratoEscaneadoDtl = entidadDelTrab?.modo_registro === 'escaneado';
     const { data: entregas } = await sb.from("dtl_entregas")
-      .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,via,creado_en,creado_por,tipo_registro,adjunto_titulo,adjunto_tipo,ip_address,dispositivo_ua")
+      .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,via,creado_en,creado_por,tipo_registro,adjunto_titulo,adjunto_tipo,ip_address,dispositivo_ua,tipo_entrega")
       .eq("trabajador_id", id).order("fecha",{ascending:false}).order("creado_en",{ascending:false});
     const listaEntregas = entregas || [];
     // Ítems de "catálogo único" (dtl_entrega_items) — solo existen para entregas de entidades
@@ -9169,9 +9193,10 @@ async function renderFichaTrabajadorDtl(id){
       const horaEnt = e.creado_en ? new Date(e.creado_en).toLocaleTimeString("es-CO",{hour:'2-digit',minute:'2-digit'}) : '';
       const auditLinea = (e.ip_address||e.dispositivo_ua)
         ? `<div class="muted-sm">${e.ip_address?'IP '+esc(e.ip_address):''}${e.ip_address&&e.dispositivo_ua?' · ':''}${e.dispositivo_ua?esc(resumenDispositivoUA(e.dispositivo_ua)):''}</div>` : '';
+      const esReposicion = !esEscaneada && e.tipo_entrega==='reposicion';
       const itemsCol = esEscaneada
         ? `<span class="badge cerrada" style="margin-right:6px"><span class="dot"></span>Escaneado</span>${esc(e.adjunto_titulo||'')}`
-        : (partes.join(', ')||'—');
+        : `${esReposicion?'<span class="badge cerrada" style="margin-right:6px"><span class="dot"></span>Reposición</span>':''}${partes.join(', ')||'—'}`;
       const responsableCol = esEscaneada
         ? `${esc(nombreDe(e.creado_por))}${correoDe(e.creado_por)?`<div class="muted-sm">${esc(correoDe(e.creado_por))}</div>`:''}`
         : esc(e.responsable_nombre||(e.via==='remoto'?'(entrega remota)':'—'));
@@ -9246,7 +9271,7 @@ async function abrirEditarEntregaDtl(entregaId, trabajadorId){
   let entrega, items = [], catalogoUnico = false;
   try{
     const { data:e } = await sb.from("dtl_entregas")
-      .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,responsable_cargo,via,firma_trabajador,firma_responsable,foto_trabajador")
+      .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,responsable_cargo,via,firma_trabajador,firma_responsable,foto_trabajador,tipo_entrega")
       .eq("id",entregaId).maybeSingle();
     entrega = e;
     const t = DTL.trabajadores.find(x=>x.id===trabajadorId);
@@ -9268,6 +9293,7 @@ async function abrirEditarEntregaDtl(entregaId, trabajadorId){
     adicional: entrega.adicional || '',
     responsableNombre: entrega.responsable_nombre || '', responsableCargo: entrega.responsable_cargo || '',
     via: entrega.via,
+    tipoEntrega: entrega.tipo_entrega || 'legal',
     firmaTrabajador: entrega.firma_trabajador || '',
     firmaResponsable: entrega.firma_responsable || '',
     fotoTrabajador: entrega.foto_trabajador || null
@@ -9282,6 +9308,14 @@ function renderFormEditarEntregaDtl(){
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
       <div class="field"><label>Fecha de entrega</label><input type="date" id="eeDtlFecha" value="${d.fecha}"></div>
+      ${d.via==='presencial'?`
+      <div class="field">
+        <label>Tipo de entrega</label>
+        <div style="display:flex;gap:6px" id="eeDtlTipoEntregaBtns">
+          <button type="button" class="tipo-estado-btn ${d.tipoEntrega==='legal'?'active bien':''}" data-tipo-entrega="legal">Dotación legal</button>
+          <button type="button" class="tipo-estado-btn ${d.tipoEntrega==='reposicion'?'active bien':''}" data-tipo-entrega="reposicion">Reposición</button>
+        </div>
+      </div>`:''}
       ${d.catalogoUnico ? `
       <div style="display:flex;justify-content:space-between;align-items:center;margin:16px 0 10px">
         <label style="font-weight:700;font-size:14px">Ítems entregados *</label>
@@ -9346,6 +9380,15 @@ function renderFormEditarEntregaDtl(){
     wireIncluirItemDtl('eeDtlCamisaInc','eeDtlCamisaFields','eeDtlCamisaCant', d.camisaCantidad>0?d.camisaCantidad:2);
     wireIncluirItemDtl('eeDtlBotasInc','eeDtlBotasFields','eeDtlBotasCant', d.botasCantidad>0?d.botasCantidad:1);
   }
+  document.querySelectorAll('#eeDtlTipoEntregaBtns [data-tipo-entrega]').forEach(b=>{
+    b.onclick = ()=>{
+      d.tipoEntrega = b.dataset.tipoEntrega;
+      document.querySelectorAll('#eeDtlTipoEntregaBtns [data-tipo-entrega]').forEach(x=>{
+        const activo = x.dataset.tipoEntrega===d.tipoEntrega;
+        x.classList.toggle('active', activo); x.classList.toggle('bien', activo);
+      });
+    };
+  });
   document.getElementById('btnEeDtlGuardar').onclick = guardarEdicionEntregaDtl;
   document.getElementById('btnCorregirFirmaTrabDtl').onclick = ()=> abrirCorregirFirmaEntrega('dtl_entregas','firma_trabajador','Firma del trabajador','dotacion');
   const bcr = document.getElementById('btnCorregirFirmaRespDtl'); if(bcr) bcr.onclick = ()=> abrirCorregirFirmaEntrega('dtl_entregas','firma_responsable','Firma del responsable','dotacion');
@@ -9409,6 +9452,7 @@ async function guardarEdicionEntregaDtl(){
   if(d.via==='presencial'){
     payload.responsable_nombre = document.getElementById('eeDtlRespNombre').value.trim()||null;
     payload.responsable_cargo = document.getElementById('eeDtlRespCargo').value.trim()||null;
+    payload.tipo_entrega = d.tipoEntrega==='reposicion' ? 'reposicion' : 'legal';
   }
   const btn = document.getElementById('btnEeDtlGuardar'); btn.disabled=true; btn.innerHTML="Guardando…";
   bloquear("Guardando cambios…");
@@ -9444,7 +9488,7 @@ async function construirKardexDtlPDF(trabajadorId, filtroFechas){
   const { data: t } = await sb.from("dtl_trabajadores").select("id,nombre,identificacion,cargo,area,entidad_id").eq("id",trabajadorId).maybeSingle();
   if(!t) return null;
   let q = sb.from("dtl_entregas")
-    .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,firma_trabajador,firma_responsable,foto_trabajador,creado_en,via,ip_address,dispositivo_ua,tipo_registro,adjunto_titulo,adjunto_archivo,adjunto_tipo")
+    .select("id,fecha,pantalon_cantidad,pantalon_talla,camisa_cantidad,camisa_talla,botas_cantidad,botas_talla,adicional,responsable_nombre,firma_trabajador,firma_responsable,foto_trabajador,creado_en,via,ip_address,dispositivo_ua,tipo_registro,adjunto_titulo,adjunto_archivo,adjunto_tipo,tipo_entrega")
     .eq("trabajador_id", trabajadorId);
   if(filtroFechas){ q = q.gte("fecha", filtroFechas.desde).lte("fecha", filtroFechas.hasta); }
   const { data: entregas } = await q.order("fecha",{ascending:false}).order("creado_en",{ascending:false});
@@ -9555,6 +9599,7 @@ async function construirKardexDtlPDF(trabajadorId, filtroFechas){
     }
     if(e.adicional) partes.push("• "+e.adicional);
     const lineas = esEscaneada ? [pdfTexto(e.adjunto_titulo||'Entrega escaneada')] : (partes.length ? partes : ["—"]);
+    if(!esEscaneada && e.tipo_entrega==='reposicion') lineas.unshift("REPOSICIÓN");
     doc.setFont("helvetica","normal"); doc.setFontSize(7.4);
     const wrapped = doc.splitTextToSize(pdfTexto(lineas.join("\n")), x2-x1-4);
     const tieneAuditoria = !!(e.ip_address || e.dispositivo_ua);
@@ -9784,11 +9829,11 @@ async function descargarExcelDtlSeleccion(entidadIds){
    Sin login. La persona escribe su cédula; si está en el directorio
    (de cualquier entidad), puede registrar su propia entrega remota.
    ============================================================ */
-let dtlPublicoState = { trabajador:null, foto:null };
+let dtlPublicoState = { trabajador:null, foto:null, tipoEntrega:null };
 
 async function renderDtlPublico(){
   forzarTemaClaroPublico();
-  dtlPublicoState = { trabajador:null, foto:null };
+  dtlPublicoState = { trabajador:null, foto:null, tipoEntrega:null };
   await cargarAppConfig();
   renderDtlPublicoCedula();
 }
@@ -9816,8 +9861,37 @@ function renderDtlPublicoCedula(){
       return;
     }
     dtlPublicoState.trabajador = data.trabajador;
-    await renderDtlPublicoFormulario();
+    renderDtlPublicoTipoEntrega();
   };
+}
+
+/* Paso nuevo entre la cédula y el formulario de siempre — el trabajador elige él mismo si
+   lo que está recibiendo es la entrega periódica de ley o una reposición puntual, con una
+   explicación breve de cada una (pedido explícito del usuario, 2026-08-20, sección 7.200/201
+   de MEMORY.md). Cada tarjeta guarda la elección Y avanza al formulario en un solo toque —
+   no hay un botón "continuar" aparte. */
+function renderDtlPublicoTipoEntrega(){
+  const t = dtlPublicoState.trabajador;
+  document.getElementById("app").innerHTML = `
+    <div class="pub-wrap"><div class="pub-card"><div class="pub-body">
+      <img src="${LOGO}" alt="Don Aseo Ltda." style="height:40px;display:block;margin:0 auto 14px">
+      <div class="trab-summary" style="margin-bottom:20px">
+        <div class="tk">Recibe</div>
+        <div class="tv">${esc(t.nombre)} — C.C. ${esc(t.identificacion)}</div>
+        ${t.entidad_nombre?`<div class="muted-sm" style="margin-top:2px">${esc(t.entidad_nombre)}</div>`:''}
+      </div>
+      <label style="font-weight:700;font-size:15px;display:block;margin-bottom:12px;text-align:center">¿Qué tipo de entrega es esta?</label>
+      <button type="button" class="dp-tipo-card" id="dpTipoLegal">
+        <div class="dp-tipo-title">Entrega legal</div>
+        <div class="dp-tipo-desc">Es la dotación normal que te dan cada cierto tiempo, por ley.</div>
+      </button>
+      <button type="button" class="dp-tipo-card" id="dpTipoReposicion">
+        <div class="dp-tipo-title">Reposición</div>
+        <div class="dp-tipo-desc">Es un cambio puntual porque algo se dañó, se perdió o ya no sirve — no es tu entrega periódica.</div>
+      </button>
+    </div></div></div>`;
+  document.getElementById('dpTipoLegal').onclick = ()=>{ dtlPublicoState.tipoEntrega='legal'; renderDtlPublicoFormulario(); };
+  document.getElementById('dpTipoReposicion').onclick = ()=>{ dtlPublicoState.tipoEntrega='reposicion'; renderDtlPublicoFormulario(); };
 }
 
 /* Lista completa del catálogo único, una casilla por ítem — mismo patrón que
@@ -9952,7 +10026,7 @@ async function confirmarEntregaDtlPublica(){
     });
     if(!items.length){ err.textContent = 'Selecciona al menos un ítem que estás recibiendo.'; return; }
     rpc = 'dtl_publico_registrar_items';
-    params = { p_trabajador_id: t.id, p_items: items, p_adicional: adicional, p_firma_trabajador: null, p_foto_trabajador: dtlPublicoState.foto };
+    params = { p_trabajador_id: t.id, p_items: items, p_adicional: adicional, p_firma_trabajador: null, p_foto_trabajador: dtlPublicoState.foto, p_tipo_entrega: dtlPublicoState.tipoEntrega || 'legal' };
   } else {
     const pCant = +document.getElementById('dpPantalonCant').value || 0;
     const pTalla = document.getElementById('dpPantalonTalla').value.trim();
@@ -9969,7 +10043,8 @@ async function confirmarEntregaDtlPublica(){
       p_pantalon_cantidad: pCant, p_pantalon_talla: pTalla || null,
       p_camisa_cantidad: cCant, p_camisa_talla: cTalla || null,
       p_botas_cantidad: bCant, p_botas_talla: bTalla || null,
-      p_adicional: adicional, p_firma_trabajador: null, p_foto_trabajador: dtlPublicoState.foto
+      p_adicional: adicional, p_firma_trabajador: null, p_foto_trabajador: dtlPublicoState.foto,
+      p_tipo_entrega: dtlPublicoState.tipoEntrega || 'legal'
     };
   }
   if(APP_CONFIG.dotacionFotoObligatoria && !dtlPublicoState.foto){ err.textContent = 'Tu foto es obligatoria para continuar.'; return; }
