@@ -9599,11 +9599,11 @@ async function construirKardexDtlPDF(trabajadorId, filtroFechas){
     }
     if(e.adicional) partes.push("• "+e.adicional);
     const lineas = esEscaneada ? [pdfTexto(e.adjunto_titulo||'Entrega escaneada')] : (partes.length ? partes : ["—"]);
-    if(!esEscaneada && e.tipo_entrega==='reposicion') lineas.unshift("REPOSICIÓN");
+    const esReposicion = !esEscaneada && e.tipo_entrega==='reposicion';
     doc.setFont("helvetica","normal"); doc.setFontSize(7.4);
     const wrapped = doc.splitTextToSize(pdfTexto(lineas.join("\n")), x2-x1-4);
     const tieneAuditoria = !!(e.ip_address || e.dispositivo_ua);
-    let rowH = Math.max(tieneAuditoria ? 22 : 16, wrapped.length*3.6 + 5);
+    let rowH = Math.max(tieneAuditoria ? 22 : 16, wrapped.length*3.6 + 5 + (esReposicion?4.5:0));
     let fotoH = 0;
     const dims = dimsPorEntrega[e.id] || null;
     if(dims && dims.w>0){ fotoH = Math.min(90, colFotoW * (dims.h/dims.w)); rowH = Math.max(rowH, fotoH+4); }
@@ -9630,8 +9630,14 @@ async function construirKardexDtlPDF(trabajadorId, filtroFechas){
       const disp = resumenDispositivoUA(e.dispositivo_ua);
       if(disp) doc.text(disp, (x0+x1)/2, yAudit, {align:"center"});
     }
+    let yItems = y+5;
+    if(esReposicion){
+      doc.setFont("helvetica","bold"); doc.setFontSize(6.8); doc.setTextColor(214,59,80);
+      doc.text("REPOSICIÓN", x1+2, yItems);
+      yItems += 4.5;
+    }
     doc.setFont("helvetica","normal"); doc.setFontSize(7.4); doc.setTextColor(20,20,20);
-    doc.text(wrapped, x1+2, y+5);
+    doc.text(wrapped, x1+2, yItems);
     if(esEscaneada){
       if(e.adjunto_tipo==='application/pdf'){
         doc.setFont("helvetica","italic"); doc.setFontSize(6.6); doc.setTextColor(130,130,150);
