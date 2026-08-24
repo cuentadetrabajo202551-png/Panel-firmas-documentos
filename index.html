@@ -9963,19 +9963,19 @@ async function renderDtlPublicoFormulario(){
       <div id="dpListaCatalogoDtl"></div>
       ${!dtlPublicoState.catalogo.length?`<p class="muted-sm">No hay ítems configurados en el catálogo de este contrato — contacta a Recursos Humanos.</p>`:''}
       ` : `
-      <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="dpPantalonInc" checked> Pantalones</label>
+      <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="dpPantalonInc" ${esRepoForm?'':'checked'}> Pantalones</label>
       <div class="field row2" id="dpPantalonFields">
-        <div><label>Cantidad</label><input type="number" min="0" id="dpPantalonCant" value="2"></div>
+        <div><label>Cantidad</label><input type="number" min="0" id="dpPantalonCant" value="${esRepoForm?0:2}"></div>
         <div><label>Talla *</label><input id="dpPantalonTalla" placeholder="Ej. 34"></div>
       </div>
-      <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="dpCamisaInc" checked> Camisas</label>
+      <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="dpCamisaInc" ${esRepoForm?'':'checked'}> Camisas</label>
       <div class="field row2" id="dpCamisaFields">
-        <div><label>Cantidad</label><input type="number" min="0" id="dpCamisaCant" value="2"></div>
+        <div><label>Cantidad</label><input type="number" min="0" id="dpCamisaCant" value="${esRepoForm?0:2}"></div>
         <div><label>Talla *</label><input id="dpCamisaTalla" placeholder="Ej. M"></div>
       </div>
-      <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="dpBotasInc" checked> Par de botas</label>
+      <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="dpBotasInc" ${esRepoForm?'':'checked'}> Par de botas</label>
       <div class="field row2" id="dpBotasFields">
-        <div><label>Cantidad de pares</label><input type="number" min="0" id="dpBotasCant" value="1"></div>
+        <div><label>Cantidad de pares</label><input type="number" min="0" id="dpBotasCant" value="${esRepoForm?0:1}"></div>
         <div><label>Talla *</label><input id="dpBotasTalla" placeholder="Ej. 40"></div>
       </div>
       `}
