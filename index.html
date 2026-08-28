@@ -5799,6 +5799,7 @@ function abrirCatalogoModal(){
       ${puedeAdministrar?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
         <button class="btn btn-ghost btn-sm" id="btnPlantillaCat">${I.doc} Plantilla Excel</button>
         <button class="btn btn-ghost btn-sm" id="btnCargaCat">${I.plus} Carga masiva</button>
+        ${DOTACION.contratos.length>1?`<button class="btn btn-ghost btn-sm" id="btnCopiarCat">${I.copy} Copiar de otro contrato</button>`:''}
         ${DOTACION.catalogo.length?`<button class="btn btn-ghost btn-sm" id="btnDelTodoCat" style="color:var(--danger)">${I.trash} Eliminar todo</button>`:''}
       </div>`:''}
       ${puedeAgregar?`<div class="field row2" style="margin-bottom:14px">
@@ -5817,6 +5818,7 @@ function abrirCatalogoModal(){
   const bpc=document.getElementById('btnPlantillaCat'); if(bpc) bpc.onclick = descargarPlantillaCatalogoDot;
   const bcc=document.getElementById('btnCargaCat'); if(bcc) bcc.onclick = ()=> document.getElementById('fileCatalogo').click();
   const bdtc=document.getElementById('btnDelTodoCat'); if(bdtc) bdtc.onclick = eliminarTodoCatalogo;
+  const bcpc=document.getElementById('btnCopiarCat'); if(bcpc) bcpc.onclick = abrirCopiarCatalogoModal;
   const fc=document.getElementById('fileCatalogo'); if(fc) fc.onchange = (e)=>{ const f=e.target.files[0]; if(f) cargarCatalogoExcelDot(f); e.target.value=""; };
   renderCatalogoLista();
 }
@@ -5838,6 +5840,53 @@ function eliminarTodoCatalogo(){
     await loadDotacionState();
     closeModal();
     toast("Catálogo eliminado","ok");
+  };
+}
+
+/* Copia los ítems ACTIVOS del catálogo de otro contrato de EPP al contrato actual — mismo
+   espíritu que "traer trabajadores de Dotación" al crear un contrato (sección 7.199), pero acá
+   es una acción propia dentro de "Catálogo de ítems", disponible en cualquier momento (no solo
+   al crear el contrato) y entre 2 contratos de EPP, no entre módulos. No hace falta ninguna
+   función nueva en Supabase — select + insert directo sobre dot_catalogo, con la MISMA RLS que
+   ya rige "Agregar"/"Carga masiva" (admin, botón gateado a puedeAdministrar igual que esas 2).
+   Evita duplicar por nombre (case/espacios-insensible) — lo que ya tengas no se toca. */
+function abrirCopiarCatalogoModal(){
+  const otros = DOTACION.contratos.filter(c=>c.id!==contratoActualId);
+  openSubModal(`<div class="modal" style="max-width:440px">
+    <div class="modal-head"><div><h2>Copiar catálogo de otro contrato</h2><p>Trae los ítems activos de otro contrato de EPP al catálogo de "${esc(contratoActual()?.nombre||'')}".</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      ${otros.length ? `
+      <div class="field"><label>Contrato de origen *</label>
+        <select id="ccOrigen"><option value="">Elige…</option>${otros.map(c=>`<option value="${c.id}">${esc(c.nombre)}${c.activo?'':' (archivado)'}</option>`).join('')}</select>
+      </div>
+      <p class="muted-sm">Se agregan los ítems que no tengas ya (mismo nombre) — los que ya tienes no se duplican ni se modifican.</p>
+      ` : `<p class="muted-sm">No hay otro contrato de EPP todavía.</p>`}
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      ${otros.length?`<button class="btn btn-primary" id="btnCopiarCatalogoConfirmar">${I.check} Copiar</button>`:''}
+    </div></div>`, ()=>abrirCatalogoModal());
+  const btn = document.getElementById('btnCopiarCatalogoConfirmar');
+  if(btn) btn.onclick = async ()=>{
+    const origenId = document.getElementById('ccOrigen').value;
+    if(!origenId){ toast("Elige un contrato de origen","err"); return; }
+    btn.disabled=true; btn.innerHTML="Copiando…";
+    bloquear("Copiando catálogo…");
+    try{
+      const { data: items, error } = await sb.from("dot_catalogo").select("nombre,unidad").eq("contrato_id", origenId).eq("activo", true);
+      if(error){ toast("No se pudo leer el catálogo de origen: "+error.message,"err"); return; }
+      if(!items || !items.length){ toast("Ese contrato no tiene ítems activos en su catálogo","err"); return; }
+      const existentesNorm = new Set(DOTACION.catalogo.map(c=>(c.nombre||'').trim().toLowerCase()));
+      const nuevos = items.filter(it=> !existentesNorm.has((it.nombre||'').trim().toLowerCase()));
+      if(!nuevos.length){ toast("Ya tienes todos esos ítems en tu catálogo","ok"); closeModal(); return; }
+      const { error: errIns } = await sb.from("dot_catalogo").insert(nuevos.map(it=>({ nombre: it.nombre, unidad: it.unidad, contrato_id: contratoActualId })));
+      if(errIns){ toast("No se pudo copiar: "+errIns.message,"err"); return; }
+      await loadDotacionState();
+      const omitidos = items.length - nuevos.length;
+      toast(`${nuevos.length} ítem${nuevos.length===1?'':'s'} copiado${nuevos.length===1?'':'s'}${omitidos?` · ${omitidos} ya lo${omitidos===1?'':'s'} tenías`:''}`,"ok");
+      closeModal();
+    } finally { desbloquear(); }
   };
 }
 
