@@ -5517,29 +5517,39 @@ function renderContratosLista(){
   });
 }
 
-/* Eliminar un contrato en duro — la base de datos ya lo bloquea (llave foránea, sin
-   cascade) si todavía tiene algún trabajador asociado, activo o inactivo. Solo
-   funciona para un contrato que quedó vacío (ej. se creó por error). */
+/* Eliminar un contrato en duro. La base de datos hace cascada completa (contrato →
+   trabajadores → entregas/items), así que esto SÍ borra todo aunque tenga gente —
+   por eso, si tiene al menos un trabajador (activo o inactivo), se exige escribir el
+   nombre exacto del contrato para habilitar el botón, y el aviso lo dice explícito. */
 function eliminarContratoDot(id){
   const c = DOTACION.contratos.find(x=>x.id===id); if(!c) return;
-  openSubModal(`<div class="modal" style="max-width:420px">
+  const nTrab = DOTACION.trabajadores.filter(t=>t.contrato_id===id).length;
+  const grave = nTrab>0;
+  openSubModal(`<div class="modal" style="max-width:440px">
     <div class="modal-head"><div><h2>Eliminar contrato</h2><p>Esta acción no se puede deshacer.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminará el contrato "<b>${esc(c.nombre)}</b>". Solo se puede eliminar si no tiene ningún trabajador asociado (ni activo ni inactivo).</p></div>
+    <div class="modal-body">
+      <p style="font-size:14.5px;color:var(--ink-2)">Se eliminará el contrato "<b>${esc(c.nombre)}</b>"${grave?` y con él se borrarán <b>permanentemente</b> sus ${nTrab} trabajador(es) — incluidas todas sus entregas y firmas registradas. No queda ningún respaldo.`:', que no tiene ningún trabajador asociado.'}</p>
+      ${grave?`<div class="field"><label>Para confirmar, escribe el nombre exacto del contrato</label><input id="confDelContratoDotNombre" placeholder="${esc(c.nombre)}" autocomplete="off"></div>`:''}
+    </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-danger" id="confDelContratoDot">${I.trash} Sí, eliminar</button></div></div>`, ()=> abrirGestionContratos());
+      <button class="btn btn-danger" id="confDelContratoDot" ${grave?'disabled':''}>${I.trash} Sí, eliminar</button></div></div>`, ()=> abrirGestionContratos());
+  if(grave){
+    const inp = document.getElementById('confDelContratoDotNombre');
+    const btn0 = document.getElementById('confDelContratoDot');
+    inp.oninput = ()=>{ btn0.disabled = inp.value.trim().toLowerCase() !== c.nombre.trim().toLowerCase(); };
+  }
   document.getElementById('confDelContratoDot').onclick = async ()=>{
     const btn = document.getElementById('confDelContratoDot'); btn.disabled=true; btn.innerHTML="Eliminando…";
     const { error } = await sb.from("dot_contratos").delete().eq("id", id);
     if(error){
       btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`;
-      const fk = /foreign key|violat/i.test(error.message||"");
-      toast(fk?"No se puede eliminar: todavía tiene trabajadores asociados. Archívalo en vez de eliminarlo, o elimina primero a sus trabajadores.":"No se pudo eliminar: "+error.message,"err");
+      toast("No se pudo eliminar: "+error.message,"err");
       return;
     }
     if(id===contratoActualId){ contratoActualId='todos'; localStorage.setItem('dot_contrato_actual','todos'); }
     await loadDotacionState();
-    toast("Contrato eliminado","ok");
+    toast(`Contrato eliminado${grave?` — ${nTrab} trabajador(es) y su historial también se eliminaron`:''}`,"ok");
     closeModal();
   };
 }
@@ -8145,29 +8155,39 @@ function renderEntidadesDtlLista(){
   });
 }
 
-/* Eliminar un contrato en duro — la base de datos ya lo bloquea (llave foránea, sin
-   cascade) si todavía tiene algún trabajador asociado, activo o inactivo. Solo
-   funciona para un contrato que quedó vacío (ej. se creó por error). */
+/* Eliminar un contrato en duro. La base de datos hace cascada completa (entidad →
+   trabajadores → entregas/items), así que esto SÍ borra todo aunque tenga gente —
+   por eso, si tiene al menos un trabajador (activo o inactivo), se exige escribir el
+   nombre exacto del contrato para habilitar el botón, y el aviso lo dice explícito. */
 function eliminarEntidadDtl(id){
   const x = DTL.entidades.find(e=>e.id===id); if(!x) return;
-  openSubModal(`<div class="modal" style="max-width:420px">
+  const nTrab = DTL.trabajadores.filter(t=>t.entidad_id===id).length;
+  const grave = nTrab>0;
+  openSubModal(`<div class="modal" style="max-width:440px">
     <div class="modal-head"><div><h2>Eliminar contrato</h2><p>Esta acción no se puede deshacer.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminará el contrato "<b>${esc(x.nombre)}</b>". Solo se puede eliminar si no tiene ningún trabajador asociado (ni activo ni inactivo).</p></div>
+    <div class="modal-body">
+      <p style="font-size:14.5px;color:var(--ink-2)">Se eliminará el contrato "<b>${esc(x.nombre)}</b>"${grave?` y con él se borrarán <b>permanentemente</b> sus ${nTrab} trabajador(es) — incluidas todas sus entregas y firmas registradas. No queda ningún respaldo.`:', que no tiene ningún trabajador asociado.'}</p>
+      ${grave?`<div class="field"><label>Para confirmar, escribe el nombre exacto del contrato</label><input id="confDelEntidadDtlNombre" placeholder="${esc(x.nombre)}" autocomplete="off"></div>`:''}
+    </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-danger" id="confDelEntidadDtl">${I.trash} Sí, eliminar</button></div></div>`, ()=> abrirGestionEntidadesDtl());
+      <button class="btn btn-danger" id="confDelEntidadDtl" ${grave?'disabled':''}>${I.trash} Sí, eliminar</button></div></div>`, ()=> abrirGestionEntidadesDtl());
+  if(grave){
+    const inp = document.getElementById('confDelEntidadDtlNombre');
+    const btn0 = document.getElementById('confDelEntidadDtl');
+    inp.oninput = ()=>{ btn0.disabled = inp.value.trim().toLowerCase() !== x.nombre.trim().toLowerCase(); };
+  }
   document.getElementById('confDelEntidadDtl').onclick = async ()=>{
     const btn = document.getElementById('confDelEntidadDtl'); btn.disabled=true; btn.innerHTML="Eliminando…";
     const { error } = await sb.from("dtl_entidades").delete().eq("id", id);
     if(error){
       btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`;
-      const fk = /foreign key|violat/i.test(error.message||"");
-      toast(fk?"No se puede eliminar: todavía tiene trabajadores asociados. Archívalo en vez de eliminarlo, o elimina primero a sus trabajadores.":"No se pudo eliminar: "+error.message,"err");
+      toast("No se pudo eliminar: "+error.message,"err");
       return;
     }
     if(id===dtlFiltroEntidad){ dtlFiltroEntidad='todas'; localStorage.setItem('dtl_filtro_entidad','todas'); }
     await loadDtlState();
-    toast("Contrato eliminado","ok");
+    toast(`Contrato eliminado${grave?` — ${nTrab} trabajador(es) y su historial también se eliminaron`:''}`,"ok");
     closeModal();
   };
 }
