@@ -5474,7 +5474,7 @@ function renderContratosLista(){
       <span class="muted-sm" style="width:90px">${n} trabajador${n===1?'':'es'}</span>
       <button class="icon-btn" title="Renombrar" data-ct-edit="${c.id}">${I.pen}</button>
       <button class="icon-btn" title="${c.activo?'Archivar':'Reactivar'}" data-ct-toggle="${c.id}">${c.activo?I.lock:I.check}</button>
-      <button class="icon-btn danger" title="${n?'No se puede eliminar: tiene trabajadores asociados':'Eliminar'}" data-ct-del="${c.id}" ${n?'disabled':''}>${I.trash}</button>
+      <button class="icon-btn danger" title="Eliminar" data-ct-del="${c.id}">${I.trash}</button>
     </div>`;
   }).join('');
   host.querySelectorAll('[data-ct-edit]').forEach(b=>{ b.onclick = ()=> abrirFormContrato(b.dataset.ctEdit, ()=>abrirGestionContratos()); });
@@ -8113,7 +8113,7 @@ function renderEntidadesDtlLista(){
       <span class="muted-sm" style="width:90px">${n} trabajador${n===1?'':'es'}</span>
       <button class="icon-btn" title="Renombrar" data-ent-edit="${x.id}">${I.pen}</button>
       <button class="icon-btn ${x.activo?'danger':''}" title="${x.activo?'Archivar':'Reactivar'}" data-ent-toggle="${x.id}">${x.activo?I.lock:I.check}</button>
-      <button class="icon-btn danger" title="${n?'No se puede eliminar: tiene trabajadores asociados':'Eliminar'}" data-ent-del="${x.id}" ${n?'disabled':''}>${I.trash}</button>
+      <button class="icon-btn danger" title="Eliminar" data-ent-del="${x.id}">${I.trash}</button>
     </div>`;
   }).join('') || '<p class="muted-sm">Sin contratos todavía.</p>';
   host.querySelectorAll('[data-ent-edit]').forEach(b=>{ b.onclick = ()=> abrirFormEntidadDtl(b.dataset.entEdit); });
