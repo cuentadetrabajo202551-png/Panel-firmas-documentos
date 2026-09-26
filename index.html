@@ -6402,8 +6402,8 @@ async function pintarDiferenciasRh(modulo){
   const host = document.getElementById('difRhBody');
   if(!host) return; // se cerró mientras cargaba
   if(error){ host.innerHTML = `<div class="empty"><h3>No se pudo cargar</h3><p>${esc(error.message)}</p></div>`; return; }
-  const ret = data?.retirados||[], noEst = data?.no_estan||[], avisos = data?.avisos||[], contratos = data?.contratos||[];
-  if(!ret.length && !noEst.length && !avisos.length && !contratos.length){
+  const ret = data?.retirados||[], noEst = data?.no_estan||[], inact = data?.inactivas_parecidas||[], avisos = data?.avisos||[], contratos = data?.contratos||[];
+  if(!ret.length && !noEst.length && !inact.length && !avisos.length && !contratos.length){
     host.innerHTML = `<div class="empty"><div class="ic">${I.check}</div><h3>Todo cuadra con RH</h3><p>No hay nada pendiente por revisar en este módulo.</p></div>`;
     return;
   }
@@ -6415,6 +6415,12 @@ async function pintarDiferenciasRh(modulo){
   const fila = (izq, der) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div style="min-width:220px;flex:1">${izq}</div>${der}</div>`;
   const titulo = (txt, n, extra) => `<div class="sec-bar" style="margin-top:16px"><h2 style="font-size:15px">${txt} <span class="muted-sm">(${n})</span></h2>${extra||''}</div>`;
   const nada = `<p class="muted-sm" style="margin:2px 0 8px">Ninguno.</p>`;
+  // Personas de RH de nombre parecido a una ficha, cada una con su botón «Es esta persona»
+  const candidatos = x => (x.candidatos||[]).map(c=>`
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px dashed var(--line);flex-wrap:wrap">
+              <span style="font-size:13px">${esc(c.nombre)} · C.C. ${esc(c.cedula)} · ${esc(c.cliente||'—')} · ${c.activo?'activo en RH':'retirado en RH'}</span>
+              <button class="btn btn-ghost btn-sm" data-dif-corregir="${x.id}" data-cedula="${esc(c.cedula)}" data-nombre-rh="${esc(c.nombre)}">Es esta persona</button>
+            </div>`).join('');
 
   let h = titulo('Activos aquí, retirados en RH', ret.length,
     ret.length>1 ? `<button class="btn btn-primary btn-sm" id="btnDifInactivarTodos">Pasar los ${ret.length} a inactivos</button>` : '');
@@ -6430,17 +6436,21 @@ async function pintarDiferenciasRh(modulo){
       `<button class="btn btn-ghost btn-sm" data-dif-inactivar="${x.id}">Pasar a inactivo</button>`)
       + `<div style="margin-top:8px">
         ${(x.candidatos||[]).length
-          ? `<div class="muted-sm" style="margin-bottom:4px">Personas de RH con nombre parecido:</div>` + x.candidatos.map(c=>`
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px dashed var(--line);flex-wrap:wrap">
-              <span style="font-size:13px">${esc(c.nombre)} · C.C. ${esc(c.cedula)} · ${esc(c.cliente||'—')} · ${c.activo?'activo en RH':'retirado en RH'}</span>
-              <button class="btn btn-ghost btn-sm" data-dif-corregir="${x.id}" data-cedula="${esc(c.cedula)}" data-nombre-rh="${esc(c.nombre)}">Es esta persona</button>
-            </div>`).join('')
+          ? `<div class="muted-sm" style="margin-bottom:4px">Personas de RH con nombre parecido:</div>` + candidatos(x)
           : `<div class="muted-sm">No hay nadie de nombre parecido en RH.</div>`}
         <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
           <div class="field" style="margin:0;max-width:200px"><input data-dif-ced-input="${x.id}" placeholder="Otra cédula de RH" inputmode="numeric"></div>
           <button class="btn btn-ghost btn-sm" data-dif-corregir-manual="${x.id}">Corregir cédula</button>
         </div>
       </div>`)).join('') : nada;
+
+  // CAMBIOS_SQL_87: fichas viejas (inactivas, con entregas) que pueden ser alguien que RH ya registró con otra cédula
+  h += titulo('Inactivos con entregas que se parecen a alguien de RH', inact.length);
+  h += inact.length ? `<p class="muted-sm" style="margin:2px 0 8px">Pueden ser personas que un supervisor creó con la cédula mal escrita y que RH ya registró con su cédula real. Si es la misma persona, elige «Es esta persona»: queda una sola ficha, con su cédula de RH y todas sus entregas. Si no es ninguna, dale «No es ninguna» y no vuelve a salir.</p>`
+    + inact.map(x=> caja(fila(
+      `${enlace(x)}<div class="muted-sm">C.C. ${esc(x.identificacion)} · ${esc(x.contrato)}${nEnt(x)} · inactivo</div>`,
+      `<button class="btn btn-ghost btn-sm" data-dif-descartar-parecido="${x.id}">No es ninguna</button>`)
+      + `<div style="margin-top:8px"><div class="muted-sm" style="margin-bottom:4px">Personas de RH con nombre parecido:</div>${candidatos(x)}</div>`)).join('') : nada;
 
   h += titulo('Avisos de cédula sin revisar', avisos.length);
   h += avisos.length ? avisos.map(x=> caja(fila(
@@ -6470,13 +6480,21 @@ async function pintarDiferenciasRh(modulo){
       ()=> sb.rpc('firmas_diferencias_inactivar', { p_modulo: modulo, p_ids: ret.map(x=>x.id) }),
       r=> `${r?.inactivadas||0} pasado(s) a inactivo${r?.activos_en_rh?` · ${r.activos_en_rh} no se cambiaron porque en RH están activos`:''}`);
   const corregir = (id, cedula, nombreRh)=>{
-    const x = noEst.find(y=>y.id===id);
+    const x = noEst.concat(inact).find(y=>y.id===id);
     confirmarDiferenciaRh(modulo, 'Corregir cédula',
       `La ficha de <b>${esc(x?.nombre||'')}</b> (C.C. ${esc(x?.identificacion||'')}) pasa a tener la cédula <b>${esc(cedula)}</b>${nombreRh?` de <b>${esc(nombreRh)}</b> en RH`:''}. Sus entregas se quedan con ella y desde ahí queda igual a RH (nombre, cargo, contrato y estado). Si en ${otroModulo} tiene una ficha con la misma cédula equivocada, también se corrige.`,
       'Sí, corregir',
       ()=> sb.rpc('firmas_diferencias_corregir_cedula', { p_modulo: modulo, p_trabajador_id: id, p_cedula: cedula }),
-      r=> r?.ok ? `Cédula corregida${r.choques?` · ${r.choques} ficha(s) no se tocaron porque esa persona ya tiene ficha en ese contrato`:''}` : null);
+      r=> r?.ok ? `Cédula corregida${r.unidas?' · se unió con la ficha que ya tenía':''}${r.choques?` · ${r.choques} ficha(s) no se tocaron porque esa persona ya tiene ficha en ese contrato`:''}` : null);
   };
+  host.querySelectorAll('[data-dif-descartar-parecido]').forEach(b=>{ b.onclick = ()=>{
+    const x = inact.find(y=>y.id===b.dataset.difDescartarParecido);
+    confirmarDiferenciaRh(modulo, 'No es ninguna',
+      `La ficha de <b>${esc(x?.nombre||'')}</b> (C.C. ${esc(x?.identificacion||'')}) deja de mostrarse aquí. No se cambia nada: sigue inactiva, con sus entregas.`,
+      'Sí, no es ninguna',
+      ()=> sb.rpc('firmas_diferencias_descartar', { p_modulo: modulo, p_trabajador_id: b.dataset.difDescartarParecido }),
+      r=> r?.ok ? 'Listo, esa ficha ya no saldrá aquí' : null);
+  }; });
   host.querySelectorAll('[data-dif-corregir]').forEach(b=>{ b.onclick = ()=> corregir(b.dataset.difCorregir, b.dataset.cedula, b.dataset.nombreRh); });
   host.querySelectorAll('[data-dif-corregir-manual]').forEach(b=>{ b.onclick = ()=>{
     const inp = host.querySelector(`[data-dif-ced-input="${b.dataset.difCorregirManual}"]`);
