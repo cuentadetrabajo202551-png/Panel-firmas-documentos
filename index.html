@@ -40,69 +40,8 @@
   --shadow-lg:0 24px 60px rgba(14,23,51,.18), 0 8px 24px rgba(14,23,51,.10);
   --font:"Manrope",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
   --display:"Bricolage Grotesque","Manrope",sans-serif;
+  color-scheme:light; /* sin modo oscuro: evita que el navegador oscurezca la página por su cuenta */
 }
-/* Modo oscuro — mismas variables de siempre, redefinidas (el resto del CSS ya usa
-   var(--xxx) en casi todo, así que hereda el tema solo con esto). Criterio Material
-   Design (ver m2.material.io/design/color/dark-theme.html): superficies gris oscuro
-   AZULADO, nunca negro puro (menos fatiga visual, las sombras se notan mejor); los
-   colores de acento se aclaran/desaturan un poco frente a su versión de modo claro
-   para no "vibrar" sobre fondo oscuro (los saturados del modo claro se ven bien sobre
-   blanco, pero cansan sobre superficies oscuras). "--brand"/"--brand-deep" se usan
-   sobre todo como PAR fondo-suave + texto (ej. .hstat-ic, .lcard .tipo, .badge) — al
-   invertir ambos el mismo patrón sigue funcionando sin tocar ninguna regla que ya use
-   la variable, solo estas dos declaraciones. */
-:root[data-theme="dark"]{
-  --brand:#5b7cfa;
-  --brand-deep:#a9bdff;
-  --brand-soft:#1c2447;
-  --brand-soft2:#293268;
-  --green:#3ecf76;
-  --green-soft:#123324;
-  --yellow:#f0c94a;
-  --ink:#e9ecf6;
-  --ink-2:#b3bad4;
-  --ink-3:#828ab0;
-  --line:#2b3358;
-  --line-2:#232b4c;
-  --bg:#0e1224;
-  --card:#171d38;
-  --danger:#ff7b8a;
-  --danger-soft:#3a1723;
-  --shadow-sm:0 1px 2px rgba(0,0,0,.35), 0 1px 3px rgba(0,0,0,.3);
-  --shadow:0 4px 14px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.35);
-  --shadow-lg:0 24px 60px rgba(0,0,0,.6), 0 8px 24px rgba(0,0,0,.4);
-}
-/* La gran mayoría de reglas ya usa var(--card)/var(--bg)/etc. y hereda el tema con
-   solo las variables de arriba. Estas de acá son las excepciones — reglas que traían
-   un color fijo en vez de una variable — SOLO para superficies de interfaz normales
-   (campos, tarjetas, tablas, chips). Deliberadamente NO se tocan las superficies que
-   representan contenido real que debe verse igual sin importar el tema: firmas
-   (.sig-box, .sig-thumb, .resp-firma .rf-img, etc.), fotos (.foto-thumb, .ev-img),
-   el QR (#qrBox, siempre debe quedar negro sobre blanco para poder escanearse) y la
-   vista previa de PDF/documento (.pdf-page, .doc-render) — esas son "papel", no
-   interfaz, y cambiarles el fondo no tendría sentido. */
-:root[data-theme="dark"] .modal-foot{background:#12172c}
-:root[data-theme="dark"] .topbar{background:rgba(14,18,36,.82)}
-:root[data-theme="dark"] .field input,:root[data-theme="dark"] .field textarea,:root[data-theme="dark"] .field select,
-:root[data-theme="dark"] input[type="date"],:root[data-theme="dark"] input[type="time"],
-:root[data-theme="dark"] .item-row select,:root[data-theme="dark"] .item-row input,
-:root[data-theme="dark"] .chip-predet,:root[data-theme="dark"] .predet-pick,
-:root[data-theme="dark"] .chip-estado,:root[data-theme="dark"] .tipo-estado-btn,
-:root[data-theme="dark"] .sec-card,:root[data-theme="dark"] .dropzone{background:var(--card)}
-:root[data-theme="dark"] .info-item,:root[data-theme="dark"] table.dt th,
-:root[data-theme="dark"] .trab-summary,:root[data-theme="dark"] .firma-legal{background:var(--brand-soft)}
-:root[data-theme="dark"] table.dt tr:hover td{background:var(--line-2)}
-:root[data-theme="dark"] .aviso-cedula{background:#332a10;border-color:#5c4a12;color:#e0c874}
-/* Parches de estilos EN LÍNEA (escritos directo en el HTML generado por JS, ej.
-   style="background:#f6f8fd") — cambiarlos uno por uno en cada plantilla habría sido
-   cientos de ediciones repetidas; en cambio se atrapan todos aquí por el TEXTO del
-   atributo "style" (funciona porque "style" es un atributo normal para efectos de
-   selección CSS). Necesitan !important porque un estilo en línea siempre le gana a
-   cualquier regla de hoja de estilos, sin importar la especificidad. */
-:root[data-theme="dark"] [style*="background:#f6f8fd"]{background:var(--brand-soft)!important}
-:root[data-theme="dark"] [style*="background:#f4f6fc"]{background:var(--bg)!important}
-:root[data-theme="dark"] [style*="background:#fff9e6"]{background:#332a10!important;color:#e0c874!important}
-:root[data-theme="dark"] [style*="background:#fff;color:var(--brand-deep)"]{background:var(--card)!important}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;overflow-x:hidden;max-width:100%}
 body{
@@ -791,35 +730,6 @@ table.dt tr:hover td{background:#fafbfe}
 .resp-firma .rf-img{height:56px;max-width:160px;object-fit:contain;border:1px solid var(--line);border-radius:8px;background:#fff;padding:3px}
 .chip-sol{display:inline-block;background:var(--brand);color:#fff;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:999px;letter-spacing:.03em;vertical-align:middle}
 </style>
-<script>
-// Aplica el tema ANTES de pintar la página (por eso va aparte, chiquito, en el
-// <head> — si se hiciera en el script grande de abajo, que corre después de que el
-// navegador ya casi terminó de leer el <body>, se alcanzaría a ver un parpadeo de
-// tema claro antes de cambiar a oscuro). localStorage manda; si nunca se eligió,
-// se respeta el tema del sistema operativo/navegador.
-(function(){
-  try{
-    // TODO link remoto/público (sin login) SIEMPRE se ve en modo claro — nunca hereda
-    // el tema oscuro guardado ni el del sistema operativo/navegador de quien lo abre.
-    // Regla fija del usuario, motivada porque varios trabajadores que registraban su
-    // propia entrega de Dotación desde su celular la veían en modo oscuro sin haberlo
-    // elegido. Mismo listado de rutas que esRutaPublica() (más abajo en este archivo;
-    // si se agrega una ruta pública nueva ahí, hay que agregarla también acá) — QR de
-    // asistencia, firma de documentos, entrega remota de EPP/Dotación (incl. "trabajador
-    // nuevo"), y el formulario público de Inspecciones.
-    var h = location.hash;
-    if(h.indexOf('#/lista/')===0 || h.indexOf('#/firmar/')===0 || h.indexOf('#/responsable/')===0 ||
-       h.indexOf('#/firmadoc/')===0 || h.indexOf('#/dotacionlegal/entrega')===0 ||
-       h.indexOf('#/dotacion/entrega')===0 || h.indexOf('#/inspeccion/')===0){
-      document.documentElement.setAttribute('data-theme', 'light');
-      return;
-    }
-    var t = localStorage.getItem('tema_firmas');
-    if(t!=='dark' && t!=='light') t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
-    document.documentElement.setAttribute('data-theme', t);
-  }catch(e){}
-})();
-</script>
 </head>
 <body>
 
@@ -884,8 +794,6 @@ const I = {
   warn:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>',
   gear:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>',
   logout:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>',
-  sun:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>',
-  moon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>',
   navAsistencia:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="12" height="16" rx="2"/><rect x="8.7" y="3.3" width="4.6" height="2.2" rx="0.8" fill="#0b1330" stroke-width="1.2"/><path d="m8.5 12 2 2 4-4"/><circle cx="18" cy="17" r="2.3"/><path d="M14.7 22v-.8a2.8 2.8 0 0 1 2.8-2.8h1a2.8 2.8 0 0 1 2.8 2.8V22"/></svg>',
   navEpp:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="8.5" width="8" height="7" rx="2.4"/><rect x="14" y="8.5" width="8" height="7" rx="2.4"/><path d="M10 12h4"/><path d="M2 12H0.3M22 12h1.7"/></svg>',
   navDotacion:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.38 3.46 16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 .55.45 1 1 1h10a1 1 0 0 0 1-1V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"/></svg>',
@@ -1373,7 +1281,6 @@ function topbar(active){
           <div class="sb-profile-role">${rolLabel}</div>
         </div>
         <div class="sb-profile-actions">
-          <button class="sb-icon-btn" data-role="tema" title="${temaActual()==='dark'?'Cambiar a modo claro':'Cambiar a modo oscuro'}">${temaActual()==='dark'?I.sun:I.moon}</button>
           ${MIPERFIL.esAdmin?`<a href="#/configuracion" class="sb-icon-btn ${active==='configuracion'?'active':''}" title="Configuración">${I.gear}</a>`:''}
           <button class="sb-icon-btn danger" data-role="logout" title="Salir">${I.logout}</button>
         </div>
@@ -1390,30 +1297,10 @@ function topbar(active){
       <nav class="topnav">${navLinksHTML(active,'active',true)}</nav>
       <div class="topbar-spacer"></div>
       ${STATE.userEmail?`<span class="user-chip" title="${esc(STATE.userEmail)}">${I.user} ${esc(STATE.userEmail)}</span>`:""}
-      <button class="logout-btn" data-role="tema" title="${temaActual()==='dark'?'Modo claro':'Modo oscuro'}" style="background:var(--brand-soft);color:var(--brand-deep)">${temaActual()==='dark'?I.sun:I.moon}</button>
       <button class="logout-btn" data-role="logout">${I.lock} Salir</button>
     </div></div>`;
 }
-function temaActual(){ return document.documentElement.getAttribute('data-theme')==='dark' ? 'dark' : 'light'; }
-// Regla fija: TODO link remoto/público (sin login — QR de asistencia, firma de
-// documentos, entrega remota de EPP/Dotación, formulario de Inspecciones) se ve
-// SIEMPRE en modo claro, nunca hereda el tema oscuro guardado ni el del sistema
-// operativo de quien lo abre. El script del <head> ya cubre la carga inicial (mismo
-// listado de rutas que esRutaPublica()); esto refuerza por si se llega navegando
-// dentro de la misma pestaña (ese script del <head> solo corre una vez, al cargar).
-function forzarTemaClaroPublico(){ document.documentElement.setAttribute('data-theme', 'light'); }
-function aplicarTema(t){
-  document.documentElement.setAttribute('data-theme', t);
-  try{ localStorage.setItem('tema_firmas', t); }catch(e){}
-  document.querySelectorAll('[data-role="tema"]').forEach(b=>{
-    b.innerHTML = t==='dark' ? I.sun : I.moon;
-    b.title = t==='dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro';
-  });
-}
 function wireLogout(){
-  document.querySelectorAll('[data-role="tema"]').forEach(b=>{
-    b.onclick = ()=> aplicarTema(temaActual()==='dark' ? 'light' : 'dark');
-  });
   document.querySelectorAll('[data-role="logout"]').forEach(b=>{
     b.onclick = async ()=>{
       // Los 5 auto-refrescos silenciosos (Asistencia/Documentos/EPP/Dotación/Inspecciones,
@@ -2120,7 +2007,6 @@ let publicList = null;
 let publicCount = 0;
 
 async function renderPublic(id){
-  forzarTemaClaroPublico();
   document.body.style.overflow="";
   const { data:filasPub, error:loadErr } = await sb.rpc("asis_lista_publica", { p_id: id });
   const row = filasPub && filasPub[0];
@@ -2393,7 +2279,6 @@ function mostrarYaRegistrado(documento){
    VISTA PÚBLICA · FIRMA DEL RESPONSABLE (persona externa, sin login)
    ============================================================ */
 async function renderFirmaResponsable(id){
-  forzarTemaClaroPublico();
   document.body.style.overflow="";
   const host = document.getElementById("app");
   const { data:filasResp } = await sb.rpc("asis_lista_responsable_publica", { p_id: id });
@@ -4541,7 +4426,6 @@ function wireFormularioFirma(){
 }
 
 async function renderFirmaPublica(token){
-  forzarTemaClaroPublico();
   document.body.style.overflow="";
   const cont = document.getElementById("app");
   cont.innerHTML = `<div class="pub-wrap"><div class="pub-card"><div class="pub-body" style="text-align:center;padding:54px 20px"><div class="muted-sm">Cargando documento…</div></div></div></div>`;
@@ -4769,7 +4653,6 @@ function extraFieldsDocHTML(c){
 }
 
 async function renderFirmaDoc(id){
-  forzarTemaClaroPublico();
   document.body.style.overflow="";
   const cont = document.getElementById("app");
   cont.innerHTML = `<div class="pub-wrap"><div class="pub-card"><div class="pub-body" style="text-align:center;padding:54px 20px"><div class="muted-sm">Cargando documento…</div></div></div></div>`;
@@ -6694,7 +6577,6 @@ function eliminarFichaTrabajador(modulo, id, nombre, nEntregas, alTerminar, volv
 /* El link de "trabajadores nuevos" (#/dotacion/entrega-nuevo/… y #/dotacionlegal/entrega-nuevo/…)
    se retiró con CAMBIOS_SQL_85: los trabajadores llegan de RH. Quien abra un enlace viejo ve esto. */
 function renderEnlaceNuevosRetirado(){
-  forzarTemaClaroPublico();
   document.getElementById("app").innerHTML = `<div class="pub-wrap"><div class="pub-card"><div class="pub-body">
     <img src="${LOGO}" alt="Don Aseo Ltda." style="height:48px;display:block;margin:0 auto 18px">
     <h2 style="text-align:center;margin-bottom:8px">Este enlace ya no se usa</h2>
@@ -6721,7 +6603,6 @@ let dotPublicoState = { contratoId:null, catalogo:[], trabajador:null, foto:null
    caso de alguien que cambió de contrato); si de verdad hay ambigüedad (0
    activos, o 2+ activos a la vez), se le pregunta en cuál trabaja. */
 async function renderDotPublicoUniversal(){
-  forzarTemaClaroPublico();
   dotPublicoState = { contratoId:null, catalogo:[], trabajador:null, foto:null };
   await cargarAppConfig();   // sin esto, APP_CONFIG queda en su valor por defecto y el aviso "(obligatoria)" no sale aunque sí se exija al guardar (lo aplica un trigger en la base de datos, no el cliente)
   renderDotPublicoCedulaUniversal();
@@ -9169,7 +9050,6 @@ async function descargarExcelDtlSeleccion(entidadIds){
 let dtlPublicoState = { trabajador:null, foto:null, tipoEntrega:null };
 
 async function renderDtlPublico(){
-  forzarTemaClaroPublico();
   dtlPublicoState = { trabajador:null, foto:null, tipoEntrega:null };
   await cargarAppConfig();
   renderDtlPublicoCedula();
@@ -13377,10 +13257,6 @@ async function generarInspeccionPDF(id){
 let firmantesPadsInsp = {};
 
 async function renderInspeccionPublica(enlaceId){
-  // Regla fija: este formulario público nunca se ve en modo oscuro (ver el script
-  // de tema en el <head>) — se refuerza acá por si se llega a esta ruta navegando
-  // dentro de la misma pestaña (ese script del <head> solo corre en la carga inicial).
-  document.documentElement.setAttribute('data-theme', 'light');
   document.body.style.overflow = "";
   bloquear("Cargando…");
   let resp;
