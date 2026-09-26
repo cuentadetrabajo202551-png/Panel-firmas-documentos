@@ -6105,7 +6105,8 @@ async function renderFichaTrabajador(id){
         <div class="page-head">
           <div><h1>${esc(t.nombre)}</h1><p>C.C. ${esc(t.identificacion)}${t.cargo?' · '+esc(t.cargo):''}${t.area?' · '+esc(t.area):''} · ${esc(DOTACION.contratos.find(c=>c.id===t.contrato_id)?.nombre||'—')}${t.fecha_ingreso?' · Ingresó '+fmtDate(t.fecha_ingreso):''}${t.fecha_salida?' · Salió '+fmtDate(t.fecha_salida):''}</p></div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
-            ${MIPERFIL.esAdmin?`<button class="btn btn-ghost" id="btnEditarTrab">${I.pen} Editar área</button>`:''}
+            ${MIPERFIL.esAdmin?`<button class="btn btn-ghost" id="btnEditarTrab">${I.pen} Editar área</button>
+            <button class="btn btn-ghost" id="btnEliminarFicha" style="color:var(--danger)">${I.trash} Eliminar ficha</button>`:''}
             ${listaEntregas.length?(esContratoEscaneado
               ? `<button class="btn btn-ghost" id="btnZipAdjuntos">${I.doc} Descargar ZIP</button>`
               : `<button class="btn btn-ghost" id="btnKardex">${I.pdf} Imprimir kárdex</button>`):''}
@@ -6119,6 +6120,7 @@ async function renderFichaTrabajador(id){
     wireLogout();
     document.getElementById('btnVolverDot').onclick = ()=> location.hash="#/dotacion";
     const bet = document.getElementById('btnEditarTrab'); if(bet) bet.onclick = ()=> abrirTrabajadorForm(t.id);
+    const bel = document.getElementById('btnEliminarFicha'); if(bel) bel.onclick = ()=> eliminarFichaTrabajador('epp', t.id, t.nombre, listaEntregas.length, ()=>{ location.hash = "#/dotacion"; });
     const bdac = document.getElementById('btnDescartarAvisoCedula'); if(bdac) bdac.onclick = ()=> descartarAvisoCedulaRh('dot_trabajadores', t.id, ()=>renderFichaTrabajador(t.id));
     const bk = document.getElementById('btnKardex'); if(bk) bk.onclick = ()=> generarKardexPDF(t.id);
     const bzip = document.getElementById('btnZipAdjuntos'); if(bzip) bzip.onclick = ()=> descargarZipAdjuntosTrabajador('dot_entregas', t.id, t.nombre);
@@ -6433,7 +6435,8 @@ async function pintarDiferenciasRh(modulo){
   h += noEst.length ? `<p class="muted-sm" style="margin:2px 0 8px">Si es alguien de RH con la cédula mal escrita aquí, elige a la persona correcta: la ficha toma su cédula y sus entregas se quedan con ella. Si no trabaja con nosotros, pásalo a inactivo.</p>`
     + noEst.map(x=> caja(fila(
       `${enlace(x)}<div class="muted-sm">C.C. ${esc(x.identificacion)} · ${esc(x.contrato)}${nEnt(x)}</div>`,
-      `<button class="btn btn-ghost btn-sm" data-dif-inactivar="${x.id}">Pasar a inactivo</button>`)
+      `<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-dif-inactivar="${x.id}">Pasar a inactivo</button>
+       <button class="btn btn-ghost btn-sm" data-dif-eliminar="${x.id}" style="color:var(--danger)" title="Para fichas que no deben existir (por ejemplo, de prueba)">Eliminar</button></div>`)
       + `<div style="margin-top:8px">
         ${(x.candidatos||[]).length
           ? `<div class="muted-sm" style="margin-bottom:4px">Personas de RH con nombre parecido:</div>` + candidatos(x)
@@ -6487,6 +6490,10 @@ async function pintarDiferenciasRh(modulo){
       ()=> sb.rpc('firmas_diferencias_corregir_cedula', { p_modulo: modulo, p_trabajador_id: id, p_cedula: cedula }),
       r=> r?.ok ? `Cédula corregida${r.unidas?' · se unió con la ficha que ya tenía':''}${r.choques?` · ${r.choques} ficha(s) no se tocaron porque esa persona ya tiene ficha en ese contrato`:''}` : null);
   };
+  host.querySelectorAll('[data-dif-eliminar]').forEach(b=>{ b.onclick = ()=>{
+    const x = noEst.find(y=>y.id===b.dataset.difEliminar);
+    eliminarFichaTrabajador(modulo, b.dataset.difEliminar, x?.nombre, x?.entregas||0, null, ()=> abrirDiferenciasRh(modulo));
+  }; });
   host.querySelectorAll('[data-dif-descartar-parecido]').forEach(b=>{ b.onclick = ()=>{
     const x = inact.find(y=>y.id===b.dataset.difDescartarParecido);
     confirmarDiferenciaRh(modulo, 'No es ninguna',
@@ -6526,6 +6533,40 @@ function confirmarDiferenciaRh(modulo, titulo, texto, textoBoton, hacer, mensaje
     if(msg===null) toast(res.data?.motivo || "No se pudo hacer el cambio","err");
     else toast(msg,"ok");
     closeModal(); // vuelve a la lista (abrirDiferenciasRh la recarga)
+  };
+}
+
+/* Eliminar una ficha que no debe existir (solo administrador) — CAMBIOS_SQL_88. Por ejemplo una ficha de
+   prueba, o alguien puesto en un contrato donde no trabaja. La base de datos no deja eliminar la ficha
+   activa de alguien que RH tiene activo (esa es la de RH: se corrige en RH). Si tiene entregas se borran
+   también, así que se pide escribir el nombre. "volver" (opcional) = abrir otra vez la lista de la que
+   se vino (Diferencias con RH), tanto al cancelar como al terminar. */
+function eliminarFichaTrabajador(modulo, id, nombre, nEntregas, alTerminar, volver){
+  const conEntregas = nEntregas > 0;
+  const html = `<div class="modal" style="max-width:460px">
+    <div class="modal-head"><div><h2>Eliminar ficha</h2><p>${esc(nombre||'')}</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <p style="font-size:14.5px;color:var(--ink-2)">Úsalo solo para fichas que no deben existir (por ejemplo, de prueba, o de alguien puesto en un contrato donde no trabaja). ${conEntregas?`Tiene <b>${nEntregas} entrega${nEntregas==1?'':'s'}</b>, que se borra${nEntregas==1?'':'n'} <b>para siempre</b> junto con sus firmas y fotos.`:'No tiene entregas registradas.'} Si la persona está activa en RH, esto no aplica: se corrige en RH.</p>
+      ${conEntregas?`<div class="field"><label>Para confirmar, escribe el nombre tal como aparece arriba</label><input id="confElimFichaNombre" autocomplete="off" placeholder="${esc(nombre||'')}"></div>`:''}
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-danger" id="btnConfElimFicha" ${conEntregas?'disabled':''}>${I.trash} Sí, eliminar</button></div></div>`;
+  if(volver) openSubModal(html, volver); else openModal(html);
+  if(conEntregas){
+    const inp = document.getElementById('confElimFichaNombre'), b0 = document.getElementById('btnConfElimFicha');
+    inp.oninput = ()=>{ b0.disabled = inp.value.trim().toLowerCase() !== String(nombre||'').trim().toLowerCase(); };
+  }
+  document.getElementById('btnConfElimFicha').onclick = async ()=>{
+    const btn = document.getElementById('btnConfElimFicha'); btn.disabled=true; btn.innerHTML="Eliminando…";
+    bloquear("Eliminando…");
+    let res;
+    try{ res = await sb.rpc('firmas_eliminar_ficha', { p_modulo: modulo, p_trabajador_id: id }); } finally{ desbloquear(); }
+    if(res.error){ btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`; toast("No se pudo eliminar: "+res.error.message,"err"); return; }
+    if(!res.data?.ok){ toast(res.data?.motivo || "No se pudo eliminar","err"); closeModal(); return; }
+    toast(`Ficha eliminada${res.data.entregas_eliminadas?` · también ${res.data.entregas_eliminadas} entrega(s)`:''}`,"ok");
+    closeModal(); // con "volver" regresa a la lista, que se recarga
+    if(!volver && alTerminar) alTerminar();
   };
 }
 
@@ -8391,7 +8432,8 @@ async function renderFichaTrabajadorDtl(id){
         <div class="page-head">
           <div><h1>${esc(t.nombre)}</h1><p>C.C. ${esc(t.identificacion)}${t.cargo?' · '+esc(t.cargo):''}${t.area?' · '+esc(t.area):''} · ${esc(nombreEntidadDtl(t.entidad_id))}${t.fecha_ingreso?' · Ingresó '+fmtDate(t.fecha_ingreso):''}${t.fecha_salida?' · Salió '+fmtDate(t.fecha_salida):''}${t.correo?' · '+esc(t.correo):''}</p></div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
-            ${MIPERFIL.esAdmin?`<button class="btn btn-ghost" id="btnEditarTrabDtl">${I.pen} Editar área</button>`:''}
+            ${MIPERFIL.esAdmin?`<button class="btn btn-ghost" id="btnEditarTrabDtl">${I.pen} Editar área</button>
+            <button class="btn btn-ghost" id="btnEliminarFichaDtl" style="color:var(--danger)">${I.trash} Eliminar ficha</button>`:''}
             ${listaEntregas.length?(esContratoEscaneadoDtl
               ? `<button class="btn btn-ghost" id="btnZipAdjuntosDtl">${I.doc} Descargar ZIP</button>`
               : `<button class="btn btn-ghost" id="btnKardexDtl">${I.pdf} Imprimir kárdex</button>`):''}
@@ -8405,6 +8447,7 @@ async function renderFichaTrabajadorDtl(id){
     wireLogout();
     document.getElementById('btnVolverDtl').onclick = ()=> location.hash="#/dotacionlegal";
     const bet = document.getElementById('btnEditarTrabDtl'); if(bet) bet.onclick = ()=> abrirTrabajadorDtlForm(t.id);
+    const bel = document.getElementById('btnEliminarFichaDtl'); if(bel) bel.onclick = ()=> eliminarFichaTrabajador('dotacion', t.id, t.nombre, listaEntregas.length, ()=>{ location.hash = "#/dotacionlegal"; });
     const bdac = document.getElementById('btnDescartarAvisoCedulaDtl'); if(bdac) bdac.onclick = ()=> descartarAvisoCedulaRh('dtl_trabajadores', t.id, ()=>renderFichaTrabajadorDtl(t.id));
     const bk = document.getElementById('btnKardexDtl'); if(bk) bk.onclick = ()=> generarKardexDtlPDF(t.id);
     const bzipDtl = document.getElementById('btnZipAdjuntosDtl'); if(bzipDtl) bzipDtl.onclick = ()=> descargarZipAdjuntosTrabajador('dtl_entregas', t.id, t.nombre);
