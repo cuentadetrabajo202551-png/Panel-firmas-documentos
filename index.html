@@ -1754,6 +1754,8 @@ async function openDetail(id){
           ${l.observaciones?`<div class="info-item full"><div class="k">Observaciones</div><div class="v">${esc(l.observaciones)}</div></div>`:""}
         </div>
 
+        ${puedeVerConvocados(l) ? `<div id="convBox" style="margin-bottom:22px"><p class="muted-sm">Cargando convocados…</p></div>` : ''}
+
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px">
           <h3 style="font-family:var(--display);font-size:17px">Asistentes (${(l.asistentes||[]).length})</h3>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -1801,6 +1803,124 @@ async function openDetail(id){
       </div>
     </div>
   `);
+  if(puedeVerConvocados(l)) pintarConvocados(l.id);
+}
+
+/* ---------- Convocados de la lista (CAMBIOS_SQL_89) ----------
+   Trabajadores de RH que se esperan en la actividad: se convocan por contrato (cliente de RH) o uno
+   por uno por su cédula, y se ve quiénes ya firmaron (su cédula está entre los asistentes) y quiénes
+   faltan. Lo ven el administrador y quien creó la lista; lo cambian mientras la lista no esté cerrada
+   (el administrador siempre). La base de datos revisa esos mismos permisos. El PDF no cambia. */
+let convFiltro = 'faltan';
+function puedeVerConvocados(l){ return MIPERFIL.esAdmin || (MIPERFIL.rol==='editor' && l.creadaPor===MIPERFIL.uid); }
+
+async function pintarConvocados(listaId){
+  if(!document.getElementById('convBox')) return;
+  const { data, error } = await sb.rpc('asis_convocados_lista', { p_lista: listaId });
+  const host = document.getElementById('convBox');
+  if(!host) return; // se cerró mientras cargaba
+  if(error){ host.innerHTML = `<p class="muted-sm">No se pudieron cargar los convocados: ${esc(error.message)}</p>`; return; }
+  const conv = data?.convocados||[], puede = !!data?.puede_cambiar;
+  const faltan = conv.filter(c=>!c.firmo_en), firmaron = conv.filter(c=>c.firmo_en);
+  const lista = convFiltro==='faltan' ? faltan : convFiltro==='firmaron' ? firmaron : conv;
+  const hora = f => new Date(f).toLocaleString("es-CO",{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+  host.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:10px">
+      <h3 style="font-family:var(--display);font-size:17px">Convocados (${conv.length})</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${faltan.length?`<button class="btn btn-ghost btn-sm" id="btnCopiarFaltan">${I.copy} Copiar los que faltan</button>`:''}
+        ${puede?`<button class="btn btn-ghost btn-sm" id="btnConvocar">${I.users} Convocar trabajadores</button>`:''}
+      </div>
+    </div>
+    ${conv.length ? `
+    <div class="tabs" style="display:inline-flex;margin-bottom:10px">
+      <button class="tab ${convFiltro==='faltan'?'active':''}" data-conv-f="faltan">Faltan (${faltan.length})</button>
+      <button class="tab ${convFiltro==='firmaron'?'active':''}" data-conv-f="firmaron">Firmaron (${firmaron.length})</button>
+      <button class="tab ${convFiltro==='todos'?'active':''}" data-conv-f="todos">Todos (${conv.length})</button>
+    </div>
+    ${lista.length ? `<div class="table-wrap" style="max-height:420px;overflow:auto"><table class="dt">
+      <thead><tr><th>Nombre</th><th>Cédula</th><th>Cargo</th><th>Contrato</th><th>Estado</th>${puede?'<th></th>':''}</tr></thead>
+      <tbody>${lista.map(c=>`<tr>
+        <td><b>${esc(c.nombre)}</b></td><td>${esc(c.cedula)}</td><td>${esc(c.cargo||'—')}</td><td>${esc(c.cliente||'—')}</td>
+        <td>${c.firmo_en?`<span class="badge activa"><span class="dot"></span>Firmó ${esc(hora(c.firmo_en))}</span>`:`<span class="badge warn"><span class="dot"></span>Falta</span>`}</td>
+        ${puede?`<td style="text-align:center"><button class="btn btn-ghost btn-sm" title="Quitar de los convocados" data-conv-quitar="${c.id}">${I.close}</button></td>`:''}
+      </tr>`).join('')}</tbody></table></div>`
+      : `<p class="muted-sm" style="margin:6px 0">${convFiltro==='faltan'?'Ya firmaron todos los convocados.':'Nadie en esta vista.'}</p>`}`
+    : `<div class="empty" style="padding:22px 16px"><h3>Aún no hay convocados</h3><p>${puede?'Con «Convocar trabajadores» eliges uno o varios contratos de RH y aquí ves quién falta por firmar.':'Esta lista no tiene convocados.'}</p></div>`}`;
+  host.querySelectorAll('[data-conv-f]').forEach(b=>{ b.onclick = ()=>{ convFiltro = b.dataset.convF; pintarConvocados(listaId); }; });
+  const bc = document.getElementById('btnConvocar'); if(bc) bc.onclick = ()=> abrirConvocar(listaId);
+  const bcf = document.getElementById('btnCopiarFaltan'); if(bcf) bcf.onclick = ()=>{
+    const l = getList(listaId);
+    const texto = `Faltan por firmar la asistencia${l?` de "${l.actividad}"`:''} (${faltan.length}):\n`
+      + faltan.map(c=>`- ${c.nombre}`).join('\n')
+      + `\n\nEnlace para firmar: ${linkFor(listaId)}`;
+    copyText(texto, 'Lista de los que faltan copiada');
+  };
+  host.querySelectorAll('[data-conv-quitar]').forEach(b=>{ b.onclick = async ()=>{
+    b.disabled = true;
+    const { data: r, error: e } = await sb.rpc('asis_convocado_quitar', { p_lista: listaId, p_id: b.dataset.convQuitar });
+    if(e || !r?.ok){ b.disabled = false; toast("No se pudo quitar: "+(e?.message||'intenta de nuevo'),"err"); return; }
+    toast("Quitado de los convocados","ok");
+    pintarConvocados(listaId);
+  }; });
+}
+
+/* Elegir contratos (clientes de RH, con cuántos activos tienen) o una persona suelta por cédula */
+async function abrirConvocar(listaId){
+  openSubModal(`<div class="modal" style="max-width:560px">
+    <div class="modal-head"><div><h2>Convocar trabajadores</h2><p>Elige uno o varios contratos: se convocan sus trabajadores activos en RH.</p></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body">
+      <div class="search" style="margin-bottom:10px">${I.search}<input id="convBuscar" placeholder="Buscar contrato…"></div>
+      <div id="convContratos" style="max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:6px 12px"><p class="muted-sm">Cargando contratos…</p></div>
+      <div class="field" style="margin-top:14px"><label>O agrega a una persona suelta por su cédula de RH</label>
+        <div style="display:flex;gap:8px"><input id="convCedula" inputmode="numeric" placeholder="Cédula"><button class="btn btn-ghost btn-sm" id="btnConvCedula">Agregar</button></div>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Volver</button>
+      <button class="btn btn-primary" id="btnConvConfirmar" disabled>${I.check} Convocar</button></div>
+  </div>`, ()=> openDetail(listaId));
+  const { data, error } = await sb.rpc('asis_clientes_rh');
+  const host = document.getElementById('convContratos'); if(!host) return;
+  if(error){ host.innerHTML = `<p class="muted-sm">No se pudieron cargar los contratos: ${esc(error.message)}</p>`; return; }
+  const clientes = data||[];
+  host.innerHTML = clientes.map(c=>`<label class="chk" data-conv-fila="${esc(String(c.cliente).toLowerCase())}" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:5px 0">
+      <span style="display:flex;align-items:center;gap:9px"><input type="checkbox" data-conv-cliente="${esc(c.cliente)}">${esc(c.cliente)}</span><span class="muted-sm" style="white-space:nowrap">${c.activos} activo${c.activos==1?'':'s'}</span></label>`).join('')
+    || '<p class="muted-sm">No hay contratos con trabajadores activos en RH.</p>';
+  const btn = document.getElementById('btnConvConfirmar');
+  const actualizar = ()=>{
+    const marcados = [...host.querySelectorAll('[data-conv-cliente]:checked')];
+    const total = marcados.reduce((s,ch)=> s + (clientes.find(c=>c.cliente===ch.dataset.convCliente)?.activos||0), 0);
+    btn.disabled = !marcados.length;
+    btn.innerHTML = marcados.length ? `${I.check} Convocar ${total} trabajador${total===1?'':'es'}` : `${I.check} Convocar`;
+  };
+  host.querySelectorAll('[data-conv-cliente]').forEach(ch=>{ ch.onchange = actualizar; });
+  document.getElementById('convBuscar').oninput = (e)=>{
+    const q = e.target.value.trim().toLowerCase();
+    host.querySelectorAll('[data-conv-fila]').forEach(f=>{ f.style.display = (!q || f.dataset.convFila.includes(q)) ? '' : 'none'; });
+  };
+  btn.onclick = async ()=>{
+    const elegidos = [...host.querySelectorAll('[data-conv-cliente]:checked')].map(ch=>ch.dataset.convCliente);
+    btn.disabled = true; btn.innerHTML = 'Convocando…';
+    bloquear("Convocando…");
+    let res;
+    try{ res = await sb.rpc('asis_convocar', { p_lista: listaId, p_clientes: elegidos }); } finally{ desbloquear(); }
+    if(res.error){ actualizar(); toast("No se pudo convocar: "+res.error.message,"err"); return; }
+    const n = res.data?.agregados||0;
+    toast(n ? `Se convocaron ${n} trabajador${n===1?'':'es'}` : 'Ya estaban todos convocados', "ok");
+    convFiltro = 'faltan';
+    closeModal(); // vuelve a la lista, que se recarga
+  };
+  document.getElementById('btnConvCedula').onclick = async ()=>{
+    const inp = document.getElementById('convCedula');
+    const ced = inp.value.trim();
+    if(!ced){ toast("Escribe la cédula","err"); return; }
+    const { data: r, error: e } = await sb.rpc('asis_convocar_cedula', { p_lista: listaId, p_cedula: ced });
+    if(e){ toast("No se pudo agregar: "+e.message,"err"); return; }
+    if(!r?.ok){ toast(r?.motivo || "No se pudo agregar","err"); return; }
+    toast(r.agregado ? `Se agregó a ${r.nombre}${r.activo?'':' (ojo: en RH figura con retiro)'}` : `${r.nombre} ya estaba en los convocados`, r.agregado?"ok":"");
+    inp.value = '';
+  };
 }
 
 /* ---------- Eliminar un asistente (libera su cédula para volver a registrarse) ---------- */
