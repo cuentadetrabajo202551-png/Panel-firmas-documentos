@@ -967,9 +967,7 @@ function tieneModulo(m){ return MIPERFIL.esAdmin || (MIPERFIL.activo && MIPERFIL
 function tieneContratoDotacion(id){ return MIPERFIL.esAdmin || MIPERFIL.contratos.includes(id); }
 function tieneContratoAct(id){ return MIPERFIL.esAdmin || MIPERFIL.contratosAct.includes(id); }
 function puedeAgregarCatalogoDot(id){ return MIPERFIL.esAdmin || MIPERFIL.catalogoDot.includes(id); }
-function puedeAgregarTrabajadorDot(id){ return MIPERFIL.esAdmin || MIPERFIL.trabajadoresDot.includes(id); }
 function tieneEntidadDtl(id){ return MIPERFIL.esAdmin || MIPERFIL.entidadesDtl.includes(id); }
-function puedeAgregarTrabajadorDtl(id){ return MIPERFIL.esAdmin || MIPERFIL.trabajadoresDtl.includes(id); }
 function tieneContratoInsp(id){ return MIPERFIL.esAdmin || MIPERFIL.contratosInsp.includes(id); }
 /* ¿Puede crear/editar/eliminar en general? admin o editor; visualizador nunca escribe (refuerzo visual — la RLS es la protección real) */
 function puedeEscribir(){ return MIPERFIL.esAdmin || MIPERFIL.rol==='editor'; }
@@ -1204,10 +1202,8 @@ async function router(){
   if(mResp){ await renderFirmaResponsable(decodeURIComponent(mResp[1])); return; }
   const mFdoc = location.hash.match(/^#\/firmadoc\/(.+)$/);
   if(mFdoc){ await renderFirmaDoc(decodeURIComponent(mFdoc[1])); return; }
-  const mNuevoEpp = location.hash.match(/^#\/dotacion\/entrega-nuevo\/(.+)$/);
-  if(mNuevoEpp){ await renderDotPublicoNuevo(decodeURIComponent(mNuevoEpp[1])); return; }
-  const mNuevoDtl = location.hash.match(/^#\/dotacionlegal\/entrega-nuevo\/(.+)$/);
-  if(mNuevoDtl){ await renderDtlPublicoNuevo(decodeURIComponent(mNuevoDtl[1])); return; }
+  // El link de "trabajadores nuevos" se retiró (CAMBIOS_SQL_85): los trabajadores llegan de RH
+  if(/^#\/(dotacion|dotacionlegal)\/entrega-nuevo\//.test(location.hash)){ renderEnlaceNuevosRetirado(); return; }
   if(location.hash.startsWith("#/dotacionlegal/entrega")){ await renderDtlPublico(); return; }
   if(location.hash === "#/dotacion/entrega"){ await renderDotPublicoUniversal(); return; }
   const mInsp = location.hash.match(/^#\/inspeccion\/(.+)$/);
@@ -4787,9 +4783,7 @@ let entregaDraft = null;
 let dotEscaneadaState = null;
 let editEscaneadaState = null; /* compartido EPP/Dotación — la tabla ("dot_entregas"/"dtl_entregas") ya distingue cuál es */
 let contratoActualId = localStorage.getItem('dot_contrato_actual') || null; // null hasta que se carguen los contratos; "todos" = vista combinada
-/* Selección múltiple para marcar inactivos / eliminar en bloque (solo admin) */
 let dotMostrarInactivos = false;
-let seleccionadosDot = new Set();
 
 async function loadDotacionState(){
   const [co, t, e, ei] = await Promise.all([
@@ -4859,22 +4853,14 @@ async function renderDotacionAdmin(silent){
   if(!DOTACION.contratos.length){
     document.getElementById("app").innerHTML = MIPERFIL.esAdmin ? `${topbar('dotacion')}
       <div class="wrap"><div class="empty"><div class="ic">${I.box}</div>
-        <h3>Crea tu primer contrato</h3>
-        <p>Cada contrato (ej. "Hospital de Medellín") tiene su propio directorio de trabajadores y entregas.</p>
-        <div style="margin-top:18px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
-          <button class="btn btn-primary" id="btnPrimerContrato">${I.plus} Crear contrato</button>
-          <button class="btn btn-ghost" id="btnCargaMasivaVacioDot">${I.doc} Carga masiva desde Excel</button>
-          <button class="btn btn-ghost" id="btnPlantillaVacioDot">${I.doc} Descargar plantilla</button>
-        </div>
+        <h3>Todavía no hay contratos</h3>
+        <p>Los contratos y sus trabajadores llegan solos desde Recursos Humanos: aparecen aquí apenas RH tenga gente activa en un cliente.</p>
       </div></div>` : `${topbar('dotacion')}
       <div class="wrap"><div class="empty"><div class="ic">${I.box}</div>
         <h3>Aún no tienes ningún contrato asignado</h3>
         <p>Pídele al administrador que te dé acceso a un contrato desde Configuración.</p>
       </div></div>`;
     wireLogout();
-    const bpc=document.getElementById("btnPrimerContrato"); if(bpc) bpc.onclick = ()=> abrirFormContrato(null, ()=> renderDotacionAdmin(), true);
-    const bcmv=document.getElementById("btnCargaMasivaVacioDot"); if(bcmv) bcmv.onclick = abrirCargaMasivaDot;
-    const bpv=document.getElementById("btnPlantillaVacioDot"); if(bpv) bpv.onclick = descargarPlantillaTrabajadoresDot;
     return;
   }
 
@@ -4919,30 +4905,18 @@ async function renderDotacionAdmin(silent){
         </div>
       </div>
 
-      ${(MIPERFIL.esAdmin || puedeAgregarTrabajadorDot(contratoActualId))?`
-      <div class="panel-section dot-pc-only">
-        <div class="section-label">Acciones principales</div>
-        <div class="action-grid">
-          <button class="action-card" id="btnNuevoTrab"><div class="ac-ic">${I.plus}</div><span class="ac-title">Nuevo trabajador</span><span class="ac-chevron">›</span></button>
-          ${MIPERFIL.esAdmin?`<button class="action-card" id="btnCargaTrab"><div class="ac-ic">${I.plus}</div><span class="ac-title">Carga masiva</span><span class="ac-chevron">›</span></button>
-          <button class="action-card" id="btnPlantillaTrab"><div class="ac-ic">${I.doc}</div><span class="ac-title">Plantilla Excel</span><span class="ac-chevron">›</span></button>`:''}
-        </div>
-      </div>`:''}
-
       <div class="panel-section dot-pc-only">
         <div class="section-label">Herramientas</div>
         <div class="action-grid">
           ${(MIPERFIL.esAdmin || puedeAgregarCatalogoDot(contratoActualId))?`<button class="action-card" id="btnCatalogo" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.catalogo}</div><span class="ac-title">Catálogo de ítems</span><span class="ac-chevron">›</span></button>`:''}
           ${puedeEscribir()?`<button class="action-card" id="btnPredeterminados" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.firma}</div><span class="ac-title">Firmas</span><span class="ac-chevron">›</span></button>`:''}
-          ${MIPERFIL.esAdmin?`<button class="action-card" id="btnCorregirCargos"><div class="ac-ic">${I.corregir}</div><span class="ac-title">Corregir cargos</span><span class="ac-chevron">›</span></button>`:''}
           ${totalTrab?`<button class="action-card" id="btnExcelEpp"><div class="ac-ic">${I.doc}</div><span class="ac-title">Descargar Excel</span><span class="ac-chevron">›</span></button>`:''}
           ${puedeEscribir()?`<button class="action-card" id="btnHistorialDot" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.cal}</div><span class="ac-title">Historial de entregas</span><span class="ac-chevron">›</span></button>`:''}
-          ${MIPERFIL.esAdmin?`<button class="action-card" id="btnLinkNuevosEpp" ${enTodos?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.link}</div><span class="ac-title">Link trabajadores nuevos</span><span class="ac-chevron">›</span></button>`:''}
+          ${MIPERFIL.esAdmin?`<button class="action-card" id="btnDiferenciasRhEpp"><div class="ac-ic">${I.warn}</div><span class="ac-title">Diferencias con RH</span><span class="ac-chevron">›</span></button>`:''}
         </div>
       </div>
 
       <div id="dotBody"></div>
-      <input type="file" id="fileTrabajadores" accept=".xlsx,.xls,.csv" style="display:none">
     </div>`;
 
   wireLogout();
@@ -4954,18 +4928,13 @@ async function renderDotacionAdmin(silent){
   const bgc=document.getElementById("btnGestionContratos"); if(bgc) bgc.onclick = abrirGestionContratos;
   const bcat=document.getElementById("btnCatalogo"); if(bcat) bcat.onclick = abrirCatalogoModal;
   const bpd=document.getElementById("btnPredeterminados"); if(bpd) bpd.onclick = abrirPredeterminadosModal;
-  const bpt=document.getElementById("btnPlantillaTrab"); if(bpt) bpt.onclick = descargarPlantillaTrabajadoresDot;
-  const bct=document.getElementById("btnCargaTrab"); if(bct) bct.onclick = abrirCargaMasivaDot;
-  document.getElementById("fileTrabajadores").onchange = (e)=>{ const f=e.target.files[0]; if(f) cargarTrabajadoresExcelDot(f); e.target.value=""; };
-  const bnt=document.getElementById("btnNuevoTrab"); if(bnt) bnt.onclick = ()=> abrirTrabajadorForm(null);
   const bzk=document.getElementById("btnZipKardex"); if(bzk) bzk.onclick = abrirSeleccionZipDot;
   const bxl=document.getElementById("btnExcelEpp"); if(bxl) bxl.onclick = descargarExcelDot;
-  const bcc=document.getElementById("btnCorregirCargos"); if(bcc) bcc.onclick = abrirCorregirCargosDot;
   const bhd=document.getElementById("btnHistorialDot"); if(bhd) bhd.onclick = abrirHistorialEntregasDot;
   const behd=document.getElementById("btnEntregasHoyDot"); if(behd) behd.onclick = abrirEntregasHoyDot;
   const bceEpp=document.getElementById("btnCopiarEnlaceEpp"); if(bceEpp) bceEpp.onclick = ()=> copyText(location.href.split("#")[0]+"#/dotacion/entrega", "Enlace de entrega remota copiado");
   const bqrEpp=document.getElementById("btnQrEpp"); if(bqrEpp) bqrEpp.onclick = ()=> mostrarQR(location.href.split("#")[0]+"#/dotacion/entrega", "Entrega remota de EPP");
-  const blnEpp=document.getElementById("btnLinkNuevosEpp"); if(blnEpp) blnEpp.onclick = ()=> mostrarLinkTrabajadoresNuevos('epp');
+  const bdrEpp=document.getElementById("btnDiferenciasRhEpp"); if(bdrEpp) bdrEpp.onclick = ()=> abrirDiferenciasRh('epp');
   renderDotacionBody();
   if(silent) window.scrollTo(0, scrollY);
   if(!silent){ if(_dotTimer) clearInterval(_dotTimer); _dotTimer = setInterval(_tickDot, 20000); }
@@ -4980,16 +4949,8 @@ function renderDotacionBody(){
         ${I.search}
         <input type="text" id="dotSearch" placeholder="Buscar por nombre, cédula, cargo o área…" value="${esc(dotQuery)}">
       </div>
-      ${MIPERFIL.esAdmin?`<label class="chk" style="white-space:nowrap"><input type="checkbox" id="chkTodosDot"> Todos</label>`:''}
       <label class="chk" style="white-space:nowrap"><input type="checkbox" id="chkMostrarInactivosDot" ${dotMostrarInactivos?'checked':''}> Mostrar inactivos</label>
       <button class="btn btn-ghost btn-sm" id="btnLimpiarFiltrosDot" style="white-space:nowrap" title="Quitar la búsqueda y volver a Todos los contratos">${I.close} Limpiar</button>
-    </div>
-    <div class="resp-firma" id="barraSeleccionDot" style="margin-bottom:16px;align-items:center;gap:12px;flex-wrap:wrap;display:${seleccionadosDot.size?'flex':'none'}">
-      <span class="muted-sm" id="contadorSeleccionDot">${seleccionadosDot.size} seleccionado(s)</span>
-      <div style="flex:1;min-width:8px"></div>
-      <button class="btn btn-ghost btn-sm" id="btnReactivarDot">Reactivar</button>
-      <button class="btn btn-ghost btn-sm" id="btnMarcarInactivoDot">Marcar como inactivo</button>
-      <button class="btn btn-danger btn-sm" id="btnEliminarSeleccionDot">${I.trash} Eliminar seleccionados</button>
     </div>
     <div id="dotGrid"></div>`;
   document.getElementById("dotSearch").oninput = (e)=>{ dotQuery = e.target.value; renderDotTrabajadoresGrid(); };
@@ -5000,22 +4961,10 @@ function renderDotacionBody(){
     localStorage.setItem('dot_contrato_actual', contratoActualId);
     renderDotacionAdmin();
   };
-  const chkTodosDot = document.getElementById("chkTodosDot");
-  if(chkTodosDot) chkTodosDot.onchange = (e)=>{
-    const visibles = trabajadoresFiltradosDot();
-    if(e.target.checked) visibles.forEach(t=>seleccionadosDot.add(t.id));
-    else visibles.forEach(t=>seleccionadosDot.delete(t.id));
-    renderDotTrabajadoresGrid();
-    actualizarBarraSeleccionDot();
-  };
-  document.getElementById('btnReactivarDot').onclick = ()=> reactivarSeleccionDot();
-  document.getElementById('btnMarcarInactivoDot').onclick = ()=> marcarInactivosSeleccionDot();
-  document.getElementById('btnEliminarSeleccionDot').onclick = ()=> eliminarSeleccionDot();
   renderDotTrabajadoresGrid();
 }
 
-/* Lista actualmente visible (contrato + búsqueda + filtro de inactivos) — la usan tanto
-   la grilla como la casilla "Todos", para que seleccione justo lo que se está viendo. */
+/* Lista actualmente visible (contrato + búsqueda + filtro de inactivos). */
 function trabajadoresFiltradosDot(){
   let db = trabajadoresDelContrato();
   if(!dotMostrarInactivos) db = db.filter(t=>t.activo!==false);
@@ -5029,42 +4978,16 @@ function trabajadoresFiltradosDot(){
   return db;
 }
 
-function actualizarContadorSeleccionDot(){
-  const el = document.getElementById('contadorSeleccionDot');
-  if(el) el.textContent = seleccionadosDot.size+' seleccionado(s)';
-}
-
-/* Se llama cada vez que cambia la selección (una tarjeta o la casilla "Todos"): muestra/oculta
-   la barra de acciones en bloque y sincroniza la casilla "Todos" sin recargar toda la grilla. */
-function actualizarBarraSeleccionDot(){
-  const barra = document.getElementById('barraSeleccionDot');
-  if(barra) barra.style.display = seleccionadosDot.size ? 'flex' : 'none';
-  actualizarContadorSeleccionDot();
-  const chkTodos = document.getElementById('chkTodosDot');
-  if(chkTodos){
-    const visibles = trabajadoresFiltradosDot();
-    chkTodos.checked = visibles.length>0 && visibles.every(t=>seleccionadosDot.has(t.id));
-  }
-}
-
 function renderDotTrabajadoresGrid(){
   const host = document.getElementById("dotGrid");
   if(!host) return;
   const db = trabajadoresFiltradosDot();
   if(!db.length){
     host.innerHTML = `<div class="empty"><div class="ic">${I.box}</div><h3>${trabajadoresDelContrato().length?'Sin resultados':'Sin trabajadores todavía'}</h3>
-      <p>${trabajadoresDelContrato().length?'Prueba con otro término de búsqueda, o marca "Mostrar inactivos".':'Agrega trabajadores uno por uno o con carga masiva desde Excel.'}</p></div>`;
-    actualizarBarraSeleccionDot();
+      <p>${trabajadoresDelContrato().length?'Prueba con otro término de búsqueda, o marca "Mostrar inactivos".':'Los trabajadores llegan solos desde Recursos Humanos.'}</p></div>`;
     return;
   }
   host.innerHTML = `<div class="grid">${db.map(trabajadorCard).join("")}</div>`;
-  host.querySelectorAll("[data-sel-trab]").forEach(chk=>{
-    chk.onchange = ()=>{
-      const id = chk.dataset.selTrab;
-      if(chk.checked) seleccionadosDot.add(id); else seleccionadosDot.delete(id);
-      actualizarBarraSeleccionDot();
-    };
-  });
   host.querySelectorAll("[data-trab]").forEach(b=>{
     b.onclick = ()=>{
       const id=b.dataset.id, act=b.dataset.trab;
@@ -5072,77 +4995,8 @@ function renderDotTrabajadoresGrid(){
       else if(act==="kardex") generarKardexPDF(id);
       else if(act==="entregar") abrirNuevaEntrega(id);
       else if(act==="editar") abrirTrabajadorForm(id);
-      else if(act==="del") eliminarTrabajador(id);
     };
   });
-  actualizarBarraSeleccionDot();
-}
-
-async function reactivarSeleccionDot(){
-  if(!seleccionadosDot.size){ toast("Selecciona al menos un trabajador","err"); return; }
-  const ids = Array.from(seleccionadosDot);
-  bloquear("Reactivando…");
-  try{
-    const { error } = await porLotes(ids, lote=> sb.from("dot_trabajadores").update({ activo:true, inactivo_por_archivo:false }).in("id", lote));
-    if(error){
-      const dup = /duplicate|unique/i.test(error.message||"");
-      toast(dup?"No se pudo reactivar a alguno de los seleccionados: ya está activo con esa cédula en otro contrato. Reactívalos de a uno para identificar cuál":"No se pudo reactivar: "+error.message,"err");
-      return;
-    }
-    await loadDotacionState();
-    seleccionadosDot.clear();
-    toast(`${ids.length} trabajador(es) reactivados`,"ok");
-    renderDotacionAdmin();
-  } finally { desbloquear(); }
-}
-
-async function marcarInactivosSeleccionDot(){
-  if(!seleccionadosDot.size){ toast("Selecciona al menos un trabajador","err"); return; }
-  const ids = Array.from(seleccionadosDot);
-  openModal(`<div class="modal" style="max-width:440px">
-    <div class="modal-head"><div><h2>Marcar como inactivos</h2><p>Se marcarán ${ids.length} trabajador(es) como inactivos.</p></div>
-      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Dejan de aparecer en la vista normal (quedan visibles solo con "Mostrar inactivos"), pero se conserva todo su historial de entregas y firmas. Úsalo para quienes ya salieron de la empresa.</p></div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" id="confMarcarInactivoDot">${I.check} Sí, marcar inactivos</button></div></div>`);
-  document.getElementById('confMarcarInactivoDot').onclick = async ()=>{
-    const btn=document.getElementById("confMarcarInactivoDot"); btn.disabled=true; btn.innerHTML="Guardando…";
-    bloquear("Marcando como inactivos…");
-    try{
-      const { error } = await porLotes(ids, lote=> sb.from("dot_trabajadores").update({ activo:false, inactivo_por_archivo:false }).in("id", lote));
-      if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
-      await loadDotacionState();
-      seleccionadosDot.clear();
-      closeModal();
-      toast(`${ids.length} trabajador(es) marcados como inactivos`,"ok");
-      renderDotacionAdmin();
-    } finally { desbloquear(); }
-  };
-}
-
-
-async function eliminarSeleccionDot(){
-  if(!seleccionadosDot.size){ toast("Selecciona al menos un trabajador","err"); return; }
-  const ids = Array.from(seleccionadosDot);
-  openModal(`<div class="modal" style="max-width:460px">
-    <div class="modal-head"><div><h2>Eliminar trabajadores</h2><p>Esta acción no se puede deshacer.</p></div>
-      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminarán <b>${ids.length}</b> trabajador(es) del directorio junto con <b>todo su historial de entregas y firmas</b>. Si solo quieres dejar de verlos sin perder su historial, usa "Marcar como inactivo" en vez de esto.</p></div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-danger" id="confEliminarSeleccionDot">${I.trash} Sí, eliminar ${ids.length}</button></div></div>`);
-  document.getElementById('confEliminarSeleccionDot').onclick = async ()=>{
-    const btn=document.getElementById("confEliminarSeleccionDot"); btn.disabled=true; btn.innerHTML="Eliminando…";
-    bloquear("Eliminando…");
-    try{
-      const { error } = await porLotes(ids, lote=> sb.from("dot_trabajadores").delete().in("id", lote));
-      if(error){ toast("No se pudo eliminar: "+error.message,"err"); return; }
-      await loadDotacionState();
-      seleccionadosDot.clear();
-      closeModal();
-      toast(`${ids.length} trabajador(es) eliminados`,"ok");
-      renderDotacionAdmin();
-    } finally { desbloquear(); }
-  };
 }
 
 /* "Entregas de hoy" — pensado para que el admin no tenga que hacer scroll ni
@@ -5258,7 +5112,6 @@ function trabajadorCard(t){
   return `<div class="lcard" style="${inactivo?'opacity:.55':''}">
     <div class="lcard-top">
       <div style="display:flex;align-items:center;gap:8px">
-        ${MIPERFIL.esAdmin?`<input type="checkbox" class="lcard-sel" data-sel-trab="${t.id}" ${seleccionadosDot.has(t.id)?'checked':''}>`:''}
         <span class="tipo">${esc(t.cargo||'Trabajador')}</span>
       </div>
       ${inactivo?'<span class="badge cerrada"><span class="dot"></span>Inactivo</span>' : (n===0?'<span class="badge cerrada"><span class="dot"></span>Sin entregas</span>':'')}
@@ -5276,47 +5129,29 @@ function trabajadorCard(t){
         <button class="icon-btn" title="Ver ficha" data-trab="ver" data-id="${t.id}">${I.eye}</button>
         ${n>0?`<button class="icon-btn" title="Descargar kárdex" data-trab="kardex" data-id="${t.id}">${I.pdf}</button>`:''}
         ${puedeEscribir()?`<button class="icon-btn" title="${inactivo?'No se puede registrar entrega: el trabajador está inactivo':'Registrar entrega'}" data-trab="entregar" data-id="${t.id}" ${inactivo?'disabled':''}>${I.plus}</button>`:''}
-        ${MIPERFIL.esAdmin?`<button class="icon-btn" title="Editar" data-trab="editar" data-id="${t.id}">${I.pen}</button>
-        <button class="icon-btn danger" title="Eliminar" data-trab="del" data-id="${t.id}">${I.trash}</button>`:''}
+        ${MIPERFIL.esAdmin?`<button class="icon-btn" title="Editar área" data-trab="editar" data-id="${t.id}">${I.pen}</button>`:''}
       </div>
     </div>
   </div>`;
 }
 
-/* ---------- Contratos (clientes) ---------- */
-/* comoRaiz=true: se abre SIN modal "padre" al que volver (ej. desde la pantalla
-   vacía "Crea tu primer contrato") — la X/Cancelar debe cerrar de una, no intentar
-   volver a ningún lado. Sin esto, openSubModal deja pendiente un "volver" que la
-   primera X consume sin cerrar nada (hay que darle una segunda vez). */
-async function abrirFormContrato(id, alGuardar, comoRaiz){
-  const c = id ? DOTACION.contratos.find(x=>x.id===id) : null;
-  // Al crear un contrato nuevo, se ofrece enlazarlo a uno que YA existe en Dotación (mismo
-  // criterio de nombre que usa el espejo automático, CAMBIOS_SQL_73.sql) — si el cliente es
-  // viejo y ya tenía trabajadores ahí, evita tener que repetir la carga masiva en EPP.
-  let entidadesDtl = [];
-  if(!c){
-    const { data } = await sb.from("dtl_entidades").select("id,nombre,activo").order("nombre",{ascending:true});
-    entidadesDtl = data || [];
-  }
-  const html = `<div class="modal" style="max-width:440px">
-    <div class="modal-head"><div><h2>${c?'Renombrar contrato':'Nuevo contrato'}</h2><p>Ej. "Hospital de Medellín", "Colegio San José"…</p></div>
+/* ---------- Contratos (clientes) ----------
+   Desde CAMBIOS_SQL_84/85 los contratos llegan solos desde Recursos Humanos (uno por cliente
+   de RH, con su mismo nombre): aquí ya no se crean, renombran ni archivan. Solo se configura el
+   modo de registro, y se puede eliminar un contrato sin trabajadores activos ni entregas (si RH
+   vuelve a tener gente activa en ese cliente, el contrato se crea de nuevo solo). */
+function abrirFormContrato(id){
+  const c = DOTACION.contratos.find(x=>x.id===id); if(!c) return;
+  openSubModal(`<div class="modal" style="max-width:440px">
+    <div class="modal-head"><div><h2>Configurar contrato</h2><p>${esc(c.nombre)}</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
-      <div class="field"><label>Nombre del contrato *</label><input id="ctNombre" value="${esc(c?.nombre||'')}" placeholder="Nombre del cliente o contrato"></div>
-      ${!c && entidadesDtl.length ? `
-      <div class="field">
-        <label>¿Ya existe en Dotación? <span class="opt">(opcional)</span></label>
-        <select id="ctEntidadDtlOrigen">
-          <option value="">— No, es un contrato nuevo —</option>
-          ${entidadesDtl.map(e=>`<option value="${e.id}">${esc(e.nombre)}${e.activo?'':' (archivado)'}</option>`).join('')}
-        </select>
-        <p class="muted-sm" style="margin-top:6px">Si lo eliges, el nombre de arriba se ajusta para coincidir exacto y se traen automáticamente sus trabajadores activos — no hace falta cargarlos de nuevo.</p>
-      </div>` : ''}
+      <p class="muted-sm" style="margin-bottom:12px">El nombre viene de Recursos Humanos (es el cliente de los trabajadores en RH) y no se cambia aquí.</p>
       <div class="field">
         <label>Modo de registro</label>
         <select id="ctModoRegistro">
-          <option value="digital" ${(!c||c.modo_registro!=='escaneado')?'selected':''}>Digital (normal, con firmas capturadas en el celular)</option>
-          <option value="escaneado" ${c&&c.modo_registro==='escaneado'?'selected':''}>Escaneado (subir formato físico ya firmado, sin señal)</option>
+          <option value="digital" ${c.modo_registro!=='escaneado'?'selected':''}>Digital (normal, con firmas capturadas en el celular)</option>
+          <option value="escaneado" ${c.modo_registro==='escaneado'?'selected':''}>Escaneado (subir formato físico ya firmado, sin señal)</option>
         </select>
         <div class="muted-sm" style="margin-top:6px">Si eliges "Escaneado", nadie podrá registrar entregas digitales en este contrato — todas quedan como archivo adjunto. Pensado para supervisores sin señal en campo.</div>
       </div>
@@ -5324,140 +5159,27 @@ async function abrirFormContrato(id, alGuardar, comoRaiz){
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" id="btnGuardarContrato">${I.check} Guardar</button>
-    </div></div>`;
-  if(comoRaiz) openModal(html); else openSubModal(html, ()=>{ if(alGuardar) alGuardar(); else abrirGestionContratos(); });
-  const selOrigen = document.getElementById('ctEntidadDtlOrigen');
-  if(selOrigen){
-    selOrigen.onchange = ()=>{
-      const e = entidadesDtl.find(x=>x.id===selOrigen.value);
-      const inputNombre = document.getElementById('ctNombre');
-      inputNombre.readOnly = !!e;
-      if(e) inputNombre.value = e.nombre;
-    };
-  }
+    </div></div>`, ()=> abrirGestionContratos());
   document.getElementById('btnGuardarContrato').onclick = async ()=>{
-    const nombre = document.getElementById('ctNombre').value.trim();
-    if(!nombre){ toast("Escribe el nombre del contrato","err"); return; }
     const modo_registro = document.getElementById('ctModoRegistro').value;
-    const entidadOrigenId = selOrigen ? selOrigen.value : '';
     const btn = document.getElementById('btnGuardarContrato'); btn.disabled=true; btn.innerHTML="Guardando…";
-    let error, data;
-    if(c){ ({error} = await sb.from("dot_contratos").update({nombre,modo_registro}).eq("id",c.id)); }
-    else { ({data,error} = await sb.from("dot_contratos").insert({nombre,modo_registro}).select().single()); }
+    const { error } = await sb.from("dot_contratos").update({ modo_registro }).eq("id", c.id);
     if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
     await loadDotacionState();
-    if(!c && data) { contratoActualId = data.id; localStorage.setItem('dot_contrato_actual', data.id); }
-    let msgFinal = c?"Contrato actualizado":"Contrato creado";
-    if(!c && data && entidadOrigenId){ msgFinal += await traerTrabajadoresDesdeDtl(entidadOrigenId); }
-    toast(msgFinal,"ok");
-    closeModal(); // no-comoRaiz: vuelve a "alGuardar" (gestión de contratos) solo por el _modalVolver
-    if(comoRaiz && alGuardar) alGuardar(); // comoRaiz no deja _modalVolver puesto, así que aquí se llama directo
-  };
-}
-
-/* Trae de una sola vez a EPP los trabajadores que ya existían en un contrato/entidad de
-   Dotación creado antes que este de EPP (contrato recién enlazado por nombre en
-   abrirFormContrato). Reusa dtl_espejo_en_dot (CAMBIOS_SQL_73.sql) trabajador por
-   trabajador — la MISMA función que ya mueve uno nuevo entre módulos — en vez de duplicar su
-   lógica de permisos/duplicados por cédula; así el resultado es idéntico a si cada uno se
-   hubiera dado de alta a mano. Solo trabajadores ACTIVOS en Dotación (uno inactivo no debería
-   aparecer como "actual" en el contrato recién creado). El espejo automático de ahí en
-   adelante (al agregar alguien nuevo en cualquiera de los dos) sigue funcionando solo, porque
-   el nombre del contrato ya quedó igual al de la entidad. */
-async function traerTrabajadoresDesdeDtl(entidadId){
-  const { data: trabs, error } = await sb.from("dtl_trabajadores").select("id").eq("entidad_id", entidadId).eq("activo", true);
-  if(error || !trabs || !trabs.length) return '';
-  let creados = 0, yaExistian = 0, sinPermiso = 0, otros = 0;
-  bloquear(`Trayendo trabajadores de Dotación… (0/${trabs.length})`);
-  try{
-    for(let i=0;i<trabs.length;i++){
-      bloquearMsg(`Trayendo trabajadores de Dotación… (${i+1}/${trabs.length})`);
-      const { data: espejo, error: errEspejo } = await sb.rpc('dtl_espejo_en_dot', { p_trabajador_id: trabs[i].id });
-      if(errEspejo){ otros++; continue; }
-      if(espejo?.ok) creados++;
-      else if(espejo?.motivo==='ya_existe') yaExistian++;
-      else if(espejo?.motivo==='sin_permiso_destino') sinPermiso++;
-      else otros++;
-    }
-  } finally { desbloquear(); }
-  if(creados) await loadDotacionState();
-  const partes = [];
-  if(creados) partes.push(`${creados} traído${creados===1?'':'s'} de Dotación`);
-  if(yaExistian) partes.push(`${yaExistian} ya existía${yaExistian===1?'':'n'} (misma cédula en otro contrato)`);
-  if(sinPermiso) partes.push(`${sinPermiso} sin permiso para agregarlos`);
-  if(otros) partes.push(`${otros} con error`);
-  return partes.length ? ` · ${partes.join(', ')}` : '';
-}
-
-/* ---------- Corregir cargos en bloque — útil cuando la carga masiva trajo el mismo
-   error de tipeo repetido en muchos trabajadores (ej. "OPERARRIO" en vez de "OPERARIO").
-   Renombra el cargo en TODOS los trabajadores que lo tengan escrito exactamente igual,
-   dentro del contrato actual (o de todos, en modo "todos los contratos"). ---------- */
-function abrirCorregirCargosDot(){
-  const trabs = trabajadoresDelContrato();
-  const porCargo = {};
-  trabs.forEach(t=>{
-    const k = (t.cargo||'').trim();
-    porCargo[k] = (porCargo[k]||0) + 1;
-  });
-  const lista = Object.keys(porCargo).sort((a,b)=> porCargo[b]-porCargo[a]);
-  openModal(`<div class="modal" style="max-width:520px">
-    <div class="modal-head"><div><h2>Corregir cargos</h2><p>Renombra un cargo y se corrige de una vez en todos los trabajadores que lo tengan escrito igual.</p></div>
-      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body">
-      ${lista.length ? lista.map(c=>`
-        <div class="cat-row">
-          <span style="flex:1;font-weight:600;font-size:13.5px">${c?esc(c):'<span class="muted-sm">(sin cargo)</span>'} <span class="muted-sm">— ${porCargo[c]} trabajador${porCargo[c]===1?'':'es'}</span></span>
-          <button class="icon-btn" title="Renombrar" data-cargo-edit="${esc(c)}">${I.pen}</button>
-        </div>`).join('') : '<p class="muted-sm">No hay trabajadores en este contrato.</p>'}
-    </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
-  </div>`);
-  document.querySelectorAll('[data-cargo-edit]').forEach(b=>{
-    const cargoActual = b.dataset.cargoEdit;
-    b.onclick = ()=> abrirRenombrarCargoDot(cargoActual, porCargo[cargoActual]);
-  });
-}
-function abrirRenombrarCargoDot(cargoActual, cantidad){
-  openSubModal(`<div class="modal" style="max-width:440px">
-    <div class="modal-head"><div><h2>Renombrar cargo</h2><p>Se corregirá en ${cantidad} trabajador${cantidad===1?'':'es'} de este contrato.</p></div>
-      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body">
-      <div class="field"><label>Texto correcto *</label><input id="cargoNuevo" value="${esc(cargoActual)}" placeholder="Cargo"></div>
-    </div>
-    <div class="modal-foot">
-      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" id="btnGuardarCargo">${I.check} Corregir</button>
-    </div></div>`, ()=> abrirCorregirCargosDot());
-  document.getElementById('btnGuardarCargo').onclick = async ()=>{
-    const nuevo = document.getElementById('cargoNuevo').value.trim();
-    if(!nuevo){ toast("Escribe el texto correcto","err"); return; }
-    if(nuevo === cargoActual){ toast("No cambiaste nada","err"); return; }
-    const btn = document.getElementById('btnGuardarCargo'); btn.disabled=true; btn.innerHTML="Corrigiendo…";
-    bloquear("Corrigiendo cargo…");
-    try{
-      const ids = trabajadoresDelContrato().filter(t=>(t.cargo||'').trim()===cargoActual).map(t=>t.id);
-      const { error } = await porLotes(ids, lote=> sb.from("dot_trabajadores").update({ cargo: nuevo }).in("id", lote));
-      if(error){ toast("No se pudo corregir: "+error.message,"err"); return; }
-      await loadDotacionState();
-      toast(`Cargo corregido en ${ids.length} trabajador(es)`,"ok");
-      closeModal();
-      renderDotacionBody();
-    } finally { desbloquear(); }
+    toast("Contrato actualizado","ok");
+    closeModal(); // vuelve a "Gestionar contratos" por el _modalVolver de openSubModal
   };
 }
 
 function abrirGestionContratos(){
-  openModal(`<div class="modal" style="max-width:520px">
-    <div class="modal-head"><div><h2>Gestionar contratos</h2><p>Cada contrato tiene su propio directorio y sus entregas.</p></div>
+  openModal(`<div class="modal" style="max-width:560px">
+    <div class="modal-head"><div><h2>Gestionar contratos</h2><p>Llegan solos desde Recursos Humanos, uno por cada cliente con gente activa.</p></div>
       <button class="close-x" onclick="cerrarGestionContratos()">${I.close}</button></div>
     <div class="modal-body">
-      <button class="btn btn-primary btn-sm" id="btnNuevoContrato" style="margin-bottom:14px">${I.plus} Nuevo contrato</button>
       <div id="contratosLista"></div>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="cerrarGestionContratos()">Cerrar</button></div>
   </div>`);
-  document.getElementById('btnNuevoContrato').onclick = ()=> abrirFormContrato(null, ()=>abrirGestionContratos());
   renderContratosLista();
 }
 function cerrarGestionContratos(){
@@ -5468,121 +5190,70 @@ function cerrarGestionContratos(){
 function renderContratosLista(){
   const host = document.getElementById('contratosLista'); if(!host) return;
   host.innerHTML = DOTACION.contratos.map(c=>{
-    const n = DOTACION.trabajadores.filter(t=>t.contrato_id===c.id).length;
+    const trabs = DOTACION.trabajadores.filter(t=>t.contrato_id===c.id);
+    const activos = trabs.filter(t=>t.activo!==false).length;
+    const ids = new Set(trabs.map(t=>t.id));
+    const conEntregas = DOTACION.entregas.some(e=>ids.has(e.trabajador_id));
+    const sePuedeEliminar = !activos && !conEntregas;
     return `<div class="cat-row">
-      <span style="flex:1;font-weight:600;font-size:13.5px;${c.activo?'':'opacity:.5'}">${esc(c.nombre)}${c.activo?'':' · archivado'}</span>
-      <span class="muted-sm" style="width:90px">${n} trabajador${n===1?'':'es'}</span>
-      <button class="icon-btn" title="Renombrar" data-ct-edit="${c.id}">${I.pen}</button>
-      <button class="icon-btn" title="${c.activo?'Archivar':'Reactivar'}" data-ct-toggle="${c.id}">${c.activo?I.lock:I.check}</button>
-      <button class="icon-btn danger" title="Eliminar" data-ct-del="${c.id}">${I.trash}</button>
+      <span style="flex:1;font-weight:600;font-size:13.5px;${c.activo?'':'opacity:.5'}">${esc(c.nombre)}${c.activo?'':' · archivado'}${c.modo_registro==='escaneado'?' <span class="muted-sm">· escaneado</span>':''}</span>
+      <span class="muted-sm" style="width:90px">${activos} activo${activos===1?'':'s'}</span>
+      <button class="icon-btn" title="Configurar" data-ct-edit="${c.id}">${I.pen}</button>
+      <button class="icon-btn danger" title="${sePuedeEliminar?'Eliminar':'No se puede eliminar: tiene trabajadores activos o entregas registradas'}" data-ct-del="${c.id}" ${sePuedeEliminar?'':'disabled'}>${I.trash}</button>
     </div>`;
-  }).join('');
-  host.querySelectorAll('[data-ct-edit]').forEach(b=>{ b.onclick = ()=> abrirFormContrato(b.dataset.ctEdit, ()=>abrirGestionContratos()); });
+  }).join('') || '<p class="muted-sm">Sin contratos todavía.</p>';
+  host.querySelectorAll('[data-ct-edit]').forEach(b=>{ b.onclick = ()=> abrirFormContrato(b.dataset.ctEdit); });
   host.querySelectorAll('[data-ct-del]').forEach(b=>{ b.onclick = ()=> eliminarContratoDot(b.dataset.ctDel); });
-  host.querySelectorAll('[data-ct-toggle]').forEach(b=>{
-    b.onclick = async ()=>{
-      const c = DOTACION.contratos.find(x=>x.id===b.dataset.ctToggle);
-      const archivando = c.activo;
-      const { error } = await sb.from("dot_contratos").update({activo: !c.activo}).eq("id", c.id);
-      if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
-      let nTocados = 0;
-      if(archivando){
-        // Al archivar un contrato, sus trabajadores dejan de tener sentido en la vista
-        // normal — se marcan inactivos igual que si el admin los hubiera seleccionado
-        // uno por uno (se conserva todo su historial de entregas y firmas). Se marcan
-        // con inactivo_por_archivo:true para poder reactivar EXACTAMENTE a estos (y no a
-        // alguien que ya estaba inactivo por otra razón desde antes de archivar).
-        const idsTrab = DOTACION.trabajadores.filter(t=>t.contrato_id===c.id && t.activo!==false).map(t=>t.id);
-        nTocados = idsTrab.length;
-        if(nTocados){
-          const { error: e2 } = await porLotes(idsTrab, lote=> sb.from("dot_trabajadores").update({activo:false, inactivo_por_archivo:true}).in("id", lote));
-          if(e2){ toast("Contrato archivado, pero no se pudo marcar a los trabajadores como inactivos: "+e2.message,"err"); }
-        }
-      } else {
-        // Al reactivar, solo se reactivan los que quedaron inactivos POR archivar este
-        // contrato — no a quien ya estaba inactivo antes por otro motivo.
-        const idsTrab = DOTACION.trabajadores.filter(t=>t.contrato_id===c.id && t.inactivo_por_archivo).map(t=>t.id);
-        nTocados = idsTrab.length;
-        if(nTocados){
-          const { error: e2 } = await porLotes(idsTrab, lote=> sb.from("dot_trabajadores").update({activo:true, inactivo_por_archivo:false}).in("id", lote));
-          if(e2){ toast("Contrato reactivado, pero no se pudo reactivar a sus trabajadores: "+e2.message,"err"); }
-        }
-      }
-      await loadDotacionState();
-      renderContratosLista();
-      toast(archivando
-        ?`Contrato archivado${nTocados?` — ${nTocados} trabajador(es) marcados como inactivos`:''}`
-        :`Contrato reactivado${nTocados?` — ${nTocados} trabajador(es) reactivados`:''}`,"ok");
-    };
-  });
 }
 
-/* Eliminar un contrato en duro. La base de datos hace cascada completa (contrato →
-   trabajadores → entregas/items), así que esto SÍ borra todo aunque tenga gente —
-   por eso, si tiene al menos un trabajador (activo o inactivo), se exige escribir el
-   nombre exacto del contrato para habilitar el botón, y el aviso lo dice explícito. */
+/* Solo se ofrece para un contrato sin trabajadores activos ni entregas: lo que se va con él
+   (fichas inactivas sin entregas) no tiene historial que perder. */
 function eliminarContratoDot(id){
   const c = DOTACION.contratos.find(x=>x.id===id); if(!c) return;
-  const nTrab = DOTACION.trabajadores.filter(t=>t.contrato_id===id).length;
-  const grave = nTrab>0;
   openSubModal(`<div class="modal" style="max-width:440px">
-    <div class="modal-head"><div><h2>Eliminar contrato</h2><p>Esta acción no se puede deshacer.</p></div>
+    <div class="modal-head"><div><h2>Eliminar contrato</h2><p>${esc(c.nombre)}</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
-      <p style="font-size:14.5px;color:var(--ink-2)">Se eliminará el contrato "<b>${esc(c.nombre)}</b>"${grave?` y con él se borrarán <b>permanentemente</b> sus ${nTrab} trabajador(es) — incluidas todas sus entregas y firmas registradas. No queda ningún respaldo.`:', que no tiene ningún trabajador asociado.'}</p>
-      ${grave?`<div class="field"><label>Para confirmar, escribe el nombre exacto del contrato</label><input id="confDelContratoDotNombre" placeholder="${esc(c.nombre)}" autocomplete="off"></div>`:''}
+      <p style="font-size:14.5px;color:var(--ink-2)">No tiene trabajadores activos ni entregas registradas. Si más adelante Recursos Humanos tiene gente activa en este cliente, el contrato se crea de nuevo solo.</p>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-danger" id="confDelContratoDot" ${grave?'disabled':''}>${I.trash} Sí, eliminar</button></div></div>`, ()=> abrirGestionContratos());
-  if(grave){
-    const inp = document.getElementById('confDelContratoDotNombre');
-    const btn0 = document.getElementById('confDelContratoDot');
-    inp.oninput = ()=>{ btn0.disabled = inp.value.trim().toLowerCase() !== c.nombre.trim().toLowerCase(); };
-  }
+      <button class="btn btn-danger" id="confDelContratoDot">${I.trash} Sí, eliminar</button></div></div>`, ()=> abrirGestionContratos());
   document.getElementById('confDelContratoDot').onclick = async ()=>{
     const btn = document.getElementById('confDelContratoDot'); btn.disabled=true; btn.innerHTML="Eliminando…";
     const { error } = await sb.from("dot_contratos").delete().eq("id", id);
-    if(error){
-      btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`;
-      toast("No se pudo eliminar: "+error.message,"err");
-      return;
-    }
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`; toast("No se pudo eliminar: "+error.message,"err"); return; }
     if(id===contratoActualId){ contratoActualId='todos'; localStorage.setItem('dot_contrato_actual','todos'); }
     await loadDotacionState();
-    toast(`Contrato eliminado${grave?` — ${nTrab} trabajador(es) y su historial también se eliminaron`:''}`,"ok");
+    toast("Contrato eliminado","ok");
     closeModal();
   };
 }
 
-/* ---------- Directorio: crear / editar / eliminar trabajador ---------- */
+/* ---------- Directorio: los trabajadores vienen de Recursos Humanos ----------
+   Desde CAMBIOS_SQL_84/85 nombre, cédula, cargo, contrato, fechas y estado llegan solos de RH
+   (la base de datos no deja crearlos, cambiarlos ni eliminarlos desde aquí). Aquí solo se edita
+   el área. La carga masiva, la plantilla, "Corregir cargos" y el link de nuevos se quitaron. */
+
+/* Datos que vienen de RH, solo para leer (lo usan EPP y Dotación) */
+function datosRhTrabajadorHTML(t, contratoNombre){
+  return `<div style="padding:10px 12px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;margin-bottom:14px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
+    <div><b>C.C.</b> ${esc(t.identificacion||'—')}</div>
+    <div><b>Cargo:</b> ${esc(t.cargo||'—')}</div>
+    <div><b>Contrato:</b> ${esc(contratoNombre||'—')}</div>
+    <div><b>Ingreso:</b> ${fmtDate(t.fecha_ingreso)}${t.fecha_salida?` · <b>Salida:</b> ${fmtDate(t.fecha_salida)}`:''} · ${t.activo===false?'Inactivo':'Activo'}</div>
+    <p class="muted-sm" style="margin:6px 0 0">Estos datos vienen de Recursos Humanos: si algo está mal, se corrige en RH y aquí se actualiza solo.</p>
+  </div>`;
+}
+
 function abrirTrabajadorForm(id){
-  const t = id ? DOTACION.trabajadores.find(x=>x.id===id) : null;
-  // Al crear (no editar), un usuario sin acceso admin solo puede elegir un contrato
-  // donde tenga el permiso "puede agregar trabajadores" — si no, el <select> le
-  // ofrecería contratos donde el insert luego sería rechazado por la base de datos.
-  const contratosDisponibles = t ? DOTACION.contratos : DOTACION.contratos.filter(c=>puedeAgregarTrabajadorDot(c.id));
-  const contratoDefault = t ? t.contrato_id : (contratoActualId==='todos' || !puedeAgregarTrabajadorDot(contratoActualId) ? (contratosDisponibles[0]?.id||'') : contratoActualId);
+  const t = DOTACION.trabajadores.find(x=>x.id===id); if(!t) return;
+  const contrato = DOTACION.contratos.find(c=>c.id===t.contrato_id)?.nombre;
   openModal(`<div class="modal" style="max-width:480px">
-    <div class="modal-head"><div><h2>${t?'Editar trabajador':'Nuevo trabajador'}</h2><p>Se guarda en el directorio para futuras entregas.</p></div>
+    <div class="modal-head"><div><h2>Editar área</h2><p>${esc(t.nombre)}</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
-      <div class="field"><label>Contrato *</label>
-        <select id="tContrato">${contratosDisponibles.map(c=>`<option value="${c.id}" ${c.id===contratoDefault?'selected':''}>${esc(c.nombre)}</option>`).join('')}</select>
-      </div>
-      <div class="field"><label>Nombre completo *</label><input id="tNombre" value="${esc(t?.nombre||'')}" placeholder="Nombres y apellidos"></div>
-      ${t ? `
-      <div class="field"><label>Número de identificación (cédula) *</label><input id="tCedula" value="${esc(t.identificacion||'')}" placeholder="C.C." inputmode="numeric"></div>
-      ` : `
-      <div class="field"><label>Número de identificación (cédula) *</label><input id="tCedula" type="password" inputmode="numeric" placeholder="C.C." autocomplete="off" onpaste="return false" ondrop="return false" oncopy="return false"></div>
-      <div class="field"><label>Confirmar número de identificación *</label><input id="tCedulaConfirm" type="text" inputmode="numeric" placeholder="Escríbela de nuevo" autocomplete="off" onpaste="return false" ondrop="return false" oncopy="return false"></div>
-      <p class="muted-sm" style="margin-top:-8px">Se pide escribirla dos veces, sin poder copiar y pegar, para evitar registrar una cédula mal digitada.</p>
-      `}
-      <div class="field"><label>Cargo</label><input id="tCargo" value="${esc(t?.cargo||'')}" placeholder="Cargo"></div>
-      <div class="field row2">
-        <div><label>Fecha de ingreso</label><input type="date" id="tFechaIngreso" value="${t?.fecha_ingreso||''}"></div>
-        <div><label>Fecha de salida</label><input type="date" value="${t?.fecha_salida||''}" disabled title="Se llena sola cuando Recursos Humanos marca la salida de este trabajador"></div>
-      </div>
-      <p class="muted-sm">La fecha de salida se llena automáticamente cuando Recursos Humanos marca la salida del trabajador — no se edita aquí.</p>
+      ${datosRhTrabajadorHTML(t, contrato)}
+      <div class="field"><label>Área</label><input id="tArea" value="${esc(t.area||'')}" placeholder="Área o sede dentro del contrato"></div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
@@ -5592,185 +5263,18 @@ function abrirTrabajadorForm(id){
 }
 
 async function guardarTrabajador(id){
-  const contrato_id = document.getElementById('tContrato').value;
-  const nombre = document.getElementById('tNombre').value.trim();
-  const identificacion = document.getElementById('tCedula').value.trim();
-  const cargo = document.getElementById('tCargo').value.trim() || null;
-  const fecha_ingreso = document.getElementById('tFechaIngreso').value || null;
-  if(!contrato_id){ toast("Selecciona el contrato","err"); return; }
-  if(!nombre){ toast("Falta el nombre","err"); return; }
-  if(!identificacion){ toast("Falta la identificación","err"); return; }
-  if(!id){
-    const confirmacion = document.getElementById('tCedulaConfirm').value.trim();
-    if(identificacion !== confirmacion){ toast("Las dos cédulas no coinciden — vuelve a escribirlas","err"); return; }
-  }
+  const area = document.getElementById('tArea').value.trim() || null;
   const btn = document.getElementById('btnGuardarTrab'); btn.disabled=true; btn.innerHTML="Guardando…";
   bloquear("Guardando…");
-  let error, nuevoId=null;
-  if(id){ ({error} = await sb.from("dot_trabajadores").update({nombre,identificacion,cargo,contrato_id,fecha_ingreso}).eq("id",id)); }
-  else {
-    const r = await sb.from("dot_trabajadores").insert({nombre,identificacion,cargo,contrato_id,fecha_ingreso}).select("id").single();
-    error = r.error; nuevoId = r.data?.id || null;
-  }
+  const { error } = await sb.from("dot_trabajadores").update({ area }).eq("id", id);
   desbloquear();
-  if(error){
-    btn.disabled=false; btn.innerHTML=`${I.check} Guardar`;
-    const dup = /duplicate|unique/i.test(error.message||"");
-    toast(dup?"Ya existe un trabajador ACTIVO con esa cédula (en este contrato o en otro). Márcalo inactivo primero si se trasladó, o reactívalo en el contrato correcto":"No se pudo guardar: "+error.message,"err");
-    return;
-  }
+  if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
   await loadDotacionState();
   closeModal();
-  // Al crear (no editar), refleja al mismo trabajador en Dotación si hay una entidad
-  // con el mismo nombre de contrato y esa cédula no está ya ahí (ver CAMBIOS_SQL_73.sql).
-  let msgFinal = id ? "Trabajador actualizado" : "Trabajador creado";
-  if(!id && nuevoId){
-    const { data: espejo, error: errEspejo } = await sb.rpc('dot_espejo_en_dtl', { p_trabajador_id: nuevoId });
-    if(errEspejo){ console.error('dot_espejo_en_dtl', errEspejo); msgFinal += ` · no se pudo reflejar en Dotación: ${errEspejo.message}`; }
-    else if(espejo?.ok) msgFinal += ` · también creado en Dotación (${espejo.entidad_nombre})`;
-    else {
-      const motivos = {
-        sin_permiso_destino: `no tienes el permiso en Dotación (${espejo?.entidad_nombre||'—'})`,
-        ya_existe: `esa cédula ya existía en Dotación (${espejo?.entidad_nombre||'—'})`,
-        sin_entidad_correspondiente: 'no hay ninguna entidad de Dotación con ese mismo nombre de contrato',
-        sin_acceso_origen: 'sin acceso al contrato de origen',
-        no_encontrado: 'no se encontró el trabajador recién creado'
-      };
-      msgFinal += ` · no se reflejó en Dotación: ${motivos[espejo?.motivo] || espejo?.motivo || 'motivo desconocido'}`;
-    }
-  }
-  toast(msgFinal,"ok");
+  toast("Área actualizada","ok");
   const mFicha = location.hash.match(/^#\/dotacion\/trabajador\/(.+)$/);
-  if(mFicha && id && decodeURIComponent(mFicha[1])===id){ renderFichaTrabajador(id); }
+  if(mFicha && decodeURIComponent(mFicha[1])===id){ renderFichaTrabajador(id); }
   else { renderDotacionAdmin(); }
-}
-
-function eliminarTrabajador(id){
-  const t = DOTACION.trabajadores.find(x=>x.id===id);
-  openModal(`<div class="modal" style="max-width:460px">
-    <div class="modal-head"><div><h2>Eliminar trabajador</h2><p>Esta acción no se puede deshacer.</p></div>
-      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminará a <b>${esc(t?.nombre||'este trabajador')}</b> del directorio junto con <b>todo su historial de entregas y firmas</b>. Si solo quieres corregir un dato, usa "Editar" en vez de eliminar.</p></div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-danger" id="confDelTrab">${I.trash} Sí, eliminar</button></div></div>`);
-  document.getElementById("confDelTrab").onclick = async ()=>{
-    const btn=document.getElementById("confDelTrab"); btn.disabled=true; btn.innerHTML="Eliminando…";
-    const { error } = await sb.from("dot_trabajadores").delete().eq("id", id);
-    if(error){ btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`; toast("No se pudo eliminar: "+error.message,"err"); return; }
-    await loadDotacionState();
-    closeModal(); toast("Trabajador eliminado","ok"); renderDotacionAdmin();
-  };
-}
-
-/* ---------- Carga masiva de trabajadores desde Excel ---------- */
-/* El Excel de EPP no trae columna de contrato (a diferencia de Dotación, donde cada
-   fila trae su propio contrato y se crea solo si no existe) — así que aquí, antes de
-   abrir el explorador de archivos, se pregunta a cuál contrato se va a cargar. Si
-   todavía no existe el contrato, primero hay que crearlo (con "Crear contrato nuevo")
-   y automáticamente se vuelve a esta misma pantalla para continuar. */
-function abrirCargaMasivaDot(){
-  const hay = DOTACION.contratos.length > 0;
-  openModal(`<div class="modal" style="max-width:440px">
-    <div class="modal-head"><div><h2>Carga masiva de trabajadores</h2><p>Elige a qué contrato vas a cargar el Excel.</p></div>
-      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body">
-      ${hay?`<div class="field"><label>Contrato *</label>
-        <select id="cmContratoDot">${DOTACION.contratos.map(c=>`<option value="${c.id}" ${c.id===contratoActualId?'selected':''}>${esc(c.nombre)}</option>`).join('')}</select>
-      </div>` : `<p class="muted-sm">Aún no tienes ningún contrato creado — crea uno primero para poder cargar trabajadores.</p>`}
-    </div>
-    <div class="modal-foot">
-      <button class="btn btn-ghost" id="btnCmDotNuevoContrato">${I.plus} Crear contrato nuevo</button>
-      ${hay?`<button class="btn btn-primary" id="btnCmDotContinuar">${I.check} Continuar</button>`:''}
-    </div></div>`);
-  document.getElementById('btnCmDotNuevoContrato').onclick = ()=> abrirFormContrato(null, ()=> abrirCargaMasivaDot());
-  const btnContinuar = document.getElementById('btnCmDotContinuar');
-  if(btnContinuar) btnContinuar.onclick = async ()=>{
-    const elegido = document.getElementById('cmContratoDot').value;
-    if(!elegido){ toast("Elige un contrato","err"); return; }
-    contratoActualId = elegido;
-    localStorage.setItem('dot_contrato_actual', elegido);
-    closeModal();
-    await renderDotacionAdmin();
-    const fi = document.getElementById("fileTrabajadores");
-    if(fi) fi.click();
-  };
-}
-function descargarPlantillaTrabajadoresDot(){
-  if(!window.XLSX){ toast("No se pudo cargar el generador de Excel (revisa tu conexión)","err"); return; }
-  const datos = [
-    ["Nombre completo","Identificación","Cargo","Fecha de ingreso"],
-    ["Juan Pérez Gómez","1094567890","Operario","2024-01-15"],
-    ["María López Ruiz","43567123","Auxiliar","2024-03-01"]
-  ];
-  const ws = XLSX.utils.aoa_to_sheet(datos);
-  ws["!cols"] = [{wch:28},{wch:16},{wch:20},{wch:16}];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Trabajadores");
-  XLSX.writeFile(wb, "Plantilla_trabajadores.xlsx");
-  toast("Plantilla descargada","ok");
-}
-
-async function cargarTrabajadoresExcelDot(file){
-  if(!window.XLSX){ toast("No se pudo cargar el lector de Excel (revisa tu conexión)","err"); return; }
-  if(contratoActualId==='todos'){ toast("Selecciona un contrato específico antes de cargar trabajadores","err"); return; }
-  bloquear("Leyendo archivo…");
-  try{
-    const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf, {type:"array"});
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    const filas = XLSX.utils.sheet_to_json(ws, {header:1, defval:"", raw:false});
-    if(!filas.length){ toast("El archivo está vacío","err"); return; }
-    const norm = s => String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").trim();
-    const head = (filas[0]||[]).map(norm);
-    const findCol = (...alts)=> head.findIndex(h => alts.some(a => h.includes(a)));
-    let cNom = findCol("nombre"), cId = findCol("identificacion","cedula","documento","cc"),
-        cCar = findCol("cargo"),
-        cFec = findCol("fecha de ingreso","fecha ingreso","ingreso");
-    let start = 1;
-    if(cNom === -1 && cId === -1){ cNom=0; cId=1; cCar=2; cFec=3; start=0; }
-    const filasValidas = []; let ignoradas = 0;
-    for(let i=start;i<filas.length;i++){
-      const r = filas[i]; if(!r) continue;
-      const nombre = String(cNom>=0?r[cNom]:"").trim();
-      const identificacion = String(cId>=0?r[cId]:"").trim();
-      const cargo = String(cCar>=0?r[cCar]:"").trim();
-      const fecha_ingreso = cFec>=0 ? parseFechaExcelDtl(r[cFec]) : null;
-      if(!nombre && !identificacion) continue;
-      if(!nombre || !identificacion){ ignoradas++; continue; }
-      filasValidas.push({ nombre, identificacion, cargo:cargo||null, fecha_ingreso });
-    }
-    if(!filasValidas.length){ toast("No se encontraron filas válidas (se requiere nombre e identificación)","err"); return; }
-    const keyOf = s => s.replace(/[^0-9A-Za-z]/g,"").toLowerCase();
-    // La cédula es única POR CONTRATO: solo comparamos contra los trabajadores de este mismo contrato
-    const existentes = {}; trabajadoresDelContrato().forEach(t=>{ existentes[keyOf(t.identificacion)] = t; });
-    const nuevos = [], actualizaciones = [];
-    const vistosEnArchivo = new Set(); let dup = 0;
-    filasValidas.forEach(f=>{
-      const k = keyOf(f.identificacion);
-      if(vistosEnArchivo.has(k)){ dup++; return; }
-      vistosEnArchivo.add(k);
-      if(existentes[k]){ actualizaciones.push({ id: existentes[k].id, ...f }); }
-      else { nuevos.push({ ...f, contrato_id: contratoActualId }); }
-    });
-    let errores = 0;
-    if(nuevos.length){
-      const { error } = await sb.from("dot_trabajadores").insert(nuevos);
-      if(error){ errores++; console.error(error); }
-    }
-    for(const a of actualizaciones){
-      const { id, ...datos } = a;
-      const { error } = await sb.from("dot_trabajadores").update(datos).eq("id", id);
-      if(error) errores++;
-    }
-    await loadDotacionState();
-    renderDotTrabajadoresGrid();
-    let msg = `${nuevos.length} nuevo(s), ${actualizaciones.length} actualizado(s)`;
-    if(ignoradas) msg += ` · ${ignoradas} sin nombre/cédula omitida(s)`;
-    if(dup) msg += ` · ${dup} duplicada(s) en el archivo`;
-    if(errores) msg += ` · ${errores} error(es)`;
-    toast(msg, errores?"err":"ok");
-  }catch(e){ console.error(e); toast("No se pudo leer el archivo: "+(e.message||''),"err"); }
-  finally{ desbloquear(); }
 }
 
 /* ---------- Catálogo de ítems (guantes, botas, casco…) ---------- */
@@ -6287,7 +5791,7 @@ function renderPasoEntrega1(){
       ${t ? `<div class="trab-summary"><div class="tk">Trabajador</div><div class="tv">${esc(t.nombre)} — C.C. ${esc(t.identificacion)}</div></div>`
           : `<div class="field"><label>Trabajador *</label>
               <select id="entTrabajador"><option value="">Selecciona…</option>${opcionesTrab}</select>
-              <div class="muted-sm" style="margin-top:6px">¿No aparece? Créalo primero desde "Nuevo trabajador" en el panel.</div>
+              <div class="muted-sm" style="margin-top:6px">¿No aparece? Los trabajadores llegan de Recursos Humanos: si es nuevo, pide que lo registren en RH.</div>
             </div>`}
       <div class="field"><label>Fecha de entrega</label><input type="date" id="entFecha" value="${entregaDraft.fecha}"></div>
 
@@ -6601,7 +6105,7 @@ async function renderFichaTrabajador(id){
         <div class="page-head">
           <div><h1>${esc(t.nombre)}</h1><p>C.C. ${esc(t.identificacion)}${t.cargo?' · '+esc(t.cargo):''}${t.area?' · '+esc(t.area):''} · ${esc(DOTACION.contratos.find(c=>c.id===t.contrato_id)?.nombre||'—')}${t.fecha_ingreso?' · Ingresó '+fmtDate(t.fecha_ingreso):''}${t.fecha_salida?' · Salió '+fmtDate(t.fecha_salida):''}</p></div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
-            ${MIPERFIL.esAdmin?`<button class="btn btn-ghost" id="btnEditarTrab">${I.pen} Editar datos</button>`:''}
+            ${MIPERFIL.esAdmin?`<button class="btn btn-ghost" id="btnEditarTrab">${I.pen} Editar área</button>`:''}
             ${listaEntregas.length?(esContratoEscaneado
               ? `<button class="btn btn-ghost" id="btnZipAdjuntos">${I.doc} Descargar ZIP</button>`
               : `<button class="btn btn-ghost" id="btnKardex">${I.pdf} Imprimir kárdex</button>`):''}
@@ -6875,44 +6379,147 @@ async function descartarAvisoCedulaRh(tabla, id, alTerminar){
   if(alTerminar) alTerminar();
 }
 
-/* ---------- "Link trabajadores nuevos": herramienta admin-only, compartida entre
-   EPP y Dotación. Un solo link fijo por contrato (usa el id del contrato/entidad
-   directamente en la URL — no hace falta guardar nada aparte, "existe" apenas el
-   contrato existe). Para trabajadores que RH todavía no cargó: crean su propia
-   ficha antes de registrar su primera entrega. Ver renderDotPublicoNuevo /
-   renderDtlPublicoNuevo más abajo. ---------- */
-function mostrarLinkTrabajadoresNuevos(modulo){
-  const enTodos = modulo==='epp' ? (contratoActualId==='todos') : (dtlFiltroEntidad==='todas');
-  if(enTodos){ toast("Elige un contrato específico primero","err"); return; }
-  const id = modulo==='epp' ? contratoActualId : dtlFiltroEntidad;
-  const tabla = modulo==='epp' ? 'dot_contratos' : 'dtl_entidades';
-  const ruta = modulo==='epp' ? 'dotacion' : 'dotacionlegal';
-  const c = modulo==='epp' ? DOTACION.contratos.find(x=>x.id===id) : DTL.entidades.find(x=>x.id===id);
-  const nombre = c?.nombre;
-  const url = location.href.split("#")[0] + "#/" + ruta + "/entrega-nuevo/" + id;
-  const activo = c?.link_nuevos_activo !== false;
-  openModal(`<div class="modal" style="max-width:460px">
-    <div class="modal-head"><div><h2>Link trabajadores nuevos</h2><p>${esc(nombre||'')}</p></div>
+/* ---------- "Diferencias con RH" (solo administrador, EPP y Dotación) — CAMBIOS_SQL_85 ----------
+   Lo que hay aquí y no cuadra con Recursos Humanos, para revisarlo uno por uno: activos que RH
+   tiene retirados, activos cuya cédula no está en RH (con las personas de RH de nombre parecido,
+   por si la cédula quedó mal escrita), avisos de cédula sin descartar y contratos que ya no están
+   en RH. Lee y corrige con funciones de la base de datos que solo un administrador puede usar
+   (firmas_diferencias_rh, firmas_diferencias_inactivar, firmas_diferencias_corregir_cedula). */
+async function abrirDiferenciasRh(modulo){
+  const titulo = modulo==='epp' ? 'EPP' : 'Dotación';
+  openModalOnClose(`<div class="modal lg">
+    <div class="modal-head"><div><h2>Diferencias con RH — ${titulo}</h2><p>Lo que hay aquí y no cuadra con Recursos Humanos. Revísalo y decide.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body">
-      <p class="muted-sm" style="margin-bottom:10px">Para trabajadores que todavía no tienen ficha creada (RH no los ha cargado). Al entrar, primero llenan sus datos personales y quedan registrados en este contrato — de ahí en adelante usan el enlace normal para sus próximas entregas. Solo funciona una vez por cédula.</p>
-      <label class="chk" style="margin-bottom:10px"><input type="checkbox" id="chkLinkNuevosActivo" ${activo?'checked':''}> Enlace activo (desactívalo cuando no lo necesites, para evitar errores)</label>
-      <div class="field"><input readonly value="${esc(url)}" onclick="this.select()"></div>
-    </div>
-    <div class="modal-foot">
-      <button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
-      <button class="btn btn-ghost" id="btnQrLinkNuevos">${I.qr} QR</button>
-      <button class="btn btn-primary" id="btnCopiarLinkNuevos">${I.link} Copiar enlace</button>
-    </div></div>`);
-  document.getElementById('btnCopiarLinkNuevos').onclick = ()=> copyText(url, "Enlace copiado");
-  document.getElementById('btnQrLinkNuevos').onclick = ()=> mostrarQR(url, "Trabajadores nuevos — "+(nombre||''));
-  document.getElementById('chkLinkNuevosActivo').onchange = async (e)=>{
-    const nuevoValor = e.target.checked;
-    const { error } = await sb.from(tabla).update({ link_nuevos_activo: nuevoValor }).eq("id", id);
-    if(error){ e.target.checked = !nuevoValor; toast("No se pudo actualizar: "+error.message,"err"); return; }
-    if(c) c.link_nuevos_activo = nuevoValor;
-    toast(nuevoValor?"Enlace activado":"Enlace desactivado","ok");
+    <div class="modal-body" id="difRhBody"><div class="empty"><h3>Cargando…</h3></div></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
+  </div>`, ()=> modulo==='epp' ? renderDotacionAdmin(true) : renderDtlAdmin(true));
+  await pintarDiferenciasRh(modulo);
+}
+
+async function pintarDiferenciasRh(modulo){
+  if(!document.getElementById('difRhBody')) return;
+  const { data, error } = await sb.rpc('firmas_diferencias_rh', { p_modulo: modulo });
+  const host = document.getElementById('difRhBody');
+  if(!host) return; // se cerró mientras cargaba
+  if(error){ host.innerHTML = `<div class="empty"><h3>No se pudo cargar</h3><p>${esc(error.message)}</p></div>`; return; }
+  const ret = data?.retirados||[], noEst = data?.no_estan||[], avisos = data?.avisos||[], contratos = data?.contratos||[];
+  if(!ret.length && !noEst.length && !avisos.length && !contratos.length){
+    host.innerHTML = `<div class="empty"><div class="ic">${I.check}</div><h3>Todo cuadra con RH</h3><p>No hay nada pendiente por revisar en este módulo.</p></div>`;
+    return;
+  }
+  const otroModulo = modulo==='epp' ? 'Dotación' : 'EPP';
+  const ruta = modulo==='epp' ? '#/dotacion/trabajador/' : '#/dotacionlegal/trabajador/';
+  const enlace = x => `<a href="${ruta}${x.id}" onclick="closeModal()" style="font-weight:700;font-size:13.5px;color:inherit">${esc(x.nombre)}</a>`;
+  const nEnt = x => x.entregas ? ` · ${x.entregas} entrega${x.entregas==1?'':'s'}` : ' · sin entregas';
+  const caja = cont => `<div style="padding:10px 12px;border:1px solid var(--line);border-radius:9px;margin-bottom:8px">${cont}</div>`;
+  const fila = (izq, der) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div style="min-width:220px;flex:1">${izq}</div>${der}</div>`;
+  const titulo = (txt, n, extra) => `<div class="sec-bar" style="margin-top:16px"><h2 style="font-size:15px">${txt} <span class="muted-sm">(${n})</span></h2>${extra||''}</div>`;
+  const nada = `<p class="muted-sm" style="margin:2px 0 8px">Ninguno.</p>`;
+
+  let h = titulo('Activos aquí, retirados en RH', ret.length,
+    ret.length>1 ? `<button class="btn btn-primary btn-sm" id="btnDifInactivarTodos">Pasar los ${ret.length} a inactivos</button>` : '');
+  h += ret.length ? ret.map(x=> caja(fila(
+      `${enlace(x)}<div class="muted-sm">C.C. ${esc(x.identificacion)} · ${esc(x.contrato)}${nEnt(x)}</div>
+       <div class="muted-sm">En RH: retirado${x.rh_retiro?' el '+fmtDate(x.rh_retiro):''}${x.rh_cliente?' · '+esc(x.rh_cliente):''}</div>`,
+      `<button class="btn btn-ghost btn-sm" data-dif-inactivar="${x.id}">Pasar a inactivo</button>`))).join('') : nada;
+
+  h += titulo('Activos aquí que no están en RH', noEst.length);
+  h += noEst.length ? `<p class="muted-sm" style="margin:2px 0 8px">Si es alguien de RH con la cédula mal escrita aquí, elige a la persona correcta: la ficha toma su cédula y sus entregas se quedan con ella. Si no trabaja con nosotros, pásalo a inactivo.</p>`
+    + noEst.map(x=> caja(fila(
+      `${enlace(x)}<div class="muted-sm">C.C. ${esc(x.identificacion)} · ${esc(x.contrato)}${nEnt(x)}</div>`,
+      `<button class="btn btn-ghost btn-sm" data-dif-inactivar="${x.id}">Pasar a inactivo</button>`)
+      + `<div style="margin-top:8px">
+        ${(x.candidatos||[]).length
+          ? `<div class="muted-sm" style="margin-bottom:4px">Personas de RH con nombre parecido:</div>` + x.candidatos.map(c=>`
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px dashed var(--line);flex-wrap:wrap">
+              <span style="font-size:13px">${esc(c.nombre)} · C.C. ${esc(c.cedula)} · ${esc(c.cliente||'—')} · ${c.activo?'activo en RH':'retirado en RH'}</span>
+              <button class="btn btn-ghost btn-sm" data-dif-corregir="${x.id}" data-cedula="${esc(c.cedula)}" data-nombre-rh="${esc(c.nombre)}">Es esta persona</button>
+            </div>`).join('')
+          : `<div class="muted-sm">No hay nadie de nombre parecido en RH.</div>`}
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+          <div class="field" style="margin:0;max-width:200px"><input data-dif-ced-input="${x.id}" placeholder="Otra cédula de RH" inputmode="numeric"></div>
+          <button class="btn btn-ghost btn-sm" data-dif-corregir-manual="${x.id}">Corregir cédula</button>
+        </div>
+      </div>`)).join('') : nada;
+
+  h += titulo('Avisos de cédula sin revisar', avisos.length);
+  h += avisos.length ? avisos.map(x=> caja(fila(
+      `${enlace(x)}<div class="muted-sm">C.C. ${esc(x.identificacion)} · ${esc(x.contrato)}${x.activo?'':' · inactivo'}</div>
+       <div class="muted-sm">${esc(x.aviso)}</div>`,
+      `<button class="btn btn-ghost btn-sm" data-dif-descartar="${x.id}">Descartar aviso</button>`))).join('') : nada;
+
+  h += titulo('Contratos que ya no están en RH', contratos.length);
+  h += contratos.length ? contratos.map(c=> caja(
+      `<div style="font-weight:700;font-size:13.5px">${esc(c.nombre)}</div>
+       <div class="muted-sm">${c.activos} activo${c.activos==1?'':'s'} de ${c.total} trabajador${c.total==1?'':'es'}. Si no tiene activos ni entregas, se puede eliminar desde "Gestionar contratos".</div>`)).join('') : nada;
+
+  host.innerHTML = h;
+
+  host.querySelectorAll('[data-dif-inactivar]').forEach(b=>{ b.onclick = ()=>{
+    const x = ret.concat(noEst).find(y=>y.id===b.dataset.difInactivar);
+    confirmarDiferenciaRh(modulo, 'Pasar a inactivo',
+      `<b>${esc(x?.nombre||'')}</b> queda inactivo, con todo su historial de entregas. Si también está activo en ${otroModulo}, allá queda igual.`,
+      'Sí, pasar a inactivo',
+      ()=> sb.rpc('firmas_diferencias_inactivar', { p_modulo: modulo, p_ids: [b.dataset.difInactivar] }),
+      r=> r?.inactivadas ? 'Pasado a inactivo' : (r?.activos_en_rh ? 'No se cambió: en RH está activo' : 'Sin cambios'));
+  }; });
+  const bTodos = document.getElementById('btnDifInactivarTodos');
+  if(bTodos) bTodos.onclick = ()=> confirmarDiferenciaRh(modulo, 'Pasar a inactivos',
+      `Los <b>${ret.length}</b> trabajadores que RH tiene retirados quedan inactivos, con todo su historial de entregas. Si alguno también está activo en ${otroModulo}, allá queda igual.`,
+      `Sí, pasar los ${ret.length}`,
+      ()=> sb.rpc('firmas_diferencias_inactivar', { p_modulo: modulo, p_ids: ret.map(x=>x.id) }),
+      r=> `${r?.inactivadas||0} pasado(s) a inactivo${r?.activos_en_rh?` · ${r.activos_en_rh} no se cambiaron porque en RH están activos`:''}`);
+  const corregir = (id, cedula, nombreRh)=>{
+    const x = noEst.find(y=>y.id===id);
+    confirmarDiferenciaRh(modulo, 'Corregir cédula',
+      `La ficha de <b>${esc(x?.nombre||'')}</b> (C.C. ${esc(x?.identificacion||'')}) pasa a tener la cédula <b>${esc(cedula)}</b>${nombreRh?` de <b>${esc(nombreRh)}</b> en RH`:''}. Sus entregas se quedan con ella y desde ahí queda igual a RH (nombre, cargo, contrato y estado). Si en ${otroModulo} tiene una ficha con la misma cédula equivocada, también se corrige.`,
+      'Sí, corregir',
+      ()=> sb.rpc('firmas_diferencias_corregir_cedula', { p_modulo: modulo, p_trabajador_id: id, p_cedula: cedula }),
+      r=> r?.ok ? `Cédula corregida${r.choques?` · ${r.choques} ficha(s) no se tocaron porque esa persona ya tiene ficha en ese contrato`:''}` : null);
   };
+  host.querySelectorAll('[data-dif-corregir]').forEach(b=>{ b.onclick = ()=> corregir(b.dataset.difCorregir, b.dataset.cedula, b.dataset.nombreRh); });
+  host.querySelectorAll('[data-dif-corregir-manual]').forEach(b=>{ b.onclick = ()=>{
+    const inp = host.querySelector(`[data-dif-ced-input="${b.dataset.difCorregirManual}"]`);
+    const ced = (inp?.value||'').trim();
+    if(!ced){ toast("Escribe la cédula tal como está en RH","err"); return; }
+    corregir(b.dataset.difCorregirManual, ced, '');
+  }; });
+  host.querySelectorAll('[data-dif-descartar]').forEach(b=>{ b.onclick = ()=>
+    descartarAvisoCedulaRh(modulo==='epp'?'dot_trabajadores':'dtl_trabajadores', b.dataset.difDescartar, ()=> pintarDiferenciasRh(modulo)); });
+}
+
+/* Confirmación de una acción de "Diferencias con RH". Al cancelar o al terminar vuelve a la
+   lista, recargada. "hacer" llama a la base de datos; "mensaje" arma el aviso de resultado con
+   lo que responde (null = la base de datos no lo permitió, y se muestra su motivo). */
+function confirmarDiferenciaRh(modulo, titulo, texto, textoBoton, hacer, mensaje){
+  openSubModal(`<div class="modal" style="max-width:460px">
+    <div class="modal-head"><div><h2>${esc(titulo)}</h2></div>
+      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
+    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">${texto}</p></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnConfDifRh">${I.check} ${esc(textoBoton)}</button></div></div>`, ()=> abrirDiferenciasRh(modulo));
+  document.getElementById('btnConfDifRh').onclick = async ()=>{
+    const btn = document.getElementById('btnConfDifRh'); btn.disabled=true; btn.innerHTML="Guardando…";
+    bloquear("Guardando…");
+    let res;
+    try{ res = await hacer(); } finally{ desbloquear(); }
+    if(res.error){ btn.disabled=false; btn.innerHTML=`${I.check} ${esc(textoBoton)}`; toast("No se pudo: "+res.error.message,"err"); return; }
+    const msg = mensaje(res.data);
+    if(msg===null) toast(res.data?.motivo || "No se pudo hacer el cambio","err");
+    else toast(msg,"ok");
+    closeModal(); // vuelve a la lista (abrirDiferenciasRh la recarga)
+  };
+}
+
+/* El link de "trabajadores nuevos" (#/dotacion/entrega-nuevo/… y #/dotacionlegal/entrega-nuevo/…)
+   se retiró con CAMBIOS_SQL_85: los trabajadores llegan de RH. Quien abra un enlace viejo ve esto. */
+function renderEnlaceNuevosRetirado(){
+  forzarTemaClaroPublico();
+  document.getElementById("app").innerHTML = `<div class="pub-wrap"><div class="pub-card"><div class="pub-body">
+    <img src="${LOGO}" alt="Don Aseo Ltda." style="height:48px;display:block;margin:0 auto 18px">
+    <h2 style="text-align:center;margin-bottom:8px">Este enlace ya no se usa</h2>
+    <p class="muted-sm" style="text-align:center">A los trabajadores nuevos los registra Recursos Humanos. Cuando RH te registre, usa el enlace de entregas que te comparta tu supervisor.</p>
+  </div></div></div>`;
 }
 
 /* ============================================================
@@ -7122,63 +6729,6 @@ async function confirmarEntregaDotPublica(){
 
 function renderDotPublicoExito(){
   document.getElementById("app").innerHTML = pantallaFirmaOk("¡Listo!", "Tu entrega de EPP quedó registrada correctamente.");
-}
-
-/* ---------- Enlace "trabajadores nuevos" de EPP (#/dotacion/entrega-nuevo/<contratoId>).
-   Para alguien que RH todavía no cargó: primero crea su ficha (nombre/cédula/cargo),
-   y de ahí en adelante reutiliza EXACTAMENTE el mismo formulario y la misma RPC de
-   registro que el enlace normal (renderDotPublicoFormulario/confirmarEntregaDotPublica) —
-   así no hay dos versiones distintas del paso de "elegir EPP y firmar" que mantener. ---------- */
-async function renderDotPublicoNuevo(contratoId){
-  forzarTemaClaroPublico();
-  dotPublicoState = { contratoId:null, catalogo:[], trabajador:null, foto:null };
-  await cargarAppConfig();
-  bloquear("Cargando…");
-  const { data, error } = await sb.rpc('dot_publico_contrato_info', { p_contrato_id: contratoId });
-  desbloquear();
-  if(error || !data || !data.ok || !data.activo){
-    document.getElementById("app").innerHTML = pantallaFirmaOk("Enlace no disponible", "Este enlace ya no está activo. Contacta a tu supervisor.");
-    return;
-  }
-  renderDotPublicoNuevoFormulario(contratoId, data.nombre);
-}
-
-function renderDotPublicoNuevoFormulario(contratoId, nombreContrato){
-  document.getElementById("app").innerHTML = `
-    <div class="pub-wrap"><div class="pub-card"><div class="pub-body">
-      <img src="${LOGO}" alt="Don Aseo Ltda." style="height:48px;display:block;margin:0 auto 18px">
-      <h2 style="text-align:center;margin-bottom:6px">Registro de trabajador nuevo</h2>
-      <p class="muted-sm" style="text-align:center;margin-bottom:20px">${esc(nombreContrato)} — completa tus datos para crear tu ficha. Solo se hace una vez.</p>
-      <div class="field"><label>Nombre completo *</label><input id="npEppNombre" placeholder="Nombres y apellidos"></div>
-      <div class="field"><label>Número de identificación (cédula) *</label><input id="npEppCedula" inputmode="numeric" placeholder="C.C."></div>
-      <div class="field"><label>Cargo <span class="opt">(opcional)</span></label><input id="npEppCargo" placeholder="Cargo"></div>
-      <div id="npEppError" class="login-err"></div>
-      <button class="btn btn-primary" id="npEppContinuarBtn" style="width:100%;padding:13px;margin-top:6px">${I.check} Continuar</button>
-    </div></div></div>`;
-  document.getElementById('npEppContinuarBtn').onclick = async ()=>{
-    const nombre = document.getElementById('npEppNombre').value.trim();
-    const cedula = document.getElementById('npEppCedula').value.trim();
-    const cargo = document.getElementById('npEppCargo').value.trim();
-    const err = document.getElementById('npEppError'); err.textContent = '';
-    if(!nombre){ err.textContent = 'Escribe tu nombre completo.'; return; }
-    if(!cedula){ err.textContent = 'Escribe tu cédula.'; return; }
-    const btn = document.getElementById('npEppContinuarBtn'); btn.disabled=true; btn.innerHTML='Creando ficha…';
-    const { data, error } = await sb.rpc('dot_publico_crear_nuevo', { p_contrato_id: contratoId, p_nombre: nombre, p_cedula: cedula, p_cargo: cargo||null });
-    if(error || !data || !data.ok){
-      btn.disabled=false; btn.innerHTML=`${I.check} Continuar`;
-      const motivo = data && data.motivo;
-      err.textContent = motivo==='ya_registrado'
-        ? 'Ya tienes una ficha registrada en este sistema — usa el enlace normal de entregas para tu próximo registro.'
-        : motivo==='contrato_invalido' ? 'Este enlace ya no está disponible.'
-        : 'No se pudo crear tu ficha. Intenta de nuevo.';
-      return;
-    }
-    dotPublicoState.contratoId = contratoId;
-    dotPublicoState.trabajador = { id: data.trabajador_id, nombre, identificacion: cedula, cargo, contratoNombre: nombreContrato };
-    const { data: cat } = await sb.rpc('dot_publico_catalogo', { p_contrato_id: contratoId });
-    dotPublicoState.catalogo = cat || [];
-    renderDotPublicoFormulario();
-  };
 }
 
 /* Dimensiones naturales (px) de una imagen data-URL, para no distorsionar su proporción al estamparla en el PDF */
@@ -7543,9 +7093,7 @@ let dtlEscaneadaState = null;
 /* Filtro de la grilla de trabajadores — "todas" muestra a todos los que la cuenta pueda ver
    (RLS ya limita a las entidades con acceso), sin necesidad de elegir una entidad primero. */
 let dtlFiltroEntidad = localStorage.getItem('dtl_filtro_entidad') || 'todas';
-/* Selección múltiple para marcar inactivos / eliminar en bloque (solo admin) */
 let dtlMostrarInactivos = false;
-let seleccionadosDtl = new Set();
 const DTL_DECLARACION = "Declaro haber recibido a satisfacción los elementos de dotación relacionados en este documento, en buen estado y de acuerdo con mi talla. Me comprometo a utilizarlos durante el desarrollo de mis labores y a darles el cuidado adecuado.";
 
 async function loadDtlState(){
@@ -7617,24 +7165,14 @@ async function renderDtlAdmin(silent){
   if(!DTL.entidades.length){
     document.getElementById("app").innerHTML = MIPERFIL.esAdmin ? `${topbar('dotacionlegal')}
       <div class="wrap"><div class="empty"><div class="ic">${I.box}</div>
-        <h3>Crea tu primer contrato</h3>
-        <p>Cada contrato (ej. "Sede Bogotá") tiene su propio directorio de trabajadores y entregas. Si ya tienes el Excel con los trabajadores (con su columna de contrato), puedes cargarlo directo — los contratos se crean solos a partir de esa columna.</p>
-        <div style="margin-top:18px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
-          <button class="btn btn-primary" id="btnPrimeraEntidad">${I.plus} Crear contrato</button>
-          <button class="btn btn-ghost" id="btnCargaMasivaVacioDtl">${I.doc} Carga masiva desde Excel</button>
-          <button class="btn btn-ghost" id="btnPlantillaVacioDtl">${I.doc} Descargar plantilla</button>
-        </div>
-        <input type="file" id="fileTrabajadoresDtlVacio" accept=".xlsx,.xls,.csv" style="display:none">
+        <h3>Todavía no hay contratos</h3>
+        <p>Los contratos y sus trabajadores llegan solos desde Recursos Humanos: aparecen aquí apenas RH tenga gente activa en un cliente.</p>
       </div></div>` : `${topbar('dotacionlegal')}
       <div class="wrap"><div class="empty"><div class="ic">${I.box}</div>
         <h3>Aún no tienes ningún contrato asignado</h3>
         <p>Pídele al administrador que te dé acceso a un contrato desde Configuración.</p>
       </div></div>`;
     wireLogout();
-    const bpe=document.getElementById("btnPrimeraEntidad"); if(bpe) bpe.onclick = ()=> abrirFormEntidadDtl(null, ()=> renderDtlAdmin(), true);
-    const bcmv=document.getElementById("btnCargaMasivaVacioDtl"); if(bcmv) bcmv.onclick = ()=> document.getElementById("fileTrabajadoresDtlVacio").click();
-    const bpv=document.getElementById("btnPlantillaVacioDtl"); if(bpv) bpv.onclick = descargarPlantillaTrabajadoresDtl;
-    const fiv=document.getElementById("fileTrabajadoresDtlVacio"); if(fiv) fiv.onchange = (e)=>{ const f=e.target.files[0]; if(f) cargarTrabajadoresExcelDtl(f); e.target.value=""; };
     return;
   }
 
@@ -7687,25 +7225,14 @@ async function renderDtlAdmin(silent){
         </div>
       </div>
 
-      ${(MIPERFIL.esAdmin || puedeAgregarTrabajadorDtl(dtlFiltroEntidad))?`
-      <div class="panel-section dot-pc-only">
-        <div class="section-label">Acciones principales</div>
-        <div class="action-grid">
-          <button class="action-card" id="btnNuevoTrabDtl"><div class="ac-ic">${I.plus}</div><span class="ac-title">Nuevo trabajador</span><span class="ac-chevron">›</span></button>
-          ${MIPERFIL.esAdmin?`<button class="action-card" id="btnCargaTrabDtl"><div class="ac-ic">${I.plus}</div><span class="ac-title">Carga masiva</span><span class="ac-chevron">›</span></button>
-          <button class="action-card" id="btnPlantillaTrabDtl"><div class="ac-ic">${I.doc}</div><span class="ac-title">Plantilla Excel</span><span class="ac-chevron">›</span></button>`:''}
-        </div>
-      </div>`:''}
-
       <div class="panel-section dot-pc-only">
         <div class="section-label">Herramientas</div>
         <div class="action-grid">
           ${puedeEscribir()?`<button class="action-card" id="btnPredeterminadosDtl" ${dtlFiltroEntidad==='todas'?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.firma}</div><span class="ac-title">Firmas</span><span class="ac-chevron">›</span></button>`:''}
-          ${MIPERFIL.esAdmin?`<button class="action-card" id="btnCorregirCargosDtl"><div class="ac-ic">${I.corregir}</div><span class="ac-title">Corregir cargos</span><span class="ac-chevron">›</span></button>`:''}
           ${totalTrab?`<button class="action-card" id="btnExcelDtl"><div class="ac-ic">${I.doc}</div><span class="ac-title">Descargar Excel</span><span class="ac-chevron">›</span></button>`:''}
           ${puedeEscribir()?`<button class="action-card" id="btnHistorialDtl" ${dtlFiltroEntidad==='todas'?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.cal}</div><span class="ac-title">Historial de entregas</span><span class="ac-chevron">›</span></button>`:''}
-          ${MIPERFIL.esAdmin?`<button class="action-card" id="btnLinkNuevosDtl" ${dtlFiltroEntidad==='todas'?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.link}</div><span class="ac-title">Link trabajadores nuevos</span><span class="ac-chevron">›</span></button>`:''}
           ${MIPERFIL.esAdmin?`<button class="action-card" id="btnCatalogoUnicoDtl" ${dtlFiltroEntidad==='todas'?'disabled title="Elige un contrato específico"':''}><div class="ac-ic">${I.catalogo}</div><span class="ac-title">Catálogo único</span><span class="ac-chevron">›</span></button>`:''}
+          ${MIPERFIL.esAdmin?`<button class="action-card" id="btnDiferenciasRhDtl"><div class="ac-ic">${I.warn}</div><span class="ac-title">Diferencias con RH</span><span class="ac-chevron">›</span></button>`:''}
         </div>
       </div>
 
@@ -7714,19 +7241,10 @@ async function renderDtlAdmin(silent){
           ${I.search}
           <input type="text" id="dtlSearch" placeholder="Buscar por nombre, cédula, cargo o área…" value="${esc(dtlQuery)}">
         </div>
-        ${MIPERFIL.esAdmin?`<label class="chk" style="white-space:nowrap"><input type="checkbox" id="chkTodosDtl"> Todos</label>`:''}
         <label class="chk" style="white-space:nowrap"><input type="checkbox" id="chkMostrarInactivosDtl" ${dtlMostrarInactivos?'checked':''}> Mostrar inactivos</label>
         <button class="btn btn-ghost btn-sm" id="btnLimpiarFiltrosDtl" style="white-space:nowrap" title="Quitar la búsqueda y volver a Todos los contratos">${I.close} Limpiar</button>
       </div>
-      <div class="resp-firma" id="barraSeleccionDtl" style="margin-bottom:16px;align-items:center;gap:12px;flex-wrap:wrap;display:${seleccionadosDtl.size?'flex':'none'}">
-        <span class="muted-sm" id="contadorSeleccionDtl">${seleccionadosDtl.size} seleccionado(s)</span>
-        <div style="flex:1;min-width:8px"></div>
-        <button class="btn btn-ghost btn-sm" id="btnReactivarDtl">Reactivar</button>
-        <button class="btn btn-ghost btn-sm" id="btnMarcarInactivoDtl">Marcar como inactivo</button>
-        <button class="btn btn-danger btn-sm" id="btnEliminarSeleccionDtl">${I.trash} Eliminar seleccionados</button>
-      </div>
       <div id="dtlGrid"></div>
-      <input type="file" id="fileTrabajadoresDtl" accept=".xlsx,.xls,.csv" style="display:none">
     </div>`;
 
   wireLogout();
@@ -7737,18 +7255,13 @@ async function renderDtlAdmin(silent){
   };
   const bge=document.getElementById("btnGestionEntidades"); if(bge) bge.onclick = abrirGestionEntidadesDtl;
   const bpd=document.getElementById("btnPredeterminadosDtl"); if(bpd) bpd.onclick = abrirPredeterminadosDtlModal;
-  const bpt=document.getElementById("btnPlantillaTrabDtl"); if(bpt) bpt.onclick = descargarPlantillaTrabajadoresDtl;
-  const bct=document.getElementById("btnCargaTrabDtl"); if(bct) bct.onclick = ()=> document.getElementById("fileTrabajadoresDtl").click();
-  document.getElementById("fileTrabajadoresDtl").onchange = (e)=>{ const f=e.target.files[0]; if(f) cargarTrabajadoresExcelDtl(f); e.target.value=""; };
-  const bnt=document.getElementById("btnNuevoTrabDtl"); if(bnt) bnt.onclick = ()=> abrirTrabajadorDtlForm(null);
   const bzk=document.getElementById("btnZipKardexDtl"); if(bzk) bzk.onclick = abrirSeleccionZipDtl;
   const bxl=document.getElementById("btnExcelDtl"); if(bxl) bxl.onclick = descargarExcelDtl;
-  const bcc=document.getElementById("btnCorregirCargosDtl"); if(bcc) bcc.onclick = abrirCorregirCargosDtl;
   const bhdtl=document.getElementById("btnHistorialDtl"); if(bhdtl) bhdtl.onclick = abrirHistorialEntregasDtl;
   const bce=document.getElementById("btnCopiarEnlacePublico"); if(bce) bce.onclick = ()=> copyText(location.href.split("#")[0]+"#/dotacionlegal/entrega", "Enlace de entrega remota copiado");
   const bqr=document.getElementById("btnQrEnlacePublico"); if(bqr) bqr.onclick = ()=> mostrarQR(location.href.split("#")[0]+"#/dotacionlegal/entrega", "Entrega remota de dotación");
-  const blnDtl=document.getElementById("btnLinkNuevosDtl"); if(blnDtl) blnDtl.onclick = ()=> mostrarLinkTrabajadoresNuevos('dotacion');
   const bcud=document.getElementById("btnCatalogoUnicoDtl"); if(bcud) bcud.onclick = abrirCatalogoUnicoDtl;
+  const bdrDtl=document.getElementById("btnDiferenciasRhDtl"); if(bdrDtl) bdrDtl.onclick = ()=> abrirDiferenciasRh('dotacion');
   const behdtl=document.getElementById("btnEntregasHoyDtl"); if(behdtl) behdtl.onclick = abrirEntregasHoyDtl;
   document.getElementById("dtlSearch").oninput = (e)=>{ dtlQuery = e.target.value; renderDtlGrid(); };
   document.getElementById("chkMostrarInactivosDtl").onchange = (e)=>{ dtlMostrarInactivos = e.target.checked; renderDtlGrid(); };
@@ -7758,24 +7271,12 @@ async function renderDtlAdmin(silent){
     localStorage.setItem('dtl_filtro_entidad', dtlFiltroEntidad);
     renderDtlAdmin(true);
   };
-  const chkTodosDtl = document.getElementById("chkTodosDtl");
-  if(chkTodosDtl) chkTodosDtl.onchange = (e)=>{
-    const visibles = trabajadoresFiltradosDtl();
-    if(e.target.checked) visibles.forEach(t=>seleccionadosDtl.add(t.id));
-    else visibles.forEach(t=>seleccionadosDtl.delete(t.id));
-    renderDtlGrid();
-    actualizarBarraSeleccionDtl();
-  };
-  document.getElementById('btnReactivarDtl').onclick = ()=> reactivarSeleccionDtl();
-  document.getElementById('btnMarcarInactivoDtl').onclick = ()=> marcarInactivosSeleccionDtl();
-  document.getElementById('btnEliminarSeleccionDtl').onclick = ()=> eliminarSeleccionDtl();
   renderDtlGrid();
   if(silent) window.scrollTo(0, scrollY);
   if(!silent){ if(_dtlTimer) clearInterval(_dtlTimer); _dtlTimer = setInterval(_tickDtl, 20000); }
 }
 
-/* Lista actualmente visible (entidad + búsqueda + filtro de inactivos) — la usan tanto
-   la grilla como la casilla "Todos". */
+/* Lista actualmente visible (entidad + búsqueda + filtro de inactivos). */
 function trabajadoresFiltradosDtl(){
   let db = trabajadoresDeEntidad();
   if(!dtlMostrarInactivos) db = db.filter(t=>t.activo!==false);
@@ -7789,42 +7290,16 @@ function trabajadoresFiltradosDtl(){
   return db;
 }
 
-function actualizarContadorSeleccionDtl(){
-  const el = document.getElementById('contadorSeleccionDtl');
-  if(el) el.textContent = seleccionadosDtl.size+' seleccionado(s)';
-}
-
-/* Se llama cada vez que cambia la selección: muestra/oculta la barra de acciones en
-   bloque y sincroniza la casilla "Todos" sin recargar toda la grilla. */
-function actualizarBarraSeleccionDtl(){
-  const barra = document.getElementById('barraSeleccionDtl');
-  if(barra) barra.style.display = seleccionadosDtl.size ? 'flex' : 'none';
-  actualizarContadorSeleccionDtl();
-  const chkTodos = document.getElementById('chkTodosDtl');
-  if(chkTodos){
-    const visibles = trabajadoresFiltradosDtl();
-    chkTodos.checked = visibles.length>0 && visibles.every(t=>seleccionadosDtl.has(t.id));
-  }
-}
-
 function renderDtlGrid(){
   const host = document.getElementById("dtlGrid");
   if(!host) return;
   const db = trabajadoresFiltradosDtl();
   if(!db.length){
     host.innerHTML = `<div class="empty"><div class="ic">${I.box}</div><h3>${trabajadoresDeEntidad().length?'Sin resultados':'Sin trabajadores todavía'}</h3>
-      <p>${trabajadoresDeEntidad().length?'Prueba con otro término de búsqueda, o marca "Mostrar inactivos".':'Agrega trabajadores uno por uno o con carga masiva desde Excel.'}</p></div>`;
-    actualizarBarraSeleccionDtl();
+      <p>${trabajadoresDeEntidad().length?'Prueba con otro término de búsqueda, o marca "Mostrar inactivos".':'Los trabajadores llegan solos desde Recursos Humanos.'}</p></div>`;
     return;
   }
   host.innerHTML = `<div class="grid">${db.map(trabajadorDtlCard).join("")}</div>`;
-  host.querySelectorAll("[data-sel-trabdtl]").forEach(chk=>{
-    chk.onchange = ()=>{
-      const id = chk.dataset.selTrabdtl;
-      if(chk.checked) seleccionadosDtl.add(id); else seleccionadosDtl.delete(id);
-      actualizarBarraSeleccionDtl();
-    };
-  });
   host.querySelectorAll("[data-trabdtl]").forEach(b=>{
     b.onclick = ()=>{
       const id=b.dataset.id, act=b.dataset.trabdtl;
@@ -7832,72 +7307,8 @@ function renderDtlGrid(){
       else if(act==="kardex") generarKardexDtlPDF(id);
       else if(act==="entregar") abrirNuevaEntregaDtl(id);
       else if(act==="editar") abrirTrabajadorDtlForm(id);
-      else if(act==="del") eliminarTrabajadorDtl(id);
     };
   });
-  actualizarBarraSeleccionDtl();
-}
-
-async function reactivarSeleccionDtl(){
-  if(!seleccionadosDtl.size){ toast("Selecciona al menos un trabajador","err"); return; }
-  const ids = Array.from(seleccionadosDtl);
-  bloquear("Reactivando…");
-  try{
-    const { error } = await porLotes(ids, lote=> sb.from("dtl_trabajadores").update({ activo:true, inactivo_por_archivo:false }).in("id", lote));
-    if(error){ toast("No se pudo reactivar: "+error.message,"err"); return; }
-    await loadDtlState();
-    seleccionadosDtl.clear();
-    toast(`${ids.length} trabajador(es) reactivados`,"ok");
-    renderDtlAdmin();
-  } finally { desbloquear(); }
-}
-
-async function marcarInactivosSeleccionDtl(){
-  if(!seleccionadosDtl.size){ toast("Selecciona al menos un trabajador","err"); return; }
-  const ids = Array.from(seleccionadosDtl);
-  openModal(`<div class="modal" style="max-width:440px">
-    <div class="modal-head"><div><h2>Marcar como inactivos</h2><p>Se marcarán ${ids.length} trabajador(es) como inactivos.</p></div>
-      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Dejan de aparecer en la vista normal (quedan visibles solo con "Mostrar inactivos"), pero se conserva todo su historial de entregas y firmas. Úsalo para quienes ya salieron de la empresa.</p></div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" id="confMarcarInactivoDtl">${I.check} Sí, marcar inactivos</button></div></div>`);
-  document.getElementById('confMarcarInactivoDtl').onclick = async ()=>{
-    const btn=document.getElementById("confMarcarInactivoDtl"); btn.disabled=true; btn.innerHTML="Guardando…";
-    bloquear("Marcando como inactivos…");
-    try{
-      const { error } = await porLotes(ids, lote=> sb.from("dtl_trabajadores").update({ activo:false, inactivo_por_archivo:false }).in("id", lote));
-      if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
-      await loadDtlState();
-      seleccionadosDtl.clear();
-      closeModal();
-      toast(`${ids.length} trabajador(es) marcados como inactivos`,"ok");
-      renderDtlAdmin();
-    } finally { desbloquear(); }
-  };
-}
-
-async function eliminarSeleccionDtl(){
-  if(!seleccionadosDtl.size){ toast("Selecciona al menos un trabajador","err"); return; }
-  const ids = Array.from(seleccionadosDtl);
-  openModal(`<div class="modal" style="max-width:460px">
-    <div class="modal-head"><div><h2>Eliminar trabajadores</h2><p>Esta acción no se puede deshacer.</p></div>
-      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminarán <b>${ids.length}</b> trabajador(es) del directorio junto con <b>todo su historial de entregas y firmas</b>. Si solo quieres dejar de verlos sin perder su historial, usa "Marcar como inactivo" en vez de esto.</p></div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-danger" id="confEliminarSeleccionDtl">${I.trash} Sí, eliminar ${ids.length}</button></div></div>`);
-  document.getElementById('confEliminarSeleccionDtl').onclick = async ()=>{
-    const btn=document.getElementById("confEliminarSeleccionDtl"); btn.disabled=true; btn.innerHTML="Eliminando…";
-    bloquear("Eliminando…");
-    try{
-      const { error } = await porLotes(ids, lote=> sb.from("dtl_trabajadores").delete().in("id", lote));
-      if(error){ toast("No se pudo eliminar: "+error.message,"err"); return; }
-      await loadDtlState();
-      seleccionadosDtl.clear();
-      closeModal();
-      toast(`${ids.length} trabajador(es) eliminados`,"ok");
-      renderDtlAdmin();
-    } finally { desbloquear(); }
-  };
 }
 
 /* "Entregas de hoy" — mismo patrón que abrirEntregasHoyDot (EPP): filtra en memoria
@@ -8009,7 +7420,6 @@ function trabajadorDtlCard(t){
   return `<div class="lcard" style="${inactivo?'opacity:.55':''}">
     <div class="lcard-top">
       <div style="display:flex;align-items:center;gap:8px">
-        ${MIPERFIL.esAdmin?`<input type="checkbox" class="lcard-sel" data-sel-trabdtl="${t.id}" ${seleccionadosDtl.has(t.id)?'checked':''}>`:''}
         <span class="tipo">${esc(t.cargo||'Trabajador')}</span>
       </div>
       ${inactivo?'<span class="badge cerrada"><span class="dot"></span>Inactivo</span>' : (n===0?'<span class="badge cerrada"><span class="dot"></span>Sin entregas</span>':'')}
@@ -8027,184 +7437,80 @@ function trabajadorDtlCard(t){
         <button class="icon-btn" title="Ver ficha" data-trabdtl="ver" data-id="${t.id}">${I.eye}</button>
         ${n>0?`<button class="icon-btn" title="Descargar kárdex" data-trabdtl="kardex" data-id="${t.id}">${I.pdf}</button>`:''}
         ${puedeEscribir()?`<button class="icon-btn" title="${inactivo?'No se puede registrar entrega: el trabajador está inactivo':'Registrar entrega'}" data-trabdtl="entregar" data-id="${t.id}" ${inactivo?'disabled':''}>${I.plus}</button>`:''}
-        ${MIPERFIL.esAdmin?`<button class="icon-btn" title="Editar" data-trabdtl="editar" data-id="${t.id}">${I.pen}</button>
-        <button class="icon-btn danger" title="Eliminar" data-trabdtl="del" data-id="${t.id}">${I.trash}</button>`:''}
+        ${MIPERFIL.esAdmin?`<button class="icon-btn" title="Editar área" data-trabdtl="editar" data-id="${t.id}">${I.pen}</button>`:''}
       </div>
     </div>
   </div>`;
 }
 
-/* ---------- Corregir cargos en bloque (mismo concepto que en EPP) ---------- */
-function abrirCorregirCargosDtl(){
-  const trabs = trabajadoresDeEntidad();
-  const porCargo = {};
-  trabs.forEach(t=>{
-    const k = (t.cargo||'').trim();
-    porCargo[k] = (porCargo[k]||0) + 1;
-  });
-  const lista = Object.keys(porCargo).sort((a,b)=> porCargo[b]-porCargo[a]);
-  openModal(`<div class="modal" style="max-width:520px">
-    <div class="modal-head"><div><h2>Corregir cargos</h2><p>Renombra un cargo y se corrige de una vez en todos los trabajadores que lo tengan escrito igual.</p></div>
-      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body">
-      ${lista.length ? lista.map(c=>`
-        <div class="cat-row">
-          <span style="flex:1;font-weight:600;font-size:13.5px">${c?esc(c):'<span class="muted-sm">(sin cargo)</span>'} <span class="muted-sm">— ${porCargo[c]} trabajador${porCargo[c]===1?'':'es'}</span></span>
-          <button class="icon-btn" title="Renombrar" data-cargo-edit="${esc(c)}">${I.pen}</button>
-        </div>`).join('') : '<p class="muted-sm">No hay trabajadores en este contrato.</p>'}
-    </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
-  </div>`);
-  document.querySelectorAll('[data-cargo-edit]').forEach(b=>{
-    const cargoActual = b.dataset.cargoEdit;
-    b.onclick = ()=> abrirRenombrarCargoDtl(cargoActual, porCargo[cargoActual]);
-  });
-}
-function abrirRenombrarCargoDtl(cargoActual, cantidad){
-  openSubModal(`<div class="modal" style="max-width:440px">
-    <div class="modal-head"><div><h2>Renombrar cargo</h2><p>Se corregirá en ${cantidad} trabajador${cantidad===1?'':'es'}.</p></div>
-      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body">
-      <div class="field"><label>Texto correcto *</label><input id="cargoNuevoDtl" value="${esc(cargoActual)}" placeholder="Cargo"></div>
-    </div>
-    <div class="modal-foot">
-      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" id="btnGuardarCargoDtl">${I.check} Corregir</button>
-    </div></div>`, ()=> abrirCorregirCargosDtl());
-  document.getElementById('btnGuardarCargoDtl').onclick = async ()=>{
-    const nuevo = document.getElementById('cargoNuevoDtl').value.trim();
-    if(!nuevo){ toast("Escribe el texto correcto","err"); return; }
-    if(nuevo === cargoActual){ toast("No cambiaste nada","err"); return; }
-    const btn = document.getElementById('btnGuardarCargoDtl'); btn.disabled=true; btn.innerHTML="Corrigiendo…";
-    bloquear("Corrigiendo cargo…");
-    try{
-      const ids = trabajadoresDeEntidad().filter(t=>(t.cargo||'').trim()===cargoActual).map(t=>t.id);
-      const { error } = await porLotes(ids, lote=> sb.from("dtl_trabajadores").update({ cargo: nuevo }).in("id", lote));
-      if(error){ toast("No se pudo corregir: "+error.message,"err"); return; }
-      await loadDtlState();
-      toast(`Cargo corregido en ${ids.length} trabajador(es)`,"ok");
-      closeModal();
-      renderDtlGrid();
-    } finally { desbloquear(); }
-  };
-}
-
-/* ---------- Entidades ---------- */
+/* ---------- Contratos de Dotación (entidades) ----------
+   Mismo criterio que en EPP (abrirGestionContratos): llegan solos desde Recursos Humanos. Aquí
+   solo se configura el modo de registro y se puede eliminar uno sin trabajadores activos ni
+   entregas. "Corregir cargos" se quitó: el cargo viene de RH. */
 function abrirGestionEntidadesDtl(){
-  openModal(`<div class="modal" style="max-width:480px">
-    <div class="modal-head"><div><h2>Contratos</h2><p>Cada uno tiene su propio directorio de trabajadores.</p></div>
+  openModal(`<div class="modal" style="max-width:560px">
+    <div class="modal-head"><div><h2>Contratos</h2><p>Llegan solos desde Recursos Humanos, uno por cada cliente con gente activa.</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
-      <button class="btn btn-primary btn-sm" id="btnNuevaEntidad" style="margin-bottom:14px">${I.plus} Nuevo contrato</button>
       <div id="entidadesLista"></div>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>
   </div>`);
-  document.getElementById('btnNuevaEntidad').onclick = ()=> abrirFormEntidadDtl(null);
   renderEntidadesDtlLista();
 }
 function renderEntidadesDtlLista(){
   const host = document.getElementById('entidadesLista'); if(!host) return;
   host.innerHTML = DTL.entidades.map(x=>{
-    const n = DTL.trabajadores.filter(t=>t.entidad_id===x.id).length;
-    return `
-    <div class="cat-row">
-      <span style="flex:1;font-weight:600;font-size:13.5px;${x.activo?'':'opacity:.45'}">${esc(x.nombre)}${x.activo?'':' (archivado)'}</span>
-      <span class="muted-sm" style="width:90px">${n} trabajador${n===1?'':'es'}</span>
-      <button class="icon-btn" title="Renombrar" data-ent-edit="${x.id}">${I.pen}</button>
-      <button class="icon-btn ${x.activo?'danger':''}" title="${x.activo?'Archivar':'Reactivar'}" data-ent-toggle="${x.id}">${x.activo?I.lock:I.check}</button>
-      <button class="icon-btn danger" title="Eliminar" data-ent-del="${x.id}">${I.trash}</button>
+    const trabs = DTL.trabajadores.filter(t=>t.entidad_id===x.id);
+    const activos = trabs.filter(t=>t.activo!==false).length;
+    const ids = new Set(trabs.map(t=>t.id));
+    const conEntregas = DTL.entregas.some(e=>ids.has(e.trabajador_id));
+    const sePuedeEliminar = !activos && !conEntregas;
+    return `<div class="cat-row">
+      <span style="flex:1;font-weight:600;font-size:13.5px;${x.activo?'':'opacity:.45'}">${esc(x.nombre)}${x.activo?'':' (archivado)'}${x.modo_registro==='escaneado'?' <span class="muted-sm">· escaneado</span>':''}</span>
+      <span class="muted-sm" style="width:90px">${activos} activo${activos===1?'':'s'}</span>
+      <button class="icon-btn" title="Configurar" data-ent-edit="${x.id}">${I.pen}</button>
+      <button class="icon-btn danger" title="${sePuedeEliminar?'Eliminar':'No se puede eliminar: tiene trabajadores activos o entregas registradas'}" data-ent-del="${x.id}" ${sePuedeEliminar?'':'disabled'}>${I.trash}</button>
     </div>`;
   }).join('') || '<p class="muted-sm">Sin contratos todavía.</p>';
   host.querySelectorAll('[data-ent-edit]').forEach(b=>{ b.onclick = ()=> abrirFormEntidadDtl(b.dataset.entEdit); });
   host.querySelectorAll('[data-ent-del]').forEach(b=>{ b.onclick = ()=> eliminarEntidadDtl(b.dataset.entDel); });
-  host.querySelectorAll('[data-ent-toggle]').forEach(b=>{
-    b.onclick = async ()=>{
-      const x = DTL.entidades.find(e=>e.id===b.dataset.entToggle);
-      const archivando = x.activo;
-      const { error } = await sb.from("dtl_entidades").update({ activo: !x.activo }).eq("id", x.id);
-      if(error){ toast("No se pudo actualizar: "+error.message,"err"); return; }
-      let nTocados = 0;
-      if(archivando){
-        // Al archivar un contrato, sus trabajadores dejan de tener sentido en la vista
-        // normal — se marcan inactivos igual que si el admin los hubiera seleccionado
-        // uno por uno (se conserva todo su historial de entregas y firmas). Se marcan
-        // con inactivo_por_archivo:true para poder reactivar EXACTAMENTE a estos (y no a
-        // alguien que ya estaba inactivo por otra razón desde antes de archivar).
-        const idsTrab = DTL.trabajadores.filter(t=>t.entidad_id===x.id && t.activo!==false).map(t=>t.id);
-        nTocados = idsTrab.length;
-        if(nTocados){
-          const { error: e2 } = await porLotes(idsTrab, lote=> sb.from("dtl_trabajadores").update({activo:false, inactivo_por_archivo:true}).in("id", lote));
-          if(e2){ toast("Contrato archivado, pero no se pudo marcar a los trabajadores como inactivos: "+e2.message,"err"); }
-        }
-      } else {
-        // Al reactivar, solo se reactivan los que quedaron inactivos POR archivar este
-        // contrato — no a quien ya estaba inactivo antes por otro motivo.
-        const idsTrab = DTL.trabajadores.filter(t=>t.entidad_id===x.id && t.inactivo_por_archivo).map(t=>t.id);
-        nTocados = idsTrab.length;
-        if(nTocados){
-          const { error: e2 } = await porLotes(idsTrab, lote=> sb.from("dtl_trabajadores").update({activo:true, inactivo_por_archivo:false}).in("id", lote));
-          if(e2){ toast("Contrato reactivado, pero no se pudo reactivar a sus trabajadores: "+e2.message,"err"); }
-        }
-      }
-      await loadDtlState(); renderEntidadesDtlLista();
-      toast(archivando
-        ?`Contrato archivado${nTocados?` — ${nTocados} trabajador(es) marcados como inactivos`:''}`
-        :`Contrato reactivado${nTocados?` — ${nTocados} trabajador(es) reactivados`:''}`,"ok");
-    };
-  });
 }
 
-/* Eliminar un contrato en duro. La base de datos hace cascada completa (entidad →
-   trabajadores → entregas/items), así que esto SÍ borra todo aunque tenga gente —
-   por eso, si tiene al menos un trabajador (activo o inactivo), se exige escribir el
-   nombre exacto del contrato para habilitar el botón, y el aviso lo dice explícito. */
+/* Solo se ofrece para un contrato sin trabajadores activos ni entregas (ver eliminarContratoDot). */
 function eliminarEntidadDtl(id){
   const x = DTL.entidades.find(e=>e.id===id); if(!x) return;
-  const nTrab = DTL.trabajadores.filter(t=>t.entidad_id===id).length;
-  const grave = nTrab>0;
   openSubModal(`<div class="modal" style="max-width:440px">
-    <div class="modal-head"><div><h2>Eliminar contrato</h2><p>Esta acción no se puede deshacer.</p></div>
+    <div class="modal-head"><div><h2>Eliminar contrato</h2><p>${esc(x.nombre)}</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
-      <p style="font-size:14.5px;color:var(--ink-2)">Se eliminará el contrato "<b>${esc(x.nombre)}</b>"${grave?` y con él se borrarán <b>permanentemente</b> sus ${nTrab} trabajador(es) — incluidas todas sus entregas y firmas registradas. No queda ningún respaldo.`:', que no tiene ningún trabajador asociado.'}</p>
-      ${grave?`<div class="field"><label>Para confirmar, escribe el nombre exacto del contrato</label><input id="confDelEntidadDtlNombre" placeholder="${esc(x.nombre)}" autocomplete="off"></div>`:''}
+      <p style="font-size:14.5px;color:var(--ink-2)">No tiene trabajadores activos ni entregas registradas. Si más adelante Recursos Humanos tiene gente activa en este cliente, el contrato se crea de nuevo solo.</p>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-danger" id="confDelEntidadDtl" ${grave?'disabled':''}>${I.trash} Sí, eliminar</button></div></div>`, ()=> abrirGestionEntidadesDtl());
-  if(grave){
-    const inp = document.getElementById('confDelEntidadDtlNombre');
-    const btn0 = document.getElementById('confDelEntidadDtl');
-    inp.oninput = ()=>{ btn0.disabled = inp.value.trim().toLowerCase() !== x.nombre.trim().toLowerCase(); };
-  }
+      <button class="btn btn-danger" id="confDelEntidadDtl">${I.trash} Sí, eliminar</button></div></div>`, ()=> abrirGestionEntidadesDtl());
   document.getElementById('confDelEntidadDtl').onclick = async ()=>{
     const btn = document.getElementById('confDelEntidadDtl'); btn.disabled=true; btn.innerHTML="Eliminando…";
     const { error } = await sb.from("dtl_entidades").delete().eq("id", id);
-    if(error){
-      btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`;
-      toast("No se pudo eliminar: "+error.message,"err");
-      return;
-    }
+    if(error){ btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`; toast("No se pudo eliminar: "+error.message,"err"); return; }
     if(id===dtlFiltroEntidad){ dtlFiltroEntidad='todas'; localStorage.setItem('dtl_filtro_entidad','todas'); }
     await loadDtlState();
-    toast(`Contrato eliminado${grave?` — ${nTrab} trabajador(es) y su historial también se eliminaron`:''}`,"ok");
+    toast("Contrato eliminado","ok");
     closeModal();
   };
 }
-/* comoRaiz=true: igual que en abrirFormContrato — se abre sin modal "padre" al que
-   volver (ej. desde "Crea tu primer contrato"), así la X/Cancelar cierra de una. */
-function abrirFormEntidadDtl(id, alGuardar, comoRaiz){
-  const x = id ? DTL.entidades.find(e=>e.id===id) : null;
-  const html = `<div class="modal" style="max-width:440px">
-    <div class="modal-head"><div><h2>${x?'Renombrar contrato':'Nuevo contrato'}</h2><p>Ej. "Sede Bogotá", "Hospital San Rafael"…</p></div>
+
+function abrirFormEntidadDtl(id){
+  const x = DTL.entidades.find(e=>e.id===id); if(!x) return;
+  openSubModal(`<div class="modal" style="max-width:440px">
+    <div class="modal-head"><div><h2>Configurar contrato</h2><p>${esc(x.nombre)}</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
-      <div class="field"><label>Nombre *</label><input id="entNombre" value="${esc(x?.nombre||'')}" placeholder="Nombre del contrato"></div>
+      <p class="muted-sm" style="margin-bottom:12px">El nombre viene de Recursos Humanos (es el cliente de los trabajadores en RH) y no se cambia aquí.</p>
       <div class="field">
         <label>Modo de registro</label>
         <select id="entModoRegistro">
-          <option value="digital" ${(!x||x.modo_registro!=='escaneado')?'selected':''}>Digital (normal, con firmas capturadas en el celular)</option>
-          <option value="escaneado" ${x&&x.modo_registro==='escaneado'?'selected':''}>Escaneado (subir formato físico ya firmado, sin señal)</option>
+          <option value="digital" ${x.modo_registro!=='escaneado'?'selected':''}>Digital (normal, con firmas capturadas en el celular)</option>
+          <option value="escaneado" ${x.modo_registro==='escaneado'?'selected':''}>Escaneado (subir formato físico ya firmado, sin señal)</option>
         </select>
         <div class="muted-sm" style="margin-top:6px">Si eliges "Escaneado", nadie podrá registrar entregas digitales en este contrato — todas quedan como archivo adjunto. Pensado para supervisores sin señal en campo.</div>
       </div>
@@ -8212,53 +7518,28 @@ function abrirFormEntidadDtl(id, alGuardar, comoRaiz){
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" id="btnGuardarEntidad">${I.check} Guardar</button>
-    </div></div>`;
-  if(comoRaiz) openModal(html); else openSubModal(html, ()=> alGuardar ? alGuardar() : abrirGestionEntidadesDtl());
+    </div></div>`, ()=> abrirGestionEntidadesDtl());
   document.getElementById('btnGuardarEntidad').onclick = async ()=>{
-    const nombre = document.getElementById('entNombre').value.trim();
-    if(!nombre){ toast("Ponle un nombre","err"); return; }
     const modo_registro = document.getElementById('entModoRegistro').value;
     const btn = document.getElementById('btnGuardarEntidad'); btn.disabled=true; btn.innerHTML="Guardando…";
-    const { error } = x
-      ? await sb.from("dtl_entidades").update({ nombre, modo_registro }).eq("id", x.id)
-      : await sb.from("dtl_entidades").insert({ nombre, modo_registro });
+    const { error } = await sb.from("dtl_entidades").update({ modo_registro }).eq("id", x.id);
     if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
     await loadDtlState();
-    toast(x?"Contrato actualizado":"Contrato creado","ok");
-    closeModal();
-    if(comoRaiz && alGuardar) alGuardar();
+    toast("Contrato actualizado","ok");
+    closeModal(); // vuelve a la lista de contratos
   };
 }
 
-/* ---------- Trabajadores ---------- */
+/* ---------- Trabajadores: vienen de Recursos Humanos (ver abrirTrabajadorForm de EPP).
+   Aquí solo se edita el área. La carga masiva y la plantilla se quitaron. ---------- */
 function abrirTrabajadorDtlForm(id){
-  const t = id ? DTL.trabajadores.find(x=>x.id===id) : null;
-  // Al crear (no editar), un usuario sin acceso admin solo puede elegir una entidad
-  // donde tenga el permiso "puede agregar trabajadores" — si no, el <select> le
-  // ofrecería contratos donde el insert luego sería rechazado por la base de datos.
-  const entidadesDisponibles = t ? DTL.entidades : DTL.entidades.filter(x=>puedeAgregarTrabajadorDtl(x.id));
-  const entidadDefault = t ? t.entidad_id : (dtlFiltroEntidad!=='todas' && puedeAgregarTrabajadorDtl(dtlFiltroEntidad) ? dtlFiltroEntidad : (entidadesDisponibles[0]?.id||''));
+  const t = DTL.trabajadores.find(x=>x.id===id); if(!t) return;
   openModal(`<div class="modal" style="max-width:480px">
-    <div class="modal-head"><div><h2>${t?'Editar trabajador':'Nuevo trabajador'}</h2><p>Se guarda en el directorio para futuras entregas.</p></div>
+    <div class="modal-head"><div><h2>Editar área</h2><p>${esc(t.nombre)}</p></div>
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
-      <div class="field"><label>Contrato *</label>
-        <select id="tdEntidad">${entidadesDisponibles.map(x=>`<option value="${x.id}" ${x.id===entidadDefault?'selected':''}>${esc(x.nombre)}</option>`).join('')}</select>
-      </div>
-      <div class="field"><label>Nombre completo *</label><input id="tdNombre" value="${esc(t?.nombre||'')}" placeholder="Nombres y apellidos"></div>
-      ${t ? `
-      <div class="field"><label>Número de identificación (cédula) *</label><input id="tdCedula" value="${esc(t.identificacion||'')}" placeholder="C.C." inputmode="numeric"></div>
-      ` : `
-      <div class="field"><label>Número de identificación (cédula) *</label><input id="tdCedula" type="password" inputmode="numeric" placeholder="C.C." autocomplete="off" onpaste="return false" ondrop="return false" oncopy="return false"></div>
-      <div class="field"><label>Confirmar número de identificación *</label><input id="tdCedulaConfirm" type="text" inputmode="numeric" placeholder="Escríbela de nuevo" autocomplete="off" onpaste="return false" ondrop="return false" oncopy="return false"></div>
-      <p class="muted-sm" style="margin-top:-8px">Se pide escribirla dos veces, sin poder copiar y pegar, para evitar registrar una cédula mal digitada.</p>
-      `}
-      <div class="field"><label>Cargo</label><input id="tdCargo" value="${esc(t?.cargo||'')}" placeholder="Cargo"></div>
-      <div class="field row2">
-        <div><label>Fecha de ingreso</label><input type="date" id="tdFechaIngreso" value="${t?.fecha_ingreso||''}"></div>
-        <div><label>Fecha de salida</label><input type="date" value="${t?.fecha_salida||''}" disabled title="Se llena sola cuando Recursos Humanos marca la salida de este trabajador"></div>
-      </div>
-      <p class="muted-sm">La fecha de salida se llena automáticamente cuando Recursos Humanos marca la salida del trabajador — no se edita aquí. La cédula es única en toda la empresa (para que el enlace de entrega remota la encuentre sin importar el contrato).</p>
+      ${datosRhTrabajadorHTML(t, nombreEntidadDtl(t.entidad_id))}
+      <div class="field"><label>Área</label><input id="tdArea" value="${esc(t.area||'')}" placeholder="Área o sede dentro del contrato"></div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
@@ -8267,181 +7548,18 @@ function abrirTrabajadorDtlForm(id){
   document.getElementById('btnGuardarTrabDtl').onclick = ()=> guardarTrabajadorDtl(id);
 }
 async function guardarTrabajadorDtl(id){
-  const entidad_id = document.getElementById('tdEntidad').value;
-  const nombre = document.getElementById('tdNombre').value.trim();
-  const identificacion = document.getElementById('tdCedula').value.trim();
-  const cargo = document.getElementById('tdCargo').value.trim() || null;
-  const fecha_ingreso = document.getElementById('tdFechaIngreso').value || null;
-  if(!entidad_id){ toast("Selecciona el contrato","err"); return; }
-  if(!nombre){ toast("Falta el nombre","err"); return; }
-  if(!identificacion){ toast("Falta la identificación","err"); return; }
-  if(!id){
-    const confirmacion = document.getElementById('tdCedulaConfirm').value.trim();
-    if(identificacion !== confirmacion){ toast("Las dos cédulas no coinciden — vuelve a escribirlas","err"); return; }
-  }
+  const area = document.getElementById('tdArea').value.trim() || null;
   const btn = document.getElementById('btnGuardarTrabDtl'); btn.disabled=true; btn.innerHTML="Guardando…";
   bloquear("Guardando…");
-  let error, nuevoId=null;
-  if(id){ ({error} = await sb.from("dtl_trabajadores").update({nombre,identificacion,cargo,entidad_id,fecha_ingreso}).eq("id",id)); }
-  else {
-    const r = await sb.from("dtl_trabajadores").insert({nombre,identificacion,cargo,entidad_id,fecha_ingreso}).select("id").single();
-    error = r.error; nuevoId = r.data?.id || null;
-  }
+  const { error } = await sb.from("dtl_trabajadores").update({ area }).eq("id", id);
   desbloquear();
-  if(error){
-    btn.disabled=false; btn.innerHTML=`${I.check} Guardar`;
-    const dup = /duplicate|unique/i.test(error.message||"");
-    toast(dup?"Ya existe un trabajador ACTIVO con esa cédula. Si se trasladó de contrato, márcalo inactivo en el contrato viejo, o reactívalo en el correcto, en vez de crear uno nuevo":"No se pudo guardar: "+error.message,"err");
-    return;
-  }
+  if(error){ btn.disabled=false; btn.innerHTML=`${I.check} Guardar`; toast("No se pudo guardar: "+error.message,"err"); return; }
   await loadDtlState();
   closeModal();
-  // Al crear (no editar), refleja al mismo trabajador en EPP si hay un contrato con
-  // el mismo nombre de entidad y esa cédula no está ya ahí (ver CAMBIOS_SQL_73.sql).
-  let msgFinal = id ? "Trabajador actualizado" : "Trabajador creado";
-  if(!id && nuevoId){
-    const { data: espejo, error: errEspejo } = await sb.rpc('dtl_espejo_en_dot', { p_trabajador_id: nuevoId });
-    if(errEspejo){ console.error('dtl_espejo_en_dot', errEspejo); msgFinal += ` · no se pudo reflejar en EPP: ${errEspejo.message}`; }
-    else if(espejo?.ok) msgFinal += ` · también creado en EPP (${espejo.contrato_nombre})`;
-    else {
-      const motivos = {
-        sin_permiso_destino: `no tienes el permiso en EPP (${espejo?.contrato_nombre||'—'})`,
-        ya_existe: `esa cédula ya existía en EPP (${espejo?.contrato_nombre||'—'})`,
-        sin_contrato_correspondiente: 'no hay ningún contrato de EPP con ese mismo nombre de entidad',
-        sin_acceso_origen: 'sin acceso a la entidad de origen',
-        no_encontrado: 'no se encontró el trabajador recién creado'
-      };
-      msgFinal += ` · no se reflejó en EPP: ${motivos[espejo?.motivo] || espejo?.motivo || 'motivo desconocido'}`;
-    }
-  }
-  toast(msgFinal,"ok");
+  toast("Área actualizada","ok");
   const mFicha = location.hash.match(/^#\/dotacionlegal\/trabajador\/(.+)$/);
-  if(mFicha && id && decodeURIComponent(mFicha[1])===id){ renderFichaTrabajadorDtl(id); }
+  if(mFicha && decodeURIComponent(mFicha[1])===id){ renderFichaTrabajadorDtl(id); }
   else { renderDtlAdmin(); }
-}
-function eliminarTrabajadorDtl(id){
-  const t = DTL.trabajadores.find(x=>x.id===id);
-  openModal(`<div class="modal" style="max-width:440px">
-    <div class="modal-head"><div><h2>Eliminar trabajador</h2><p>Esta acción no se puede deshacer.</p></div>
-      <button class="close-x" onclick="closeModal()">${I.close}</button></div>
-    <div class="modal-body"><p style="font-size:14.5px;color:var(--ink-2)">Se eliminará a <b>${esc(t?.nombre||'')}</b> junto con todo su historial de entregas de dotación.</p></div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-danger" id="confDelTrabDtl">${I.trash} Sí, eliminar</button></div></div>`);
-  document.getElementById("confDelTrabDtl").onclick = async ()=>{
-    const btn=document.getElementById("confDelTrabDtl"); btn.disabled=true; btn.innerHTML="Eliminando…";
-    const { error } = await sb.from("dtl_trabajadores").delete().eq("id", id);
-    if(error){ btn.disabled=false; btn.innerHTML=`${I.trash} Sí, eliminar`; toast("No se pudo eliminar: "+error.message,"err"); return; }
-    await loadDtlState();
-    closeModal(); toast("Trabajador eliminado","ok");
-    renderDtlAdmin();
-  };
-}
-
-function descargarPlantillaTrabajadoresDtl(){
-  if(!window.XLSX){ toast("No se pudo cargar el generador de Excel (revisa tu conexión)","err"); return; }
-  const datos = [
-    ["Contrato","Nombre completo","Cédula","Fecha de ingreso","Cargo"],
-    ["Hospital de Medellín","Juan Pérez","1234567890","2024-03-15","Operario"]
-  ];
-  const ws = XLSX.utils.aoa_to_sheet(datos);
-  ws["!cols"] = [{wch:24},{wch:28},{wch:16},{wch:16},{wch:20}];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Trabajadores");
-  XLSX.writeFile(wb, "Plantilla_trabajadores_dotacion.xlsx");
-  toast("Plantilla descargada","ok");
-}
-/* Intenta interpretar una fecha de Excel en varios formatos comunes → YYYY-MM-DD, o null si no se pudo */
-/* Solo acepta AAAA-MM-DD o DD/MM/AAAA con año de EXACTAMENTE 4 dígitos (1900-2100) — si no calza,
-   devuelve null en vez de arriesgar una interpretación rara de new Date() (ej. un año mal tecleado
-   como "20255" en vez de "2025" podía producir una fecha absurda que rompía TODA la carga). */
-function parseFechaExcelDtl(v){
-  const s = String(v||"").trim();
-  if(!s) return null;
-  let anio, mes, dia;
-  const mIso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if(mIso){ anio=+mIso[1]; mes=+mIso[2]; dia=+mIso[3]; }
-  else {
-    const mDmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-    if(!mDmy) return null;
-    dia=+mDmy[1]; mes=+mDmy[2]; anio=+mDmy[3];
-  }
-  if(anio<1900 || anio>2100 || mes<1 || mes>12 || dia<1 || dia>31) return null;
-  return `${String(anio).padStart(4,'0')}-${String(mes).padStart(2,'0')}-${String(dia).padStart(2,'0')}`;
-}
-async function cargarTrabajadoresExcelDtl(file){
-  if(!window.XLSX){ toast("No se pudo cargar el lector de Excel (revisa tu conexión)","err"); return; }
-  bloquear("Leyendo archivo…");
-  try{
-    const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf, {type:"array"});
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    const filas = XLSX.utils.sheet_to_json(ws, {header:1, defval:"", raw:false});
-    if(!filas.length){ toast("El archivo está vacío","err"); return; }
-    const norm = s => String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").trim();
-    const head = (filas[0]||[]).map(norm);
-    const findCol = (...alts)=> head.findIndex(h => alts.some(a => h.includes(a)));
-    let cEnt = findCol("contrato","entidad"), cNom = findCol("nombre"), cCed = findCol("cedula","cédula","identificacion","documento"),
-        cFecha = findCol("fecha de ingreso","fecha ingreso","ingreso"), cCargo = findCol("cargo");
-    let start = 1;
-    if(cNom === -1){ cEnt=0; cNom=1; cCed=2; cFecha=3; cCargo=4; start=0; }
-    const validos = []; let ignoradas = 0;
-    for(let i=start;i<filas.length;i++){
-      const r = filas[i]; if(!r) continue;
-      const entidadNombre = String(cEnt>=0?r[cEnt]:"").trim();
-      const nombre = String(cNom>=0?r[cNom]:"").trim();
-      const identificacion = String(cCed>=0?r[cCed]:"").trim();
-      if(!entidadNombre || !nombre || !identificacion){ if(r.some(v=>String(v||"").trim())) ignoradas++; continue; }
-      validos.push({
-        entidadNombre, nombre, identificacion,
-        fecha_ingreso: cFecha>=0 ? parseFechaExcelDtl(r[cFecha]) : null,
-        cargo: cCargo>=0?(String(r[cCargo]||"").trim()||null):null
-      });
-    }
-    if(!validos.length){ toast("No se encontraron filas válidas (se requiere contrato, nombre y cédula)","err"); return; }
-
-    // Resuelve el nombre del contrato/entidad a un id — si no existe, se crea (requiere ser admin por RLS)
-    const keyEnt = s => s.trim().toLowerCase();
-    const entidadPorNombre = new Map(DTL.entidades.map(en=>[keyEnt(en.nombre), en.id]));
-    let entidadesCreadas = 0;
-    for(const it of validos){
-      const k = keyEnt(it.entidadNombre);
-      if(!entidadPorNombre.has(k)){
-        const { data, error } = await sb.from("dtl_entidades").insert({ nombre: it.entidadNombre }).select().single();
-        if(error){ toast(`No se pudo crear el contrato "${it.entidadNombre}": `+error.message,"err"); return; }
-        entidadPorNombre.set(k, data.id);
-        DTL.entidades.push(data);
-        entidadesCreadas++;
-      }
-      it.entidad_id = entidadPorNombre.get(k);
-    }
-
-    const keyOf = s => s.trim().toLowerCase();
-    const existentes = new Set(DTL.trabajadores.map(t=>keyOf(t.identificacion)));
-    const vistos = new Set(); let dup = 0, yaExistian = 0;
-    const nuevos = [];
-    validos.forEach(it=>{
-      const k = keyOf(it.identificacion);
-      if(vistos.has(k)){ dup++; return; }
-      vistos.add(k);
-      if(existentes.has(k)){ yaExistian++; return; }
-      nuevos.push({ nombre: it.nombre, identificacion: it.identificacion, cargo: it.cargo, fecha_ingreso: it.fecha_ingreso, entidad_id: it.entidad_id });
-    });
-    if(nuevos.length){
-      const { error } = await sb.from("dtl_trabajadores").insert(nuevos);
-      if(error){ toast("No se pudo cargar: "+error.message,"err"); return; }
-    }
-    let msg = `${nuevos.length} trabajador(es) nuevo(s) agregado(s)`;
-    if(entidadesCreadas) msg += ` · ${entidadesCreadas} contrato(s) nuevo(s) creado(s)`;
-    if(yaExistian) msg += ` · ${yaExistian} ya existían (cédula repetida, sin cambios)`;
-    if(ignoradas) msg += ` · ${ignoradas} fila(s) incompleta(s) omitida(s)`;
-    if(dup) msg += ` · ${dup} duplicada(s) en el archivo`;
-    toast(msg,"ok");
-    // renderDtlAdmin (no renderDtlGrid) a propósito: si se cargó desde la pantalla
-    // "Crea tu primer contrato" (0 entidades), hay que reconstruir toda la página para
-    // que aparezca el panel normal — renderDtlGrid asume que ese panel ya existe.
-    await renderDtlAdmin(true);
-  }catch(e){ console.error(e); toast("No se pudo leer el archivo: "+(e.message||''),"err"); }
-  finally{ desbloquear(); }
 }
 
 /* ---------- Catálogo único (opcional, solo admin, por entidad) ----------
@@ -8461,7 +7579,7 @@ function abrirCatalogoUnicoDtl(){
       <button class="close-x" onclick="closeModal()">${I.close}</button></div>
     <div class="modal-body">
       <label class="chk" style="margin-bottom:14px"><input type="checkbox" id="chkCatalogoUnicoDtl" ${activo?'checked':''}> Este contrato entrega ítems propios (no pantalón/camisa/botas)</label>
-      <p class="muted-sm" style="margin-bottom:14px">Al activarlo, este contrato deja de usar los ítems fijos de siempre y en su lugar entrega lo que armes aquí abajo — se aplica al registrar desde el panel, por el enlace remoto de dotación y por el link de trabajadores nuevos de este contrato.</p>
+      <p class="muted-sm" style="margin-bottom:14px">Al activarlo, este contrato deja de usar los ítems fijos de siempre y en su lugar entrega lo que armes aquí abajo — se aplica al registrar desde el panel y por el enlace remoto de dotación.</p>
       <div id="catalogoUnicoDtlBody" style="display:${activo?'block':'none'}">
         <div class="field row2" style="margin-bottom:14px">
           <div><input id="catDtlNombre" placeholder="Nombre del ítem (ej. Zapatos de mujer)"></div>
@@ -8832,7 +7950,7 @@ function renderPasoDtl1(){
       ${t ? `<div class="trab-summary"><div class="tk">Trabajador</div><div class="tv">${esc(t.nombre)} — C.C. ${esc(t.identificacion)}</div></div>`
           : `<div class="field"><label>Trabajador *</label>
               <select id="dtlTrabajador"><option value="">Selecciona…</option>${opcionesTrab}</select>
-              <div class="muted-sm" style="margin-top:6px">¿No aparece? Créalo primero desde "Nuevo trabajador" en el panel.</div>
+              <div class="muted-sm" style="margin-top:6px">¿No aparece? Los trabajadores llegan de Recursos Humanos: si es nuevo, pide que lo registren en RH.</div>
             </div>`}
       <div class="field"><label>Fecha de entrega</label><input type="date" id="dtlFecha" value="${dtlEntregaDraft.fecha}"></div>
       <div class="field">
@@ -9255,7 +8373,7 @@ async function renderFichaTrabajadorDtl(id){
         <div class="page-head">
           <div><h1>${esc(t.nombre)}</h1><p>C.C. ${esc(t.identificacion)}${t.cargo?' · '+esc(t.cargo):''}${t.area?' · '+esc(t.area):''} · ${esc(nombreEntidadDtl(t.entidad_id))}${t.fecha_ingreso?' · Ingresó '+fmtDate(t.fecha_ingreso):''}${t.fecha_salida?' · Salió '+fmtDate(t.fecha_salida):''}${t.correo?' · '+esc(t.correo):''}</p></div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
-            ${MIPERFIL.esAdmin?`<button class="btn btn-ghost" id="btnEditarTrabDtl">${I.pen} Editar datos</button>`:''}
+            ${MIPERFIL.esAdmin?`<button class="btn btn-ghost" id="btnEditarTrabDtl">${I.pen} Editar área</button>`:''}
             ${listaEntregas.length?(esContratoEscaneadoDtl
               ? `<button class="btn btn-ghost" id="btnZipAdjuntosDtl">${I.doc} Descargar ZIP</button>`
               : `<button class="btn btn-ghost" id="btnKardexDtl">${I.pdf} Imprimir kárdex</button>`):''}
@@ -10108,59 +9226,6 @@ async function confirmarEntregaDtlPublica(){
 
 function renderDtlPublicoExito(){
   document.getElementById("app").innerHTML = pantallaFirmaOk("¡Listo!", "Tu entrega de dotación quedó registrada correctamente.");
-}
-
-/* ---------- Enlace "trabajadores nuevos" de Dotación (#/dotacionlegal/entrega-nuevo/<entidadId>).
-   Mismo concepto que el de EPP: crea la ficha primero, y reutiliza el mismo
-   formulario/RPC de registro del enlace normal (renderDtlPublicoFormulario/
-   confirmarEntregaDtlPublica). ---------- */
-async function renderDtlPublicoNuevo(entidadId){
-  forzarTemaClaroPublico();
-  dtlPublicoState = { trabajador:null, foto:null };
-  await cargarAppConfig();
-  bloquear("Cargando…");
-  const { data, error } = await sb.rpc('dtl_publico_entidad_info', { p_entidad_id: entidadId });
-  desbloquear();
-  if(error || !data || !data.ok || !data.activo){
-    document.getElementById("app").innerHTML = pantallaFirmaOk("Enlace no disponible", "Este enlace ya no está activo. Contacta a tu supervisor.");
-    return;
-  }
-  renderDtlPublicoNuevoFormulario(entidadId, data.nombre, !!data.catalogo_unico);
-}
-
-function renderDtlPublicoNuevoFormulario(entidadId, nombreEntidad, catalogoUnico){
-  document.getElementById("app").innerHTML = `
-    <div class="pub-wrap"><div class="pub-card"><div class="pub-body">
-      <img src="${LOGO}" alt="Don Aseo Ltda." style="height:48px;display:block;margin:0 auto 18px">
-      <h2 style="text-align:center;margin-bottom:6px">Registro de trabajador nuevo</h2>
-      <p class="muted-sm" style="text-align:center;margin-bottom:20px">${esc(nombreEntidad)} — completa tus datos para crear tu ficha. Solo se hace una vez.</p>
-      <div class="field"><label>Nombre completo *</label><input id="npDtlNombre" placeholder="Nombres y apellidos"></div>
-      <div class="field"><label>Número de identificación (cédula) *</label><input id="npDtlCedula" inputmode="numeric" placeholder="C.C."></div>
-      <div class="field"><label>Cargo <span class="opt">(opcional)</span></label><input id="npDtlCargo" placeholder="Cargo"></div>
-      <div id="npDtlError" class="login-err"></div>
-      <button class="btn btn-primary" id="npDtlContinuarBtn" style="width:100%;padding:13px;margin-top:6px">${I.check} Continuar</button>
-    </div></div></div>`;
-  document.getElementById('npDtlContinuarBtn').onclick = async ()=>{
-    const nombre = document.getElementById('npDtlNombre').value.trim();
-    const cedula = document.getElementById('npDtlCedula').value.trim();
-    const cargo = document.getElementById('npDtlCargo').value.trim();
-    const err = document.getElementById('npDtlError'); err.textContent = '';
-    if(!nombre){ err.textContent = 'Escribe tu nombre completo.'; return; }
-    if(!cedula){ err.textContent = 'Escribe tu cédula.'; return; }
-    const btn = document.getElementById('npDtlContinuarBtn'); btn.disabled=true; btn.innerHTML='Creando ficha…';
-    const { data, error } = await sb.rpc('dtl_publico_crear_nuevo', { p_entidad_id: entidadId, p_nombre: nombre, p_cedula: cedula, p_cargo: cargo||null });
-    if(error || !data || !data.ok){
-      btn.disabled=false; btn.innerHTML=`${I.check} Continuar`;
-      const motivo = data && data.motivo;
-      err.textContent = motivo==='ya_registrado'
-        ? 'Ya tienes una ficha registrada en este sistema — usa el enlace normal de entregas para tu próximo registro.'
-        : motivo==='contrato_invalido' ? 'Este enlace ya no está disponible.'
-        : 'No se pudo crear tu ficha. Intenta de nuevo.';
-      return;
-    }
-    dtlPublicoState.trabajador = { id: data.trabajador_id, nombre, identificacion: cedula, cargo, entidad_id: entidadId, entidad_nombre: nombreEntidad, catalogo_unico: catalogoUnico };
-    await renderDtlPublicoFormulario();
-  };
 }
 
 /* ============================================================
@@ -16173,7 +15238,7 @@ async function renderConfiguracion(silent){
                 <p style="margin-bottom:8px"><b>Editor en EPP y Dotación</b> — ve todo el directorio y todas las entregas; puede registrar entregas nuevas libremente; puede editar o eliminar <b>las entregas que él mismo registró, sin límite de tiempo</b> — pero nunca las que registró un compañero, eso solo lo puede tocar un administrador. Cada edición o eliminación queda registrada con el detalle exacto de qué cambió en Auditoría. <b>No puede agregar, editar ni eliminar trabajadores</b> del directorio (tampoco por carga masiva de Excel) — el directorio de trabajadores es solo de administrador. <b>Tampoco administra el catálogo de ítems de EPP</b> (editar/activar/desactivar/eliminar/carga masiva) — eso es solo de administrador, salvo que se le dé el permiso de "agregar al catálogo" (ver más abajo).</p>
                 <p style="margin-bottom:8px"><b>Editor en Inspecciones</b> — puede operar los enlaces ya creados en su contrato (Registrar aquí, Ver detalle, Copiar enlace, Compartir QR) y editar la ficha de una herramienta del catálogo (sin poder desactivarla ni eliminarla). <b>No puede</b>: crear ni editar formatos/plantillas (la pestaña "Formatos" ni le aparece), usar el banco de "Firmas", crear un enlace nuevo ("Crear formulario"), ni editar nombre/editar/cambiar herramienta/desactivar/eliminar un enlace, ni tocar sus "Firmantes" — todo eso quedó exclusivo de administrador.</p>
                 <p style="margin-bottom:8px"><b>Visualizador</b> — en cualquier módulo, solo puede ver lo que sus módulos/contratos le permitan; nunca crea, edita ni elimina nada.</p>
-                <p style="margin-bottom:8px"><b>"Entregas de hoy" (junto al buscador, en EPP y Dotación)</b> — Administrador y Editor. <b>"Todos"</b> (selección masiva) — solo Administrador. Visualizador solo ve "Mostrar inactivos".</p>
+                <p style="margin-bottom:8px"><b>"Entregas de hoy" (junto al buscador, en EPP y Dotación)</b> — Administrador y Editor. Visualizador solo ve "Mostrar inactivos".</p>
                 <p style="margin:0"><b>Auditoría</b> — visible solo para Administrador. No es un módulo que se pueda conceder a un Editor o Visualizador; nadie más la ve, sin importar qué permisos tenga.</p>
               </div>
               <div style="margin-bottom:20px;padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
@@ -16197,16 +15262,11 @@ async function renderConfiguracion(silent){
                 <p style="margin-bottom:8px">El catálogo de ítems de EPP (guantes, botas, casco…) es de administrador. Se le puede dar a un editor puntual el permiso de <b>agregar</b> ítems nuevos — nunca editar, activar/desactivar, eliminar ni cargar por Excel, eso sigue siendo solo de administrador.</p>
                 <p style="margin:0">Este permiso es <b>por contrato específico</b>: se activa desde "Permisos" de cada usuario, junto al contrato de EPP correspondiente — puede estar prendido en un contrato y apagado en otro, aunque el usuario tenga acceso a ambos.</p>
               </div>
-              <div class="sec-bar"><h2>EPP y Dotación: permiso "puede agregar trabajadores nuevos"</h2></div>
+              <div class="sec-bar"><h2>EPP y Dotación: los trabajadores vienen de Recursos Humanos</h2></div>
               <div style="margin-bottom:20px;padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
-                <p style="margin-bottom:8px">Agregar/editar/eliminar el directorio de trabajadores sigue siendo solo de administrador. Se le puede dar a alguien puntual (un supervisor, por ejemplo) el permiso de <b>agregar</b> trabajadores nuevos al directorio — útil cuando Recursos Humanos aún no ha cargado a esa persona en su propio sistema y hace falta registrarle una entrega ya. Nunca incluye editar ni eliminar.</p>
-                <p style="margin-bottom:8px">Es <b>por contrato/entidad específico</b> (igual que el permiso de catálogo de EPP): se activa desde "Permisos" de cada usuario, junto al contrato o entidad correspondiente.</p>
-                <p style="margin:0">Al crear un trabajador nuevo, la cédula se pide <b>escribir dos veces</b>, en un campo enmascarado que no permite copiar y pegar — así se reduce el riesgo de digitarla mal. Esto importa porque cuando RH cargue después a esa misma persona en su sistema, la sincronización automática la empareja <b>por cédula</b>: si coincide, actualiza la ficha ya creada en vez de duplicarla: si no coincide (por un error de digitación de cualquiera de los dos lados), sí puede quedar una ficha duplicada.</p>
-              </div>
-              <div class="sec-bar"><h2>EPP ↔ Dotación: reflejo automático al crear un trabajador</h2></div>
-              <div style="margin-bottom:20px;padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;font-size:13.5px;color:var(--ink-2);line-height:1.6">
-                <p style="margin-bottom:8px">Al crear un trabajador nuevo con el botón "Nuevo trabajador" (en EPP o en Dotación), el sistema busca automáticamente si hay un contrato de EPP y una entidad de Dotación con <b>el mismo nombre</b>, y si esa cédula todavía no existe ahí, crea también la ficha en el otro módulo — para no tener que darlo de alta dos veces por separado. Si no hay ningún contrato/entidad con el nombre correspondiente, o esa cédula ya existe ahí, simplemente no pasa nada (no es un error).</p>
-                <p style="margin:0">Esto <b>no</b> aplica a la carga masiva por Excel ni al enlace de autoregistro de "trabajadores nuevos" — solo al botón manual. Y respeta los permisos: si quien lo crea no es administrador y no tiene el permiso "puede agregar trabajadores nuevos" también en el contrato/entidad del otro módulo, el reflejo no ocurre (se le avisa en el mensaje de confirmación) — el permiso de un lado no sirve para escribir en el otro sin que también esté activado ahí.</p>
+                <p style="margin-bottom:8px">Los contratos y los trabajadores de EPP y Dotación son un <b>espejo del sistema de Recursos Humanos</b>: cuando RH ingresa a alguien, le cambia el cliente, lo retira o le corrige un dato, aquí se refleja solo, al instante, en los dos módulos. Cada cliente de RH con gente activa es un contrato aquí, con el mismo nombre.</p>
+                <p style="margin-bottom:8px">Por eso aquí ya <b>no se crean, eliminan ni inactivan trabajadores a mano</b>, ni se cambian su nombre, cédula, cargo, contrato o fechas: todo eso se hace en RH. Lo único que se edita aquí es el <b>área</b>. Cuando RH retira a alguien, queda inactivo con todo su historial de entregas y firmas; si se cambia de cliente, su ficha del contrato anterior queda inactiva (con sus entregas) y se activa la del nuevo.</p>
+                <p style="margin:0"><b>"Diferencias con RH"</b> (solo administrador, en Herramientas) muestra lo que no cuadra: activos aquí que RH tiene retirados, activos cuya cédula no está en RH (con las personas de RH de nombre parecido, por si la cédula quedó mal escrita) y avisos de cédula. Desde ahí se pasan a inactivos o se corrige la cédula, y la ficha conserva sus entregas.</p>
               </div>
             </div>
           </div>
@@ -16252,14 +15312,14 @@ async function toggleActivoPerfil(id, activo){
 
 async function abrirPermisosUsuario(perfilId){
   bloquear("Cargando permisos…");
-  let perfil, modulos, contratosMarcados, catalogoMarcados, trabajadoresDotMarcados, todosLosContratos, entidadesMarcadas, trabajadoresDtlMarcados, todasLasEntidades, contratosInspMarcados, todosLosContratosInsp, contratosActMarcados, todosLosContratosAct;
+  let perfil, modulos, contratosMarcados, catalogoMarcados, todosLosContratos, entidadesMarcadas, todasLasEntidades, contratosInspMarcados, todosLosContratosInsp, contratosActMarcados, todosLosContratosAct;
   try{
     const [{ data:p }, { data:pm }, { data:pc }, { data:cs }, { data:pe }, { data:es }, { data:pi }, { data:ci }, { data:pa }, { data:ca }] = await Promise.all([
       sb.from("acc_perfiles").select("id,email,nombre,es_admin,activo,rol").eq("id",perfilId).maybeSingle(),
       sb.from("acc_perfil_modulos").select("modulo").eq("perfil_id",perfilId),
-      sb.from("acc_perfil_contratos").select("contrato_id,puede_agregar_catalogo,puede_agregar_trabajadores").eq("perfil_id",perfilId),
+      sb.from("acc_perfil_contratos").select("contrato_id,puede_agregar_catalogo").eq("perfil_id",perfilId),
       sb.from("dot_contratos").select("id,nombre").order("nombre",{ascending:true}),
-      sb.from("acc_perfil_entidades").select("entidad_id,puede_agregar_trabajadores").eq("perfil_id",perfilId),
+      sb.from("acc_perfil_entidades").select("entidad_id").eq("perfil_id",perfilId),
       sb.from("dtl_entidades").select("id,nombre").order("nombre",{ascending:true}),
       sb.from("acc_perfil_contratos_insp").select("contrato_id").eq("perfil_id",perfilId),
       sb.from("insp_contratos").select("id,nombre").order("nombre",{ascending:true}),
@@ -16268,9 +15328,7 @@ async function abrirPermisosUsuario(perfilId){
     ]);
     perfil = p; modulos = (pm||[]).map(x=>x.modulo); contratosMarcados = (pc||[]).map(x=>x.contrato_id); todosLosContratos = cs||[];
     catalogoMarcados = (pc||[]).filter(x=>x.puede_agregar_catalogo).map(x=>x.contrato_id);
-    trabajadoresDotMarcados = (pc||[]).filter(x=>x.puede_agregar_trabajadores).map(x=>x.contrato_id);
     entidadesMarcadas = (pe||[]).map(x=>x.entidad_id); todasLasEntidades = es||[];
-    trabajadoresDtlMarcados = (pe||[]).filter(x=>x.puede_agregar_trabajadores).map(x=>x.entidad_id);
     contratosInspMarcados = (pi||[]).map(x=>x.contrato_id); todosLosContratosInsp = ci||[];
     contratosActMarcados = (pa||[]).map(x=>x.contrato_id); todosLosContratosAct = ca||[];
   } finally { desbloquear(); }
@@ -16287,7 +15345,7 @@ async function abrirPermisosUsuario(perfilId){
       ${esUnoMismo?`<p class="muted-sm" style="margin:-4px 0 10px">No puedes quitarte tu propio acceso de administrador.</p>`:''}
       <div id="permisosDetalle" style="${perfil.es_admin?'display:none':''}">
         <div class="sec-bar" style="margin-top:14px"><h2 style="font-size:14px">Rol</h2></div>
-        <label class="chk"><input type="radio" name="pfRol" value="editor" ${perfil.rol!=='visualizador'?'checked':''}> <b>Editor</b> — en Asistencia/Documentos: crea y edita solo lo suyo, nunca lo cerrado/finalizado. En EPP/Dotación: ve y registra todo, edita/elimina cualquier entrega que ÉL MISMO haya registrado (sin límite de tiempo, pero nunca lo de un compañero), y no toca el directorio de trabajadores (agregar/editar/eliminar es solo admin, salvo que se le active el permiso puntual "puede agregar trabajadores nuevos" más abajo)</label>
+        <label class="chk"><input type="radio" name="pfRol" value="editor" ${perfil.rol!=='visualizador'?'checked':''}> <b>Editor</b> — en Asistencia/Documentos: crea y edita solo lo suyo, nunca lo cerrado/finalizado. En EPP/Dotación: ve y registra todo, edita/elimina cualquier entrega que ÉL MISMO haya registrado (sin límite de tiempo, pero nunca lo de un compañero), y no toca el directorio de trabajadores (viene de Recursos Humanos, y el área solo la edita un administrador)</label>
         <label class="chk"><input type="radio" name="pfRol" value="visualizador" ${perfil.rol==='visualizador'?'checked':''}> <b>Visualizador</b> — solo puede ver lo que sus módulos/contratos le permitan; no crea, edita ni elimina nada</label>
         <div class="sec-bar" style="margin-top:14px"><h2 style="font-size:14px">Módulos</h2></div>
         <label class="chk"><input type="checkbox" data-pf-mod="asistencia" ${modulos.includes('asistencia')?'checked':''}> Asistencia</label>
@@ -16301,7 +15359,6 @@ async function abrirPermisosUsuario(perfilId){
                 return `<div style="margin:3px 0">
                   <label class="chk" style="padding:0"><input type="checkbox" data-pf-contrato="${c.id}" ${marcado?'checked':''}> ${esc(c.nombre)}</label>
                   <label class="chk" style="padding:0 0 0 22px;font-size:12px;color:var(--ink-2)"><input type="checkbox" data-pf-contrato-catalogo="${c.id}" ${catalogoMarcados.includes(c.id)?'checked':''} ${marcado?'':'disabled'}> Puede agregar al catálogo de ítems</label>
-                  <label class="chk" style="padding:0 0 0 22px;font-size:12px;color:var(--ink-2)"><input type="checkbox" data-pf-contrato-trabajadores="${c.id}" ${trabajadoresDotMarcados.includes(c.id)?'checked':''} ${marcado?'':'disabled'}> Puede agregar trabajadores nuevos</label>
                 </div>`;
               }).join('')
             : '<p class="muted-sm">Aún no hay contratos creados.</p>'}
@@ -16314,7 +15371,6 @@ async function abrirPermisosUsuario(perfilId){
                 const marcada = entidadesMarcadas.includes(en.id);
                 return `<div style="margin:3px 0">
                   <label class="chk" style="padding:0"><input type="checkbox" data-pf-entidad="${en.id}" ${marcada?'checked':''}> ${esc(en.nombre)}</label>
-                  <label class="chk" style="padding:0 0 0 22px;font-size:12px;color:var(--ink-2)"><input type="checkbox" data-pf-entidad-trabajadores="${en.id}" ${trabajadoresDtlMarcados.includes(en.id)?'checked':''} ${marcada?'':'disabled'}> Puede agregar trabajadores nuevos</label>
                 </div>`;
               }).join('')
             : '<p class="muted-sm">Aún no hay contratos creados.</p>'}
@@ -16397,16 +15453,14 @@ async function abrirPermisosUsuario(perfilId){
   if(chkAct) chkAct.onchange = (e)=>{ document.getElementById('permisosActividades').style.display = e.target.checked ? 'block' : 'none'; };
   /* "Marcar todos"/"Quitar todos": evita tener que darle clic contrato por contrato
      cuando alguien necesita ver, por ejemplo, TODA la Dotación de todos los contratos. */
-  // Los sub-checkboxes ("puede agregar al catálogo"/"puede agregar trabajadores nuevos")
-  // de un contrato o entidad solo tienen sentido si ese contrato/entidad está marcado —
-  // se deshabilitan (y se desmarcan) junto con él.
+  // El sub-checkbox "puede agregar al catálogo" de un contrato solo tiene sentido si ese
+  // contrato está marcado — se deshabilita (y se desmarca) junto con él. (El de "puede agregar
+  // trabajadores nuevos" se quitó: los trabajadores vienen de RH, CAMBIOS_SQL_85.)
   const sincronizarCatalogoContrato = (contratoId, marcado)=>{
-    [`[data-pf-contrato-catalogo="${contratoId}"]`, `[data-pf-contrato-trabajadores="${contratoId}"]`].forEach(sel=>{
-      const sub = document.querySelector(sel);
-      if(!sub) return;
-      sub.disabled = !marcado;
-      if(!marcado) sub.checked = false;
-    });
+    const sub = document.querySelector(`[data-pf-contrato-catalogo="${contratoId}"]`);
+    if(!sub) return;
+    sub.disabled = !marcado;
+    if(!marcado) sub.checked = false;
   };
   document.querySelectorAll('[data-pf-contrato]').forEach(chk=>{
     chk.addEventListener('change', ()=> sincronizarCatalogoContrato(chk.dataset.pfContrato, chk.checked));
@@ -16418,19 +15472,10 @@ async function abrirPermisosUsuario(perfilId){
     btnPfContratoTodos.textContent = marcar ? 'Quitar todos' : 'Marcar todos';
     actualizarResumenAccesoUI();
   };
-  const sincronizarTrabajadoresEntidad = (entidadId, marcada)=>{
-    const sub = document.querySelector(`[data-pf-entidad-trabajadores="${entidadId}"]`);
-    if(!sub) return;
-    sub.disabled = !marcada;
-    if(!marcada) sub.checked = false;
-  };
-  document.querySelectorAll('[data-pf-entidad]').forEach(chk=>{
-    chk.addEventListener('change', ()=> sincronizarTrabajadoresEntidad(chk.dataset.pfEntidad, chk.checked));
-  });
   const btnPfEntidadTodos = document.getElementById('btnPfEntidadTodos');
   if(btnPfEntidadTodos) btnPfEntidadTodos.onclick = ()=>{
     const marcar = btnPfEntidadTodos.textContent.trim()==='Marcar todos';
-    document.querySelectorAll('[data-pf-entidad]').forEach(chk=>{ chk.checked = marcar; sincronizarTrabajadoresEntidad(chk.dataset.pfEntidad, marcar); });
+    document.querySelectorAll('[data-pf-entidad]').forEach(chk=>{ chk.checked = marcar; });
     btnPfEntidadTodos.textContent = marcar ? 'Quitar todos' : 'Marcar todos';
     actualizarResumenAccesoUI();
   };
@@ -16460,9 +15505,7 @@ async function guardarPermisosUsuario(perfilId){
   const modulosMarcados = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-mod]:checked')).map(el=>el.dataset.pfMod);
   const contratosMarcados = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-contrato]:checked')).map(el=>el.dataset.pfContrato);
   const catalogoMarcados = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-contrato-catalogo]:checked')).map(el=>el.dataset.pfContratoCatalogo);
-  const trabajadoresDotMarcados = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-contrato-trabajadores]:checked')).map(el=>el.dataset.pfContratoTrabajadores);
   const entidadesMarcadas = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-entidad]:checked')).map(el=>el.dataset.pfEntidad);
-  const trabajadoresDtlMarcados = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-entidad-trabajadores]:checked')).map(el=>el.dataset.pfEntidadTrabajadores);
   const contratosInspMarcados = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-contratoinsp]:checked')).map(el=>el.dataset.pfContratoinsp);
   const contratosActMarcados = esAdmin ? [] : Array.from(document.querySelectorAll('[data-pf-contratoact]:checked')).map(el=>el.dataset.pfContratoact);
   const rolSeleccionado = document.querySelector('input[name="pfRol"]:checked');
@@ -16485,12 +15528,12 @@ async function guardarPermisosUsuario(perfilId){
     }
     await sb.from("acc_perfil_contratos").delete().eq("perfil_id", perfilId);
     if(contratosMarcados.length){
-      const { error:e3 } = await sb.from("acc_perfil_contratos").insert(contratosMarcados.map(c=>({perfil_id:perfilId, contrato_id:c, puede_agregar_catalogo: catalogoMarcados.includes(c), puede_agregar_trabajadores: trabajadoresDotMarcados.includes(c)})));
+      const { error:e3 } = await sb.from("acc_perfil_contratos").insert(contratosMarcados.map(c=>({perfil_id:perfilId, contrato_id:c, puede_agregar_catalogo: catalogoMarcados.includes(c)})));
       if(e3){ toast("Se guardó parcialmente, error en contratos: "+e3.message,"err"); }
     }
     await sb.from("acc_perfil_entidades").delete().eq("perfil_id", perfilId);
     if(entidadesMarcadas.length){
-      const { error:e4 } = await sb.from("acc_perfil_entidades").insert(entidadesMarcadas.map(en=>({perfil_id:perfilId, entidad_id:en, puede_agregar_trabajadores: trabajadoresDtlMarcados.includes(en)})));
+      const { error:e4 } = await sb.from("acc_perfil_entidades").insert(entidadesMarcadas.map(en=>({perfil_id:perfilId, entidad_id:en})));
       if(e4){ toast("Se guardó parcialmente, error en contratos: "+e4.message,"err"); }
     }
     await sb.from("acc_perfil_contratos_insp").delete().eq("perfil_id", perfilId);
