@@ -15302,16 +15302,15 @@ async function renderConfiguracion(silent){
                 <button class="btn btn-primary btn-sm" id="btnGuardarAjustes" style="margin-top:10px">${I.check} Guardar</button>
               </div>
               <div class="sec-bar"><h2>Usuarios</h2></div>
-              <div id="cfgNotaPortal" style="padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+              <div id="cfgNotaPortal" style="padding:14px 16px;background:#f6f8fd;border:1px solid var(--line);border-radius:10px">
                 <p style="margin:0;font-size:13.5px;color:var(--ink-2)">Los usuarios y sus accesos se administran en el Portal.</p>
-                <a class="btn btn-ghost btn-sm" href="${PORTAL_URL}" style="text-decoration:none">Ir al Portal</a>
               </div>
             </div>
             <div class="subtab-pane ${tabCfgActiva==='instrucciones'?'active':''}" data-pane-cfg="instrucciones">
               <div class="resp-firma" style="margin-bottom:20px">
                 <div class="rf-info">
                   <div class="rf-k">Dar de alta a alguien nuevo</div>
-                  <div class="rf-v" style="font-size:13px;font-weight:600">Las cuentas y sus accesos (rol, módulos y contratos) se crean y se cambian en el <a href="${PORTAL_URL}">Portal</a>. Una cuenta nueva no puede entrar a este sistema hasta que en el Portal le den acceso.</div>
+                  <div class="rf-v" style="font-size:13px;font-weight:600">Las cuentas y sus accesos (rol, módulos y contratos) se crean y se cambian en el Portal. Una cuenta nueva no puede entrar a este sistema hasta que en el Portal le den acceso.</div>
                 </div>
               </div>
               <div class="sec-bar"><h2>Cómo funcionan los roles</h2></div>
