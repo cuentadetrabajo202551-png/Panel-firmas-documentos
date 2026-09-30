@@ -118,6 +118,8 @@ input[type="date"], input[type="time"]{background:#fff;color:var(--ink)}
 .sb-brand-text{min-width:0}
 .sb-brand-name{font-size:12.5px;font-weight:800;color:#fff;letter-spacing:.01em;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sb-brand-nit{font-size:10.5px;font-weight:600;color:rgba(255,255,255,.55);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-portal{margin:10px 8px 0;padding:8px 10px;border-radius:10px;font-size:12.5px;font-weight:700;color:rgba(255,255,255,.62);text-decoration:none;transition:.15s}
+.sb-portal:hover{background:rgba(255,255,255,.1);color:#fff}
 .sb-nav{display:flex;flex-direction:column;gap:3px;padding:16px 8px;flex:1;overflow-y:auto}
 .sb-nav a{display:flex;align-items:center;gap:12px;padding:11px 10px;border-radius:11px;font-size:13.5px;font-weight:600;color:rgba(255,255,255,.68);text-decoration:none;white-space:nowrap;transition:.15s}
 .sb-nav a:hover{background:#2e5397;color:#fff}
@@ -810,7 +812,22 @@ const I = {
    ============================================================ */
 const SUPABASE_URL  = "https://nqkiepqaujlgmkvsevdr.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5xa2llcHFhdWpsZ21rdnNldmRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4NDI5NzEsImV4cCI6MjA5NDQxODk3MX0._UxBdDky3VIfnGQHGXXeAG3okQY4kflGtbff7pbPfrI";
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+const PORTAL_URL = "https://alex-campbelli.github.io/portal-don-aseo/";
+// Pase del Portal (#pase=<token de un solo uso>): se lee y se borra de la barra antes de crear el cliente y del router
+const PASE = (()=>{
+  const m = /(?:^#|&)pase=([^&]+)/.exec(location.hash);
+  if(!m) return null;
+  history.replaceState(null, "", location.pathname + location.search);
+  try{ sessionStorage.setItem("portal.pestana", Date.now().toString(36) + Math.random().toString(36).slice(2, 10)); }catch(e){}
+  try{ return decodeURIComponent(m[1]); }catch(e){ return m[1]; }
+})();
+// Pestaña «del Portal»: sesión solo en sessionStorage, con llave propia para que salir en otra pestaña no la afecte
+let PESTANA = null;
+try{ PESTANA = sessionStorage.getItem("portal.pestana"); }catch(e){}
+const DESDE_PORTAL = !!PESTANA;
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON,
+  DESDE_PORTAL ? { auth: { storage: window.sessionStorage, storageKey: "portal-pestana-sesion-" + PESTANA } } : {});
 
 // Worker de PDF.js (para mostrar PDFs en el navegador)
 if(window.pdfjsLib) window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
@@ -843,7 +860,7 @@ async function cargarMiPerfil(){
   const { data:{ session } } = await sb.auth.getSession();
   if(!session){ MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], catalogoDot:[], trabajadoresDot:[], entidadesDtl:[], trabajadoresDtl:[], contratosInsp:[], contratosAct:[], nombre:"", uid:null }; return; }
   const uid = session.user.id;
-  const [{ data:p }, { data:pm }, { data:pc }, { data:pe }, { data:pi }, { data:pa }, { data:pn }] = await Promise.all([
+  const [{ data:p, error:errP }, { data:pm, error:errM }, { data:pc }, { data:pe }, { data:pi }, { data:pa }, { data:pn }] = await Promise.all([
     sb.from("acc_perfiles").select("es_admin,activo,nombre,rol").eq("id",uid).maybeSingle(),
     sb.from("acc_perfil_modulos").select("modulo").eq("perfil_id",uid),
     sb.from("acc_perfil_contratos").select("contrato_id,puede_agregar_catalogo,puede_agregar_trabajadores").eq("perfil_id",uid),
@@ -853,7 +870,7 @@ async function cargarMiPerfil(){
     sb.rpc("acc_perfiles_nombres")
   ]);
   MIPERFIL = {
-    cargado: true,
+    cargado: !errP && !errM,   // si falló la lectura (ej. sin red), la puerta no decide: no se saca a nadie por un error de carga
     activo: p ? p.activo!==false : true,   // si no hay fila todavía (BD sin migrar), no bloquea por defecto
     esAdmin: !!(p && p.es_admin),
     rol: (p && p.rol) || "editor",
@@ -904,18 +921,31 @@ function puedoTocarCerrable(uidCreador, cerrado){ return MIPERFIL.esAdmin || (MI
 function nombreDe(uid){ return uid ? (PERFILES_NOMBRE[uid] || "—") : "—"; }
 function correoDe(uid){ return uid ? (PERFILES_CORREO[uid] || "") : ""; }
 
-/* Pantalla de candado: se usa cuando el usuario no tiene acceso a un módulo o está desactivado */
+/* Pantalla de candado: tiene acceso a Firmas pero no a este módulo (sin acceso a nada → cerrarPuerta) */
 function renderSinAcceso(tituloModulo){
-  const desactivado = MIPERFIL.cargado && !MIPERFIL.activo;
-  const sinModulos = !desactivado && !tituloModulo;
   document.getElementById("app").innerHTML = `
     ${topbar('')}
     <div class="wrap"><div class="empty">
       <div class="ic">${I.lockBig}</div>
-      <h3>${desactivado?'Tu acceso fue desactivado':sinModulos?'Aún no tienes acceso a ningún módulo':'No tienes acceso a '+esc(tituloModulo)}</h3>
-      <p>${desactivado||sinModulos?'Contacta al administrador del sistema para más información.':'Contacta al administrador si crees que deberías tener acceso a este módulo.'}</p>
+      <h3>${tituloModulo?'No tienes acceso a '+esc(tituloModulo):'Aún no tienes acceso a ningún módulo'}</h3>
+      <p>${tituloModulo?'Contacta al administrador si crees que deberías tener acceso a este módulo.':'Contacta al administrador del sistema para más información.'}</p>
     </div></div>`;
   wireLogout();
+}
+
+/* La puerta: sin acceso a Firmas (desactivado o sin módulos) → aviso y afuera, solo en esta pestaña */
+let _puertaCerrada = false;
+async function cerrarPuerta(){
+  _puertaCerrada = true;
+  detenerRefrescos();
+  await sb.auth.signOut({ scope: "local" });
+  document.getElementById("app").innerHTML = `
+    <div class="login-wrap"><div class="login-card">
+      <img src="${LOGO}" class="login-logo" alt="Don Aseo Ltda.">
+      <h1>No tienes acceso al Módulo de firmas</h1>
+      <p>Pídeselo al administrador.</p>
+      <a class="btn btn-primary" href="${PORTAL_URL}" style="width:100%;text-decoration:none">Volver al Portal</a>
+    </div></div>`;
 }
 
 /* ---------- Mapeo entre columnas de la BD y el objeto del programa ---------- */
@@ -1126,7 +1156,7 @@ async function router(){
   // sin recargar la página), MIPERFIL podía quedar con los datos del usuario ANTERIOR. Comparar
   // contra el uid de la sesión real fuerza una recarga cada vez que no coincidan.
   if(!MIPERFIL.cargado || MIPERFIL.uid !== session.user.id) await cargarMiPerfil();
-  if(MIPERFIL.cargado && !MIPERFIL.activo){ renderSinAcceso(""); return; }
+  if(MIPERFIL.cargado && (!MIPERFIL.activo || (!MIPERFIL.esAdmin && !MIPERFIL.modulos.length))){ await cerrarPuerta(); return; }
 
   if(location.hash.startsWith("#/configuracion")){
     if(!MIPERFIL.esAdmin){ renderSinAcceso("Configuración"); return; }
@@ -1195,6 +1225,14 @@ window.addEventListener("hashchange", router);
 /* ============================================================
    PANTALLA DE LOGIN  (usa las mismas credenciales del SIG)
    ============================================================ */
+// Canje del pase del Portal por una sesión nueva; si falla, el login lo avisa
+let avisoPaseFallido = false;
+async function canjearPase(token){
+  try{
+    const { error } = await sb.auth.verifyOtp({ token_hash: token, type: "email" });
+    if(error) avisoPaseFallido = true;
+  }catch(e){ avisoPaseFallido = true; }
+}
 function renderLogin(){
   document.getElementById("app").innerHTML = `
     <div class="login-wrap">
@@ -1215,6 +1253,7 @@ function renderLogin(){
         <div class="login-foot">Acceso exclusivo para personal autorizado · ${CODIGO}</div>
       </form>
     </div>`;
+  if(avisoPaseFallido) document.getElementById("lg_err").innerHTML = `El enlace del Portal ya se usó o venció. <a href="${PORTAL_URL}">Vuelve al Portal</a> y entra otra vez, o ingresa con tu contraseña.`;
 
   document.getElementById("loginForm").onsubmit = async (e)=>{
     e.preventDefault();
@@ -1230,6 +1269,7 @@ function renderLogin(){
       err.textContent = "Correo o contraseña incorrectos.";
       return;
     }
+    avisoPaseFallido = false; _puertaCerrada = false;
     router();
   };
 }
@@ -1273,6 +1313,7 @@ function topbar(active){
           <div class="sb-brand-nit">NIT: 812.000.152-7</div>
         </div>
       </div>
+      <a class="sb-portal" href="${PORTAL_URL}">← Portal</a>
       <nav class="sb-nav">${navLinksHTML(active,'active',false,true)}</nav>
       <div class="sb-profile">
         <div class="sb-avatar">${iniciales(MIPERFIL.nombre)}</div>
@@ -1294,7 +1335,7 @@ function topbar(active){
         <div class="t2">Don Aseo Ltda. · NIT 812.000.152-7</div>
         <div class="brand-accent"></div>
       </div>
-      <nav class="topnav">${navLinksHTML(active,'active',true)}</nav>
+      <nav class="topnav"><a href="${PORTAL_URL}">← Portal</a>${navLinksHTML(active,'active',true)}</nav>
       <div class="topbar-spacer"></div>
       ${STATE.userEmail?`<span class="user-chip" title="${esc(STATE.userEmail)}">${I.user} ${esc(STATE.userEmail)}</span>`:""}
       <button class="logout-btn" data-role="logout">${I.lock} Salir</button>
@@ -1310,12 +1351,8 @@ function wireLogout(){
       // la pantalla de login, justo mientras el usuario escribía el correo/clave de otra
       // cuenta — reportado desde el celular. Recargar la página sí cortaba los timers (se
       // reinician con el script), por eso ahí nunca se veía el problema.
-      if(_asisTimer){ clearInterval(_asisTimer); _asisTimer=null; }
-      if(_docsTimer){ clearInterval(_docsTimer); _docsTimer=null; }
-      if(_dotTimer){ clearInterval(_dotTimer); _dotTimer=null; }
-      if(_dtlTimer){ clearInterval(_dtlTimer); _dtlTimer=null; }
-      if(_inspTimer){ clearInterval(_inspTimer); _inspTimer=null; }
-      await sb.auth.signOut(); STATE.listas=[]; STATE.userEmail="";
+      detenerRefrescos();
+      await sb.auth.signOut({ scope: "local" }); STATE.listas=[]; STATE.userEmail="";
       MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], catalogoDot:[], trabajadoresDot:[], entidadesDtl:[], trabajadoresDtl:[], contratosInsp:[], contratosAct:[], nombre:"", uid:null };
       PERFILES_NOMBRE = {}; PERFILES_CORREO = {};
       location.hash=""; router();
@@ -1685,7 +1722,7 @@ async function openDetail(id){
         ${puedoTocarCerrable(l.creadaPor,!act)?`<button class="btn btn-ghost" onclick="openCreateModal(getList('${l.id}'))">${I.pen} Editar</button>
         <button class="btn btn-danger" onclick="eliminarLista('${l.id}')">${I.trash} Eliminar</button>`:''}
         ${act && puedoTocar(l.creadaPor)?`<button class="btn btn-danger" onclick="cerrarLista('${l.id}')">${I.lock} Cerrar lista</button>`:""}
-        <button class="btn btn-ghost" onclick="window.open('${linkFor(l.id)}','_blank')">${I.eye} Abrir formulario</button>
+        <button class="btn btn-ghost" onclick="window.open('${linkFor(l.id)}','_blank','noopener')">${I.eye} Abrir formulario</button>
         <button class="btn btn-green" onclick="firmarYGenerarPDF('${l.id}')">${I.pdf} Generar PDF</button>
       </div>
     </div>
@@ -2690,6 +2727,11 @@ function _tickInsp(){
   if(hayDropdownAbierto()) return;
   if(huboActividadReciente()) return;
   renderInspeccionesAdmin(true);
+}
+// Si siguen corriendo después de cerrar sesión, repintan el panel encima del login
+function detenerRefrescos(){
+  [_asisTimer,_docsTimer,_dotTimer,_dtlTimer,_inspTimer].forEach(t=>{ if(t) clearInterval(t); });
+  _asisTimer = _docsTimer = _dotTimer = _dtlTimer = _inspTimer = null;
 }
 
 async function renderDocsAdmin(silent){
@@ -10480,7 +10522,7 @@ function renderEnlacesInspPorTipo(tipo, hostId, soloSinHerramienta){
   host.querySelectorAll('[data-eit]').forEach(b=>{
     b.onclick = ()=>{
       const id = b.dataset.id, act = b.dataset.eit;
-      if(act==='registrar') window.open(linkInspeccion(id), '_blank');
+      if(act==='registrar') window.open(linkInspeccion(id), '_blank', 'noopener');
       else if(act==='ver') abrirDetalleEnlaceInsp(id);
       else if(act==='link') copyText(linkInspeccion(id), "Enlace de inspección copiado");
       else if(act==='qr') mostrarQR(linkInspeccion(id), "Enlace de inspección");
@@ -10635,7 +10677,7 @@ function renderHerramientasInspGrid(){
     b.onclick = (e)=>{
       e.stopPropagation();
       const id = b.dataset.id, act = b.dataset.eit;
-      if(act==='registrar') window.open(linkInspeccion(id), '_blank');
+      if(act==='registrar') window.open(linkInspeccion(id), '_blank', 'noopener');
       else if(act==='ver') abrirDetalleEnlaceInsp(id);
       else if(act==='link') copyText(linkInspeccion(id), "Enlace de inspección copiado");
       else if(act==='qr') mostrarQR(linkInspeccion(id), "Enlace de inspección");
@@ -15614,7 +15656,7 @@ async function guardarPermisosUsuario(perfilId){
 /* ---------- Auto-refresh del panel al volver a la pestaña ---------- */
 document.addEventListener("visibilitychange", ()=>{
   // No recargar si está oculta, en una vista pública, o en un formulario (perdería lo escrito)
-  if(document.hidden || esRutaPublica() || esRutaEdicion()) return;
+  if(document.hidden || esRutaPublica() || esRutaEdicion() || _puertaCerrada) return;
   // Home de documentos / dotación: refresco SILENCIOSO (sin reloj de arena) para no molestar
   // (si el acceso fue revocado mientras la pestaña estaba abierta, cae a router() para mostrar el candado)
   if((location.hash===""||location.hash==="#"||location.hash==="#/") && tieneModulo('asistencia')){ loadState().then(()=> renderAdmin(true)); return; }
@@ -15633,15 +15675,19 @@ sb.auth.onAuthStateChange((event)=>{
     // Igual que en "Salir" (wireLogout): si la sesión se cerró sola (ej. token expirado) en vez
     // de por el botón, hay que limpiar MIPERFIL/STATE aquí también — si no, quedan con los datos
     // del usuario anterior y el siguiente que inicie sesión en esta misma pestaña los hereda.
+    detenerRefrescos();
     MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], catalogoDot:[], trabajadoresDot:[], entidadesDtl:[], trabajadoresDtl:[], contratosInsp:[], contratosAct:[], nombre:"", uid:null };
     PERFILES_NOMBRE = {}; PERFILES_CORREO = {};
     STATE.listas = []; STATE.userEmail = "";
-    renderLogin();
+    if(!_puertaCerrada) renderLogin();   // tras la puerta queda su aviso, no el login
   }
 });
 
 /* ---------- Arranque ---------- */
-router();
+(async ()=>{
+  if(PASE) await canjearPase(PASE);
+  router();
+})();
 </script>
 </body>
 </html>
