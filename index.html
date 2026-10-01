@@ -120,6 +120,10 @@ input[type="date"], input[type="time"]{background:#fff;color:var(--ink)}
 .sb-brand-nit{font-size:10.5px;font-weight:600;color:rgba(255,255,255,.55);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sb-portal{margin:10px 8px 0;padding:8px 10px;border-radius:10px;font-size:12.5px;font-weight:700;color:rgba(255,255,255,.62);text-decoration:none;transition:.15s}
 .sb-portal:hover{background:rgba(255,255,255,.1);color:#fff}
+/* Aviso fijo de «tus permisos cambiaron»: empuja el contenido y el menú lateral para no tapar nada (los modales quedan encima) */
+#avisoPermisos{position:fixed;top:0;left:0;right:0;z-index:70;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:8px 14px;padding:10px 16px;background:#fff9e6;border-bottom:1px solid #f0d580;color:#7a5c00;font-size:13.5px;font-weight:600;text-align:center;line-height:1.4;box-shadow:var(--shadow-sm)}
+body.con-aviso-permisos #app{padding-top:var(--alto-aviso,48px)}
+body.con-aviso-permisos .sidebar,body.con-aviso-permisos .topbar{top:var(--alto-aviso,48px)}
 .sb-nav{display:flex;flex-direction:column;gap:3px;padding:16px 8px;flex:1;overflow-y:auto}
 .sb-nav a{display:flex;align-items:center;gap:12px;padding:11px 10px;border-radius:11px;font-size:13.5px;font-weight:600;color:rgba(255,255,255,.68);text-decoration:none;white-space:nowrap;transition:.15s}
 .sb-nav a:hover{background:#2e5397;color:#fff}
@@ -939,14 +943,94 @@ async function cerrarPuerta(){
   _puertaCerrada = true;
   detenerRefrescos();
   await sb.auth.signOut({ scope: "local" });
+  pantallaSinAcceso("No tienes acceso al Módulo de firmas", "Pídeselo al administrador.");
+}
+function pantallaSinAcceso(titulo, texto){
   document.getElementById("app").innerHTML = `
     <div class="login-wrap"><div class="login-card">
       <img src="${LOGO}" class="login-logo" alt="Don Aseo Ltda.">
-      <h1>No tienes acceso al Módulo de firmas</h1>
-      <p>Pídeselo al administrador.</p>
+      <h1>${titulo}</h1>
+      <p>${texto}</p>
       <a class="btn btn-primary" href="${PORTAL_URL}" style="width:100%;text-decoration:none">Volver al Portal</a>
     </div></div>`;
 }
+// Se lo quitaron con la página abierta: borra lo cargado, sale y recarga para cerrar TODO (el arranque muestra el aviso)
+async function perderAcceso(){
+  _puertaCerrada = true; _huellaAcceso = null;
+  detenerRefrescos();
+  quitarAvisoPermisos();
+  borrarDatosCargados();
+  document.getElementById("app").innerHTML = "";
+  document.getElementById("overlay").classList.remove("open");
+  document.getElementById("modalHost").innerHTML = "";
+  try{ sessionStorage.setItem("firmas.sinAcceso", "1"); }catch(e){}
+  try{ await sb.auth.signOut({ scope: "local" }); }catch(e){}
+  history.replaceState(null, "", location.pathname + location.search);
+  location.reload();
+}
+
+// Revisión del acceso con la página abierta (fase 7 del Portal): compara contra la «huella» tomada al entrar
+const REVISAR_ACCESO_MS = 60000;
+let _huellaAcceso = null, _revisandoAcceso = false;
+function huellaAcceso(a){
+  const o = x=> [...(x||[])].sort();
+  return JSON.stringify([!!a.activo, !!a.esAdmin, a.rol||"editor", o(a.modulos), o(a.contratos), o(a.catalogo), o(a.entidades), o(a.insp), o(a.act)]);
+}
+function huellaDeMiPerfil(){
+  return huellaAcceso({ activo:MIPERFIL.activo, esAdmin:MIPERFIL.esAdmin, rol:MIPERFIL.rol, modulos:MIPERFIL.modulos, contratos:MIPERFIL.contratos, catalogo:MIPERFIL.catalogoDot, entidades:MIPERFIL.entidadesDtl, insp:MIPERFIL.contratosInsp, act:MIPERFIL.contratosAct });
+}
+async function revisarAcceso(){
+  if(!_huellaAcceso || _revisandoAcceso || _puertaCerrada || document.hidden || esRutaPublica()) return;
+  const uid = MIPERFIL.uid; if(!uid) return;
+  _revisandoAcceso = true;
+  try{
+    // Una sola consulta: la fila propia con sus módulos y contratos (la RLS deja a cada quien leer lo suyo)
+    const { data:r, error } = await sb.from("acc_perfiles")
+      .select("activo,es_admin,rol,acc_perfil_modulos(modulo),acc_perfil_contratos(contrato_id,puede_agregar_catalogo),acc_perfil_entidades(entidad_id),acc_perfil_contratos_insp(contrato_id),acc_perfil_contratos_act(contrato_id)")
+      .eq("id", uid).maybeSingle();
+    if(error || !_huellaAcceso || MIPERFIL.uid !== uid) return;   // sin red o con error no se decide nada: se reintenta
+    const pc = r?.acc_perfil_contratos || [];
+    const a = { activo: r ? r.activo!==false : true, esAdmin: !!r?.es_admin, rol: r?.rol || "editor",
+      modulos: (r?.acc_perfil_modulos||[]).map(x=>x.modulo), contratos: pc.map(x=>x.contrato_id),
+      catalogo: pc.filter(x=>x.puede_agregar_catalogo).map(x=>x.contrato_id),
+      entidades: (r?.acc_perfil_entidades||[]).map(x=>x.entidad_id),
+      insp: (r?.acc_perfil_contratos_insp||[]).map(x=>x.contrato_id), act: (r?.acc_perfil_contratos_act||[]).map(x=>x.contrato_id) };
+    if(!a.activo || (!a.esAdmin && !a.modulos.length)){ await perderAcceso(); return; }
+    if(huellaAcceso(a) !== _huellaAcceso) mostrarAvisoPermisos();
+  }catch(e){}   // sin red: se reintenta en la siguiente vuelta
+  finally{ _revisandoAcceso = false; }
+}
+function borrarDatosCargados(){
+  STATE = { listas: [], userEmail: "" };
+  MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], catalogoDot:[], trabajadoresDot:[], entidadesDtl:[], trabajadoresDtl:[], contratosInsp:[], contratosAct:[], nombre:"", uid:null };
+  PERFILES_NOMBRE = {}; PERFILES_CORREO = {};
+  DOCSTATE = { documentos: [], plantillas: [], firmantes: [] };
+  DOTACION = { contratos: [], trabajadores: [], catalogo: [], entregas: [], entregaItems: [], predeterminados: [] };
+  DTL = { entidades: [], trabajadores: [], entregas: [], predeterminados: [], catalogo: [] };
+  INSPECCIONES = { contratos: [], formatos: [], predeterminados: [], herramientas: [], mantenimientos: [], enlaces: [], inspecciones: [], config: {} };
+  ACTIVIDADES = { contratos:[], sedes:[], tipos:[], actividades:[] };
+}
+function mostrarAvisoPermisos(){
+  if(document.getElementById("avisoPermisos")) return;
+  const el = document.createElement("div");
+  el.id = "avisoPermisos";
+  el.innerHTML = `<span>Tus permisos en Firmas cambiaron. Guarda lo que estés haciendo y actualiza la página.</span><button type="button" class="btn btn-primary btn-sm">Actualizar ahora</button>`;
+  el.querySelector("button").onclick = ()=> location.reload();
+  document.body.appendChild(el);
+  document.body.classList.add("con-aviso-permisos");
+  ajustarAvisoPermisos();
+}
+function ajustarAvisoPermisos(){
+  const el = document.getElementById("avisoPermisos");
+  if(el) document.documentElement.style.setProperty("--alto-aviso", el.offsetHeight + "px");
+}
+function quitarAvisoPermisos(){
+  document.getElementById("avisoPermisos")?.remove();
+  document.body.classList.remove("con-aviso-permisos");
+}
+setInterval(()=>{ if(!document.hidden) revisarAcceso(); }, REVISAR_ACCESO_MS);
+document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) revisarAcceso(); });
+window.addEventListener("resize", ajustarAvisoPermisos);
 
 /* ---------- Mapeo entre columnas de la BD y el objeto del programa ---------- */
 function rowToList(r){
@@ -1157,6 +1241,7 @@ async function router(){
   // contra el uid de la sesión real fuerza una recarga cada vez que no coincidan.
   if(!MIPERFIL.cargado || MIPERFIL.uid !== session.user.id) await cargarMiPerfil();
   if(MIPERFIL.cargado && (!MIPERFIL.activo || (!MIPERFIL.esAdmin && !MIPERFIL.modulos.length))){ await cerrarPuerta(); return; }
+  if(MIPERFIL.cargado) _huellaAcceso = huellaDeMiPerfil();
 
   if(location.hash.startsWith("#/configuracion")){
     if(!MIPERFIL.esAdmin){ renderSinAcceso("Configuración"); return; }
@@ -1352,6 +1437,7 @@ function wireLogout(){
       // cuenta — reportado desde el celular. Recargar la página sí cortaba los timers (se
       // reinician con el script), por eso ahí nunca se veía el problema.
       detenerRefrescos();
+      _huellaAcceso = null; quitarAvisoPermisos();
       await sb.auth.signOut({ scope: "local" }); STATE.listas=[]; STATE.userEmail="";
       MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], catalogoDot:[], trabajadoresDot:[], entidadesDtl:[], trabajadoresDtl:[], contratosInsp:[], contratosAct:[], nombre:"", uid:null };
       PERFILES_NOMBRE = {}; PERFILES_CORREO = {};
@@ -15401,6 +15487,7 @@ sb.auth.onAuthStateChange((event)=>{
     // de por el botón, hay que limpiar MIPERFIL/STATE aquí también — si no, quedan con los datos
     // del usuario anterior y el siguiente que inicie sesión en esta misma pestaña los hereda.
     detenerRefrescos();
+    _huellaAcceso = null; quitarAvisoPermisos();
     MIPERFIL = { cargado:false, activo:true, esAdmin:false, rol:"editor", modulos:[], contratos:[], catalogoDot:[], trabajadoresDot:[], entidadesDtl:[], trabajadoresDtl:[], contratosInsp:[], contratosAct:[], nombre:"", uid:null };
     PERFILES_NOMBRE = {}; PERFILES_CORREO = {};
     STATE.listas = []; STATE.userEmail = "";
@@ -15410,6 +15497,9 @@ sb.auth.onAuthStateChange((event)=>{
 
 /* ---------- Arranque ---------- */
 (async ()=>{
+  let sinAcceso = false;   // marca que deja perderAcceso() justo antes de recargar
+  try{ sinAcceso = sessionStorage.getItem("firmas.sinAcceso") === "1"; sessionStorage.removeItem("firmas.sinAcceso"); }catch(e){}
+  if(sinAcceso && !PASE){ _puertaCerrada = true; pantallaSinAcceso("Ya no tienes acceso a Firmas", "Si crees que es un error, habla con el administrador."); return; }
   if(PASE) await canjearPase(PASE);
   router();
 })();
